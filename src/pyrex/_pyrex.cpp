@@ -244,7 +244,7 @@ public:
 };
 
 // --- PYBIND11 MODULE DEFINITION ---
-PYBIND11_MODULE(pyrex, m) {
+PYBIND11_MODULE(_pyrex, m) {
     m.doc() = "pybind11 RocksDB wrapper";
 
     py::register_exception<RocksDBException>(m, "RocksDBException");

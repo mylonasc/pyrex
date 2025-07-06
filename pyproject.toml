@@ -12,7 +12,6 @@ authors = [
 description = "A fast RocksDB wrapper for Python using pybind11."
 readme = "README.md"
 requires-python = ">=3.8"
-license = { file = "LICENSE" }
 keywords = ["rocksdb", "database", "key-value", "pybind11"]
 
 # Remove 'classifiers' from the dynamic list because you are providing it statically below.
@@ -47,6 +46,9 @@ dev = [
     "twine"
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["pyrex*"]
+
+# Crucial for src layout
+[tool.setuptools]
+packages = ["pyrex"] # Explicitly list your package
+package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
+
