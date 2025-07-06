@@ -41,45 +41,31 @@ jobs:
         python -m pip install --upgrade pip
         pip install cibuildwheel # Install cibuildwheel
 
-    # --- BEGIN MODIFIED SECTION ---
-    # Removed the 'Install RocksDB (Linux)' step from here.
-    # It will now be installed inside the Docker container via CIBW_BEFORE_BUILD_LINUX.
-    # --- END MODIFIED SECTION ---
-
-    - name: Debug RocksDB Paths (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        echo "--- Listing contents of /usr/include/ ---"
-        ls -R /usr/include/ | grep -E "rocksdb|db.h" || true
-        echo "--- Listing contents of /usr/local/include/ ---"
-        ls -R /usr/local/include/ | grep -E "rocksdb|db.h" || true
-        echo "--- Listing contents of /usr/lib/ ---"
-        ls -R /usr/lib/ | grep -E "rocksdb|librocksdb" || true
-        echo "--- Listing contents of /usr/local/lib/ ---"
-        ls -R /usr/local/lib/ | grep -E "rocksdb|librocksdb" || true
-        echo "--- Searching for db.h globally ---"
-        find /usr /opt -name "db.h" 2>/dev/null | grep "rocksdb" || true
-        echo "--- Checking ldconfig for rocksdb libraries ---"
-        sudo ldconfig -p | grep rocksdb || true
-      shell: bash
-
     - name: Install RocksDB (macOS)
       if: runner.os == 'macOS'
       run: |
         brew update
         brew install rocksdb
 
+    - name: Get Homebrew prefix (macOS)
+      if: runner.os == 'macOS'
+      id: brew_prefix
+      run: echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_OUTPUT"
+      shell: bash
+
     - name: Debug RocksDB Paths (macOS)
       if: runner.os == 'macOS'
       run: |
-        echo "--- Listing contents of /usr/local/include/ ---"
-        ls -R /usr/local/include/ | grep -E "rocksdb|db.h" || true
-        echo "--- Listing contents of /usr/local/lib/ ---"
-        ls -R /usr/local/lib/ | grep -E "rocksdb|librocksdb" || true
-        echo "--- Searching for db.h globally ---"
-        find /usr/local /opt -name "db.h" 2>/dev/null | grep "rocksdb" || true
-        echo "--- Checking dynamic libraries for rocksdb ---"
-        find /usr/local/lib -name "librocksdb*.dylib" || true
+        BREW_PREFIX="${{ steps.brew_prefix.outputs.BREW_PREFIX }}"
+        echo "Homebrew prefix: $BREW_PREFIX"
+        echo "--- Listing contents of $BREW_PREFIX/include/ ---"
+        ls -R "$BREW_PREFIX/include/" | grep -E "rocksdb|db.h" || true
+        echo "--- Listing contents of $BREW_PREFIX/lib/ ---"
+        ls -R "$BREW_PREFIX/lib/" | grep -E "rocksdb|librocksdb" || true
+        echo "--- Searching for db.h globally (within brew prefix) ---"
+        find "$BREW_PREFIX" -name "db.h" 2>/dev/null | grep "rocksdb" || true
+        echo "--- Checking dynamic libraries for rocksdb (within brew prefix) ---"
+        find "$BREW_PREFIX/lib" -name "librocksdb*.dylib" || true
       shell: bash
 
     - name: Install RocksDB (Windows via vcpkg)
@@ -107,21 +93,34 @@ jobs:
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
-        # --- BEGIN MODIFIED SECTION ---
         # Install RocksDB inside the manylinux container before the build
-        CIBW_BEFORE_BUILD_LINUX: "yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev"
+        CIBW_BEFORE_BUILD_LINUX: |
+          yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \
+          apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev
+          echo "--- Debugging inside manylinux container after RocksDB install ---"
+          echo "Contents of /usr/include/:"
+          ls -F /usr/include/ || true
+          echo "Contents of /usr/include/rocksdb/:"
+          ls -F /usr/include/rocksdb/ || true
+          echo "Contents of /usr/lib/:"
+          ls -F /usr/lib/ | grep -E "rocksdb|librocksdb" || true
+          echo "Contents of /usr/lib64/:"
+          ls -F /usr/lib64/ | grep -E "rocksdb|librocksdb" || true
+          echo "Searching for db.h:"
+          find /usr/include -name "db.h" 2>/dev/null | grep "rocksdb" || true
+          echo "Searching for librocksdb.so:"
+          find /usr/lib /usr/lib64 -name "librocksdb.so*" 2>/dev/null || true
         # Explicitly set CFLAGS and LDFLAGS for cibuildwheel to pass directly to the compiler.
         CIBW_CFLAGS_LINUX: "-I/usr/include/"
         CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb"
 
-        # macOS specific flags (assuming brew installs to /usr/local)
-        CIBW_CFLAGS_MACOS: "-I/usr/local/include/"
-        CIBW_LDFLAGS_MACOS: "-L/usr/local/lib/ -lrocksdb"
+        # macOS specific flags (using the dynamically determined Homebrew prefix)
+        CIBW_CFLAGS_MACOS: "-I${{ steps.brew_prefix.outputs.BREW_PREFIX }}/include/"
+        CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
 
         # Windows specific flags (adjust based on vcpkg output)
         CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
         CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
-        # --- END MODIFIED SECTION ---
 
         # Other cibuildwheel environment variables (if needed for other purposes)
         # CIBW_SKIP: "pp* cp36* cp37*"
