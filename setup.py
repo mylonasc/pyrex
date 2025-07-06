@@ -10,11 +10,11 @@ from setuptools.command.build_ext import build_ext as _build_ext
 # Example for common Linux/macOS paths
 # These should ideally be determined at build time (e.g., by CI or vcpkg)
 ROCKSDB_INCLUDE_DIRS = [
-    '/usr/local/include/rocksdb/', # Common for homebrew on macOS or manual installs
     '/usr/local/include/',
-    '/usr/include/',
-    '/usr/include/rocksdb/',       # Common for apt on Debian/Ubuntu
-]
+    '/usr/include/']
+    #'/usr/local/include/rocksdb/', # Common for homebrew on macOS or manual installs
+    #'/usr/include/rocksdb/',       # Common for apt on Debian/Ubuntu
+
 ROCKSDB_LIBRARY_DIRS = [
     '/usr/local/lib/',             # Common for homebrew on macOS or manual installs
     '/usr/lib/',                   # Common for apt on Debian/Ubuntu

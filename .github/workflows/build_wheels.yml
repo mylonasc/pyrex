@@ -1,6 +1,6 @@
 # .github/workflows/build_wheels.yml
 
-name: Build Python Wheels - pyrex
+name: Build Python Wheels
 
 on:
   push:
@@ -15,16 +15,14 @@ on:
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }} for Python ${{ matrix.python-version }}
+    name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      # Define a matrix to build on different OS and Python versions
+      # Define a matrix to build on different OS
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # cibuildwheel will manage the specific Python versions,
-        # so we don't need to list them explicitly here in the matrix.
-        # However, for clarity or if you had specific Python setup needs,
-        # you could add python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        # cibuildwheel will manage the specific Python versions (e.g., cp38, cp39, etc.)
+        # within each OS environment, so we don't need to list them explicitly here.
 
     steps:
     - name: Checkout code
@@ -47,7 +45,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        # Install RocksDB development libraries
+        # Install RocksDB development libraries and its dependencies
         sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev
 
     - name: Debug RocksDB Paths (Linux)
@@ -74,34 +72,67 @@ jobs:
         # Install RocksDB using Homebrew
         brew install rocksdb
 
+    - name: Debug RocksDB Paths (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        echo "--- Listing contents of /usr/local/include/ ---"
+        ls -R /usr/local/include/ | grep -E "rocksdb|db.h" || true
+        echo "--- Listing contents of /usr/local/lib/ ---"
+        ls -R /usr/local/lib/ | grep -E "rocksdb|librocksdb" || true
+        echo "--- Searching for db.h globally ---"
+        find /usr/local /opt -name "db.h" 2>/dev/null | grep "rocksdb" || true
+        echo "--- Checking dynamic libraries for rocksdb ---"
+        # On macOS, libraries are often .dylib, and `otool -L` is used for dependencies
+        # This is more for runtime, but helps confirm installation
+        find /usr/local/lib -name "librocksdb*.dylib" || true
+      shell: bash
+
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
-      # This step sets up vcpkg and installs RocksDB.
-      # It can be complex; this is a simplified example.
-      # For production, consider pre-building RocksDB or a more robust vcpkg setup.
       run: |
-        # Download and install vcpkg
         git clone https://github.com/microsoft/vcpkg.git
         .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-        # Install rocksdb. Adjust triplet if needed (e.g., x64-windows-static)
         .\vcpkg\vcpkg.exe install rocksdb:x64-windows
       env:
-        # Set environment variable for vcpkg root so setup.py can find it
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+
+    - name: Debug RocksDB Paths (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        echo "--- Listing contents of VCPKG_ROOT include directory ---"
+        dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb /s || true
+        echo "--- Listing contents of VCPKG_ROOT lib directory ---"
+        dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\lib /s || true
+        echo "--- Searching for rocksdb.h ---"
+        # Adjust path if needed based on VCPKG_ROOT
+        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+        echo "--- Searching for rocksdb.lib/dll ---"
+        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+      shell: pwsh # Use PowerShell for Windows commands
 
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
-        PROJBUILT: "pyrex a rocksdb wrapper"
-        # CIBW_SKIP: "pp* cp36* cp37*" # Skip older Python versions if not supported
-        # CIBW_ARCHS_WINDOWS: "AMD64" # Only build for 64-bit on Windows
-        # CIBW_ENVIRONMENT_WINDOWS: "VCPKG_ROOT=${{ github.workspace }}\\vcpkg"
-        # If you need to pass specific include/lib paths to setup.py for RocksDB
-        # CIBW_ENVIRONMENT: "ROCKSDB_INCLUDE_DIR=/usr/local/include ROCKSDB_LIB_DIR=/usr/local/lib"
-        # For Windows, you might need to tell setup.py where vcpkg installed libs are
-        # For example, if your setup.py needs it:
-        # CIBW_ENVIRONMENT_WINDOWS: "ROCKSDB_INCLUDE_DIRS=${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include ROCKSDB_LIBRARY_DIRS=${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib"
-        # Ensure your setup.py's build_ext logic correctly uses these env vars.
+        # --- BEGIN MODIFIED SECTION ---
+        # Explicitly set CFLAGS and LDFLAGS for cibuildwheel to pass directly to the compiler.
+        # This gives us precise control over include and library paths.
+        # The -I/usr/include/ is correct because rocksdb/db.h is found under /usr/include/rocksdb/
+        # The -L/usr/lib/ is correct because librocksdb.so is found directly under /usr/lib/
+        CIBW_CFLAGS_LINUX: "-I/usr/include/"
+        CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb" # -lrocksdb for linking the library
+
+        # macOS specific flags (assuming brew installs to /usr/local)
+        CIBW_CFLAGS_MACOS: "-I/usr/local/include/"
+        CIBW_LDFLAGS_MACOS: "-L/usr/local/lib/ -lrocksdb"
+
+        # Windows specific flags (adjust based on vcpkg output)
+        CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
+        CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb" # Use rocksdb.lib
+        # --- END MODIFIED SECTION ---
+
+        # Other cibuildwheel environment variables (if needed for other purposes)
+        # CIBW_SKIP: "pp* cp36* cp37*"
+        # CIBW_ARCHS_WINDOWS: "AMD64"
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
@@ -116,6 +147,6 @@ jobs:
     #     pip install twine
     #     twine upload --non-interactive --username __token__ --password ${{ secrets.PYPI_API_TOKEN }} wheelhouse/*.whl
     #   env:
-    #     # Define PYPI_API_TOKEN as a repository secret in GitHub
     #     TWINE_USERNAME: __token__
     #     TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
