@@ -2,14 +2,17 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+// NEW: Include for std::unique_ptr
+#include <memory>
+
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
-#include "rocksdb/write_batch.h" // NEW: For WriteBatch functionality
-#include "rocksdb/iterator.h"    // NEW: For Iterator functionality
+#include "rocksdb/write_batch.h"
+#include "rocksdb/iterator.h"
 
 #include <iostream>
 #include <string>
@@ -63,13 +66,9 @@ public:
         }
 
         rocksdb::BlockBasedTableOptions table_options;
-        // Attempt to get existing table options if applicable
-        if (options_.table_factory != nullptr) {
-            // This is a bit tricky as RocksDB's C++ API doesn't easily expose
-            // how to get the current BlockBasedTableOptions from a TableFactory.
-            // For simplicity, we'll assume we're setting it fresh or overriding.
-        }
-
+        // NOTE: This part assumes we are creating a new policy, not modifying an existing one.
+        // This is a reasonable simplification for a wrapper.
+        
         // Create a new bloom filter policy
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bits_per_key));
         options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
@@ -79,24 +78,18 @@ public:
 // --- PyWriteBatch class to wrap rocksdb::WriteBatch ---
 class PyWriteBatch {
 public:
-    rocksdb::WriteBatch wb_; // The actual RocksDB WriteBatch object
+    rocksdb::WriteBatch wb_;
 
     PyWriteBatch() : wb_() {}
 
-    // Add a Put operation to the batch
     void put(const py::bytes& key_bytes, const py::bytes& value_bytes) {
-        std::string key_str = static_cast<std::string>(key_bytes);
-        std::string value_str = static_cast<std::string>(value_bytes);
-        wb_.Put(key_str, value_str);
+        wb_.Put(static_cast<std::string>(key_bytes), static_cast<std::string>(value_bytes));
     }
 
-    // Add a Delete operation to the batch
-    void del(const py::bytes& key_bytes) { // Using 'del' as 'delete' is a keyword in Python
-        std::string key_str = static_cast<std::string>(key_bytes);
-        wb_.Delete(key_str);
+    void del(const py::bytes& key_bytes) {
+        wb_.Delete(static_cast<std::string>(key_bytes));
     }
 
-    // Clear all operations from the batch
     void clear() {
         wb_.Clear();
     }
@@ -106,58 +99,49 @@ public:
 class PyRocksDBIterator {
 public:
     // Raw pointer to the RocksDB Iterator.
-    // Ownership is transferred from PyRocksDB::new_iterator to this object.
+    // The lifetime of this pointer is managed by this class's constructor/destructor.
     rocksdb::Iterator* it_;
 
-    // Constructor takes a raw pointer to rocksdb::Iterator.
-    // It's marked explicit to prevent accidental conversions.
     explicit PyRocksDBIterator(rocksdb::Iterator* it) : it_(it) {
         if (!it_) {
             throw RocksDBException("Failed to create RocksDB iterator: null pointer received.");
         }
+        // std::cout << "DEBUG: Creating RocksDB iterator." << std::endl; // Optional: for debugging
     }
 
-    // Destructor: Ensures the C++ iterator is deleted when PyRocksDBIterator is garbage collected
+    // Destructor: Ensures the C++ iterator is deleted when this object is destroyed.
     ~PyRocksDBIterator() {
         if (it_ != nullptr) {
-            std::cout << "DEBUG: Deleting RocksDB iterator." << std::endl; // Added debug print
+            std::cout << "DEBUG: Deleting RocksDB iterator." << std::endl;
             delete it_;
             it_ = nullptr;
         }
     }
 
-    // Check if the iterator is valid (pointing to a key-value pair)
     bool valid() const {
         return it_->Valid();
     }
 
-    // Position at the first key in the database
     void seek_to_first() {
         it_->SeekToFirst();
     }
 
-    // Position at the last key in the database
     void seek_to_last() {
         it_->SeekToLast();
     }
 
-    // Position at or after the given key
     void seek(const py::bytes& key_bytes) {
-        std::string key_str = static_cast<std::string>(key_bytes);
-        it_->Seek(key_str);
+        it_->Seek(static_cast<std::string>(key_bytes));
     }
 
-    // Move to the next key
     void next() {
         it_->Next();
     }
 
-    // Move to the previous key
     void prev() {
         it_->Prev();
     }
 
-    // Get the current key (returns Python bytes or None if not valid)
     py::object key() {
         if (it_->Valid()) {
             return py::bytes(it_->key().ToString());
@@ -165,7 +149,6 @@ public:
         return py::none();
     }
 
-    // Get the current value (returns Python bytes or None if not valid)
     py::object value() {
         if (it_->Valid()) {
             return py::bytes(it_->value().ToString());
@@ -173,7 +156,6 @@ public:
         return py::none();
     }
 
-    // Check iterator status for errors
     void check_status() {
         rocksdb::Status status = it_->status();
         if (!status.ok()) {
@@ -182,67 +164,54 @@ public:
     }
 };
 
-
 // --- PyRocksDB class to wrap rocksdb::DB ---
 class PyRocksDB {
 public:
     rocksdb::DB* db_;
     PyOptions opened_options_; // Store the options used to open the DB
+    std::string path_;         // IMPROVEMENT: Store the path for accurate debug messages
 
-    PyRocksDB(const std::string& path, PyOptions* py_options = nullptr) : db_(nullptr) {
+    PyRocksDB(const std::string& path, PyOptions* py_options = nullptr) : db_(nullptr), path_(path) {
         rocksdb::Options actual_options;
 
         if (py_options != nullptr) {
             actual_options = py_options->options_;
         } else {
-            PyOptions default_py_options;
-            actual_options = default_py_options.options_;
             actual_options.create_if_missing = true;
         }
 
         opened_options_.options_ = actual_options;
 
-        rocksdb::Status status = rocksdb::DB::Open(actual_options, path, &db_);
+        rocksdb::Status status = rocksdb::DB::Open(actual_options, path_, &db_);
 
         if (!status.ok()) {
-            throw RocksDBException("Failed to open RocksDB at " + path + ": " + status.ToString());
+            throw RocksDBException("Failed to open RocksDB at " + path_ + ": " + status.ToString());
         }
 
-        std::cout << "RocksDB opened successfully at: " << path << std::endl;
+        std::cout << "RocksDB opened successfully at: " << path_ << std::endl;
     }
 
     ~PyRocksDB() {
         if (db_ != nullptr) {
-            // FIXED: Access the 'path' member of DbPath for printing.
-            // Also check if db_paths is not empty before accessing index 0.
-            if (!opened_options_.options_.db_paths.empty()) {
-                std::cout << "DEBUG: Closing RocksDB database at " << opened_options_.options_.db_paths[0].path << std::endl;
-            } else {
-                std::cout << "DEBUG: Closing RocksDB database (path unknown)." << std::endl;
-            }
+            // IMPROVEMENT: Use the stored path_ member for a reliable close message.
+            std::cout << "DEBUG: Closing RocksDB database at " << path_ << std::endl;
             delete db_;
             db_ = nullptr;
         }
     }
 
     void put(const py::bytes& key_bytes, const py::bytes& value_bytes) {
-        std::string key_str = static_cast<std::string>(key_bytes);
-        std::string value_str = static_cast<std::string>(value_bytes);
-
-        rocksdb::WriteOptions write_options;
-        rocksdb::Status status = db_->Put(write_options, key_str, value_str);
-
+        rocksdb::Status status = db_->Put(rocksdb::WriteOptions(),
+                                         static_cast<std::string>(key_bytes),
+                                         static_cast<std::string>(value_bytes));
         if (!status.ok()) {
             throw RocksDBException("Failed to put key-value pair: " + status.ToString());
         }
     }
 
     py::object get(const py::bytes& key_bytes) {
-        std::string key_str = static_cast<std::string>(key_bytes);
         std::string value_str;
-
-        rocksdb::ReadOptions read_options;
-        rocksdb::Status status = db_->Get(read_options, key_str, &value_str);
+        rocksdb::Status status = db_->Get(rocksdb::ReadOptions(), static_cast<std::string>(key_bytes), &value_str);
 
         if (status.ok()) {
             return py::bytes(value_str);
@@ -253,28 +222,28 @@ public:
         }
     }
 
+    // This method is safe to return by value, as PyOptions is a simple
+    // wrapper around a copyable rocksdb::Options object.
     PyOptions get_options() const {
         return opened_options_;
     }
 
-    // NEW: Method to write a batch of operations
     void write(PyWriteBatch& py_write_batch) {
-        rocksdb::WriteOptions write_options; // Default write options for batch
-        rocksdb::Status status = db_->Write(write_options, &py_write_batch.wb_);
+        rocksdb::Status status = db_->Write(rocksdb::WriteOptions(), &py_write_batch.wb_);
         if (!status.ok()) {
             throw RocksDBException("Failed to write batch: " + status.ToString());
         }
     }
 
-    // NEW: Method to create and return an iterator
-    PyRocksDBIterator new_iterator() {
-        rocksdb::ReadOptions read_options; // Default read options for iterator
-        // The iterator is created on the heap and its ownership is transferred to PyRocksDBIterator
-        return PyRocksDBIterator(db_->NewIterator(read_options));
+    // **FIXED**: Return a unique_ptr to transfer ownership to pybind11.
+    // This prevents the temporary iterator object from being destroyed prematurely.
+    std::unique_ptr<PyRocksDBIterator> new_iterator() {
+        rocksdb::ReadOptions read_options;
+        return std::make_unique<PyRocksDBIterator>(db_->NewIterator(read_options));
     }
 };
 
-// PYBIND11_MODULE macro creates the Python module
+// --- PYBIND11 MODULE DEFINITION ---
 PYBIND11_MODULE(pyrex, m) {
     m.doc() = "pybind11 RocksDB wrapper";
 
@@ -291,70 +260,43 @@ PYBIND11_MODULE(pyrex, m) {
         .value("kDisableCompressionOption", rocksdb::kDisableCompressionOption)
         .export_values();
 
-    // NOTE: Removed duplicate binding for CompressionType enum.
-    // The previous code had two identical `py::enum_` bindings for `CompressionType`.
-    // This is harmless but unnecessary. I've kept the first one.
-
     py::class_<PyOptions>(m, "PyOptions")
-        .def(py::init<>(), "Initializes RocksDB options with default values.")
-        .def_property("create_if_missing", &PyOptions::get_create_if_missing, &PyOptions::set_create_if_missing,
-                      "If true, the database will be created if it is missing.")
-        .def_property("error_if_exists", &PyOptions::get_error_if_exists, &PyOptions::set_error_if_exists,
-                      "If true, an error will be thrown during open if the database already exists.")
-        .def_property("max_open_files", &PyOptions::get_max_open_files, &PyOptions::set_max_open_files,
-                      "Number of open files that can be used by the DB.")
-        .def_property("write_buffer_size", &PyOptions::get_write_buffer_size, &PyOptions::set_write_buffer_size,
-                      "The maximum size of a write buffer that is used as a memtable.")
-        .def_property("compression", &PyOptions::get_compression, &PyOptions::set_compression,
-                      "The compression algorithm used for all SST files.")
-        .def_property("max_background_jobs", &PyOptions::get_max_background_jobs, &PyOptions::set_max_background_jobs,
-                      "Maximum number of concurrent background jobs (both flushes and compactions combined).")
-        .def("increase_parallelism", &PyOptions::increase_parallelism, py::arg("total_threads"),
-             "Increase parallelism by setting the number of background threads.")
-        .def("optimize_for_small_db", &PyOptions::optimize_for_small_db,
-             "Optimizes RocksDB for small databases (less than a few GB).")
-        .def("use_block_based_bloom_filter", &PyOptions::use_block_based_bloom_filter,
-             py::arg("bits_per_key") = 10.0,
-             "Enables a bloom filter for block-based tables to speed up lookups.");
+        .def(py::init<>())
+        .def_property("create_if_missing", &PyOptions::get_create_if_missing, &PyOptions::set_create_if_missing)
+        .def_property("error_if_exists", &PyOptions::get_error_if_exists, &PyOptions::set_error_if_exists)
+        .def_property("max_open_files", &PyOptions::get_max_open_files, &PyOptions::set_max_open_files)
+        .def_property("write_buffer_size", &PyOptions::get_write_buffer_size, &PyOptions::set_write_buffer_size)
+        .def_property("compression", &PyOptions::get_compression, &PyOptions::set_compression)
+        .def_property("max_background_jobs", &PyOptions::get_max_background_jobs, &PyOptions::set_max_background_jobs)
+        .def("increase_parallelism", &PyOptions::increase_parallelism, py::arg("total_threads"))
+        .def("optimize_for_small_db", &PyOptions::optimize_for_small_db)
+        .def("use_block_based_bloom_filter", &PyOptions::use_block_based_bloom_filter, py::arg("bits_per_key") = 10.0);
 
-    // NEW: Bind PyWriteBatch class
     py::class_<PyWriteBatch>(m, "PyWriteBatch")
-        .def(py::init<>(), "Creates an empty RocksDB write batch.")
-        .def("put", &PyWriteBatch::put, py::arg("key"), py::arg("value"),
-             "Adds a put operation to the batch. Keys and values must be bytes.")
-        .def("delete", &PyWriteBatch::del, py::arg("key"), // Renamed to 'del' for Python keyword compatibility
-             "Adds a delete operation to the batch. Key must be bytes.")
-        .def("clear", &PyWriteBatch::clear, "Clears all operations from the batch.");
+        .def(py::init<>())
+        .def("put", &PyWriteBatch::put, py::arg("key"), py::arg("value"))
+        .def("delete", &PyWriteBatch::del, py::arg("key"))
+        .def("clear", &PyWriteBatch::clear);
 
-    // NEW: Bind PyRocksDBIterator class
     py::class_<PyRocksDBIterator>(m, "PyRocksDBIterator")
-        .def("valid", &PyRocksDBIterator::valid, "Returns true if the iterator is currently positioned at a valid key-value pair.")
-        .def("seek_to_first", &PyRocksDBIterator::seek_to_first, "Positions the iterator at the first key in the database.")
-        .def("seek_to_last", &PyRocksDBIterator::seek_to_last, "Positions the iterator at the last key in the database.")
-        .def("seek", &PyRocksDBIterator::seek, py::arg("key"), "Positions the iterator at or after the given key.")
-        .def("next", &PyRocksDBIterator::next, "Moves the iterator to the next key-value pair.")
-        .def("prev", &PyRocksDBIterator::prev, "Moves the iterator to the previous key-value pair.")
-        .def("key", &PyRocksDBIterator::key, "Returns the current key as bytes, or None if the iterator is not valid.")
-        .def("value", &PyRocksDBIterator::value, "Returns the current value as bytes, or None if the iterator is not valid.")
-        .def("check_status", &PyRocksDBIterator::check_status, "Checks the status of the iterator for errors.");
-
+        .def("valid", &PyRocksDBIterator::valid)
+        .def("seek_to_first", &PyRocksDBIterator::seek_to_first)
+        .def("seek_to_last", &PyRocksDBIterator::seek_to_last)
+        .def("seek", &PyRocksDBIterator::seek, py::arg("key"))
+        .def("next", &PyRocksDBIterator::next)
+        .def("prev", &PyRocksDBIterator::prev)
+        .def("key", &PyRocksDBIterator::key)
+        .def("value", &PyRocksDBIterator::value)
+        .def("check_status", &PyRocksDBIterator::check_status);
 
     py::class_<PyRocksDB>(m, "PyRocksDB")
-        .def(py::init<const std::string&, PyOptions*>(), py::arg("path"), py::arg("options") = nullptr,
-             "Initializes and opens a RocksDB database at the given path with optional PyOptions.")
-        .def("put", &PyRocksDB::put, py::arg("key"), py::arg("value"),
-             "Puts a key-value pair into the database. Keys and values must be bytes.")
-        .def("get", &PyRocksDB::get, py::arg("key"),
-             "Retrieves a value by key. Returns bytes or None if key not found. Key must be bytes.")
-        .def("get_options", &PyRocksDB::get_options,
-             "Retrieves the PyOptions object used to open this database instance.")
-        // NEW: Expose write batch method
-        .def("write", &PyRocksDB::write, py::arg("write_batch"),
-             "Applies a batch of write operations atomically to the database.")
-        // NEW: Expose iterator creation method with keep_alive
+        .def(py::init<const std::string&, PyOptions*>(), py::arg("path"), py::arg("options") = nullptr)
+        .def("put", &PyRocksDB::put, py::arg("key"), py::arg("value"))
+        .def("get", &PyRocksDB::get, py::arg("key"))
+        .def("get_options", &PyRocksDB::get_options)
+        .def("write", &PyRocksDB::write, py::arg("write_batch"))
         .def("new_iterator", &PyRocksDB::new_iterator,
              "Creates and returns a new RocksDB iterator.",
-             py::keep_alive<0, 1>() // Keep the PyRocksDB instance (arg 1) alive as long as the returned iterator (arg 0) is alive.
-        );
+             py::keep_alive<0, 1>()
+        ); 
 }
-

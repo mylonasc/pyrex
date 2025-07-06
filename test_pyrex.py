@@ -181,8 +181,11 @@ class TestPyrex(unittest.TestCase):
         """
         Test basic iterator traversal (seek_to_first, next, key, value).
         """
-        self.db = pyrex.PyRocksDB(self.db_path)
+        print("1")
+        self.db = pyrex.PyRocksDB(self.db_path+'asdf')
+        print("2")
         self.assertIsNotNone(self.db)
+        print("3")
 
         data = {
             b"apple": b"red",
@@ -190,19 +193,27 @@ class TestPyrex(unittest.TestCase):
             b"cherry": b"red",
             b"date": b"brown"
         }
+        print("4")
         for k, v in data.items():
             self.db.put(k, v)
+        print("5")
 
         it = self.db.new_iterator()
+        print("6")
         self.assertIsNotNone(it)
+
+        print("7")
 
         # Seek to first and iterate forward
         it.seek_to_first()
+        print("8")
         found_keys = []
         while it.valid():
             found_keys.append(it.key())
             it.next()
+        print("9")
         self.assertEqual(sorted(found_keys), sorted(list(data.keys())))
+        print("10")
         it.check_status() # Check for any iterator errors
         del it # FIXED: Explicitly delete the iterator
 
