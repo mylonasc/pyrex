@@ -75,6 +75,7 @@ jobs:
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
+        PROJBUILT: "pyrex a rocksdb wrapper"
         # CIBW_SKIP: "pp* cp36* cp37*" # Skip older Python versions if not supported
         # CIBW_ARCHS_WINDOWS: "AMD64" # Only build for 64-bit on Windows
         # CIBW_ENVIRONMENT_WINDOWS: "VCPKG_ROOT=${{ github.workspace }}\\vcpkg"
