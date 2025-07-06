@@ -50,6 +50,23 @@ jobs:
         # Install RocksDB development libraries
         sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev
 
+    - name: Debug RocksDB Paths (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        echo "--- Listing contents of /usr/include/ ---"
+        ls -R /usr/include/ | grep -E "rocksdb|db.h" || true # List /usr/include, filter for rocksdb or db.h, ignore errors if not found
+        echo "--- Listing contents of /usr/local/include/ ---"
+        ls -R /usr/local/include/ | grep -E "rocksdb|db.h" || true
+        echo "--- Listing contents of /usr/lib/ ---"
+        ls -R /usr/lib/ | grep -E "rocksdb|librocksdb" || true
+        echo "--- Listing contents of /usr/local/lib/ ---"
+        ls -R /usr/local/lib/ | grep -E "rocksdb|librocksdb" || true
+        echo "--- Searching for db.h globally ---"
+        find /usr /opt -name "db.h" 2>/dev/null | grep "rocksdb" || true
+        echo "--- Checking ldconfig for rocksdb libraries ---"
+        sudo ldconfig -p | grep rocksdb || true
+      shell: bash # Ensure bash is used for grep/find commands
+
     - name: Install RocksDB (macOS)
       if: runner.os == 'macOS'
       run: |
