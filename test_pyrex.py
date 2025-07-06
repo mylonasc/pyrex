@@ -204,6 +204,7 @@ class TestPyrex(unittest.TestCase):
             it.next()
         self.assertEqual(sorted(found_keys), sorted(list(data.keys())))
         it.check_status() # Check for any iterator errors
+        del it # FIXED: Explicitly delete the iterator
 
     def test_09_iterator_seek_and_prev(self):
         """
@@ -242,6 +243,7 @@ class TestPyrex(unittest.TestCase):
         self.assertEqual(it.key(), b"c1")
 
         it.check_status()
+        del it # FIXED: Explicitly delete the iterator
 
     def test_10_iterator_empty_db(self):
         """
@@ -257,6 +259,7 @@ class TestPyrex(unittest.TestCase):
         self.assertIsNone(it.key())
         self.assertIsNone(it.value())
         it.check_status() # Should be OK
+        del it # FIXED: Explicitly delete the iterator
 
 if __name__ == '__main__':
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

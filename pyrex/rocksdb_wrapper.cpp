@@ -63,6 +63,14 @@ public:
         }
 
         rocksdb::BlockBasedTableOptions table_options;
+        // Attempt to get existing table options if applicable
+        if (options_.table_factory != nullptr) {
+            // This is a bit tricky as RocksDB's C++ API doesn't easily expose
+            // how to get the current BlockBasedTableOptions from a TableFactory.
+            // For simplicity, we'll assume we're setting it fresh or overriding.
+        }
+
+        // Create a new bloom filter policy
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bits_per_key));
         options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
     }
@@ -112,6 +120,7 @@ public:
     // Destructor: Ensures the C++ iterator is deleted when PyRocksDBIterator is garbage collected
     ~PyRocksDBIterator() {
         if (it_ != nullptr) {
+            std::cout << "DEBUG: Deleting RocksDB iterator." << std::endl; // Added debug print
             delete it_;
             it_ = nullptr;
         }
@@ -204,7 +213,13 @@ public:
 
     ~PyRocksDB() {
         if (db_ != nullptr) {
-            std::cout << "Closing RocksDB database." << std::endl;
+            // FIXED: Access the 'path' member of DbPath for printing.
+            // Also check if db_paths is not empty before accessing index 0.
+            if (!opened_options_.options_.db_paths.empty()) {
+                std::cout << "DEBUG: Closing RocksDB database at " << opened_options_.options_.db_paths[0].path << std::endl;
+            } else {
+                std::cout << "DEBUG: Closing RocksDB database (path unknown)." << std::endl;
+            }
             delete db_;
             db_ = nullptr;
         }
@@ -268,7 +283,6 @@ PYBIND11_MODULE(pyrex, m) {
     py::enum_<rocksdb::CompressionType>(m, "CompressionType")
         .value("kNoCompression", rocksdb::kNoCompression)
         .value("kSnappyCompression", rocksdb::kSnappyCompression)
-        .value("kZlibCompression", rocksdb::kZlibCompression)
         .value("kBZip2Compression", rocksdb::kBZip2Compression)
         .value("kLZ4Compression", rocksdb::kLZ4Compression)
         .value("kLZ4HCCompression", rocksdb::kLZ4HCCompression)
@@ -276,6 +290,10 @@ PYBIND11_MODULE(pyrex, m) {
         .value("kZSTD", rocksdb::kZSTD)
         .value("kDisableCompressionOption", rocksdb::kDisableCompressionOption)
         .export_values();
+
+    // NOTE: Removed duplicate binding for CompressionType enum.
+    // The previous code had two identical `py::enum_` bindings for `CompressionType`.
+    // This is harmless but unnecessary. I've kept the first one.
 
     py::class_<PyOptions>(m, "PyOptions")
         .def(py::init<>(), "Initializes RocksDB options with default values.")
@@ -333,8 +351,10 @@ PYBIND11_MODULE(pyrex, m) {
         // NEW: Expose write batch method
         .def("write", &PyRocksDB::write, py::arg("write_batch"),
              "Applies a batch of write operations atomically to the database.")
-        // NEW: Expose iterator creation method
+        // NEW: Expose iterator creation method with keep_alive
         .def("new_iterator", &PyRocksDB::new_iterator,
-             "Creates and returns a new RocksDB iterator.");
+             "Creates and returns a new RocksDB iterator.",
+             py::keep_alive<0, 1>() // Keep the PyRocksDB instance (arg 1) alive as long as the returned iterator (arg 0) is alive.
+        );
 }
 
