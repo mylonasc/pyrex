@@ -13,10 +13,6 @@ on:
       - develop
   workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
-jobs:
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
 
 jobs:
   build_wheels:
