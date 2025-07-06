@@ -21,7 +21,7 @@ jobs:
     strategy:
       # Define a matrix to build on different OS
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest] #, macos-latest, windows-latest]
         # cibuildwheel will manage the specific Python versions (e.g., cp38, cp39, etc.)
         # within each OS environment, so we don't need to list them explicitly here.
 
