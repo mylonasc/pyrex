@@ -95,6 +95,8 @@ jobs:
       run: cibuildwheel --output-dir wheelhouse
       env:
         CIBW_BUILD_LINUX: "cp*-manylinux_x86_64" # This will target all CPython versions for manylinux_x86_64
+        CIBW_SKIP: "*-musllinux_*" # Skips all Python versions and architectures for musllinux
+
 
         # Install RocksDB inside the manylinux container before the build
         CIBW_BEFORE_BUILD_LINUX: |
@@ -111,18 +113,18 @@ jobs:
           echo "--- End rpm -ql output ---"
 
           # Previous ls/find debugging commands (still useful for visual confirmation)
-          echo "Contents of /usr/include/:"
-          ls -F /usr/include/ || true
-          echo "Contents of /usr/include/rocksdb/:"
-          ls -F /usr/include/rocksdb/ || true
-          echo "Contents of /usr/lib/:"
-          ls -F /usr/lib/ | grep -E "rocksdb|librocksdb" || true
-          echo "Contents of /usr/lib64/:"
-          ls -F /usr/lib64/ | grep -E "rocksdb|librocksdb" || true
-          echo "Searching for db.h:"
-          find /usr/include -name "db.h" 2>/dev/null | grep "rocksdb" || true
-          echo "Searching for librocksdb.so:"
-          find /usr/lib /usr/lib64 -name "librocksdb.so*" 2>/dev/null || true
+          #echo "Contents of /usr/include/:"
+          #ls -F /usr/include/ || true
+          #echo "Contents of /usr/include/rocksdb/:"
+          #ls -F /usr/include/rocksdb/ || true
+          #echo "Contents of /usr/lib/:"
+          #ls -F /usr/lib/ | grep -E "rocksdb|librocksdb" || true
+          #echo "Contents of /usr/lib64/:"
+          #ls -F /usr/lib64/ | grep -E "rocksdb|librocksdb" || true
+          #echo "Searching for db.h:"
+          #find /usr/include -name "db.h" 2>/dev/null | grep "rocksdb" || true
+          #echo "Searching for librocksdb.so:"
+          #find /usr/lib /usr/lib64 -name "librocksdb.so*" 2>/dev/null || true
         # Explicitly set CFLAGS and LDFLAGS for cibuildwheel to pass directly to the compiler.
         # These will need to be adjusted based on the rpm -ql output from the next run.
         CIBW_CFLAGS_LINUX: "-I/usr/include/"
