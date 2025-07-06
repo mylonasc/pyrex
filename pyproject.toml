@@ -1,0 +1,21 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=61.0", "pybind11>=2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrex-wrapper"
+version = "0.1.0"
+description = "A simple Python wrapper for RocksDB using pybind11"
+authors = [
+  { name="Charilaos Mylonas", email="mylonas.charilaos@gmail.com" },
+]
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "pybind11>=2.6.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/mylonasc/pyrex" # Replace with your repo
+"Bug Tracker" = "https://github.com/mylonasc/pyrex/issues" # Replace with your repo
