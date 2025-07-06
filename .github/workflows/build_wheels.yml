@@ -94,6 +94,8 @@ jobs:
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
+        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64" # This will target all CPython versions for manylinux_x86_64
+
         # Install RocksDB inside the manylinux container before the build
         CIBW_BEFORE_BUILD_LINUX: |
           # Try yum install first (for CentOS/RHEL-based manylinux images)
