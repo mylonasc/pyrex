@@ -41,18 +41,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install cibuildwheel # Install cibuildwheel
 
-    - name: Install RocksDB (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        # Install RocksDB development libraries and its dependencies
-        sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev
+    # --- BEGIN MODIFIED SECTION ---
+    # Removed the 'Install RocksDB (Linux)' step from here.
+    # It will now be installed inside the Docker container via CIBW_BEFORE_BUILD_LINUX.
+    # --- END MODIFIED SECTION ---
 
     - name: Debug RocksDB Paths (Linux)
       if: runner.os == 'Linux'
       run: |
         echo "--- Listing contents of /usr/include/ ---"
-        ls -R /usr/include/ | grep -E "rocksdb|db.h" || true # List /usr/include, filter for rocksdb or db.h, ignore errors if not found
+        ls -R /usr/include/ | grep -E "rocksdb|db.h" || true
         echo "--- Listing contents of /usr/local/include/ ---"
         ls -R /usr/local/include/ | grep -E "rocksdb|db.h" || true
         echo "--- Listing contents of /usr/lib/ ---"
@@ -63,13 +61,12 @@ jobs:
         find /usr /opt -name "db.h" 2>/dev/null | grep "rocksdb" || true
         echo "--- Checking ldconfig for rocksdb libraries ---"
         sudo ldconfig -p | grep rocksdb || true
-      shell: bash # Ensure bash is used for grep/find commands
+      shell: bash
 
     - name: Install RocksDB (macOS)
       if: runner.os == 'macOS'
       run: |
         brew update
-        # Install RocksDB using Homebrew
         brew install rocksdb
 
     - name: Debug RocksDB Paths (macOS)
@@ -82,8 +79,6 @@ jobs:
         echo "--- Searching for db.h globally ---"
         find /usr/local /opt -name "db.h" 2>/dev/null | grep "rocksdb" || true
         echo "--- Checking dynamic libraries for rocksdb ---"
-        # On macOS, libraries are often .dylib, and `otool -L` is used for dependencies
-        # This is more for runtime, but helps confirm installation
         find /usr/local/lib -name "librocksdb*.dylib" || true
       shell: bash
 
@@ -104,22 +99,20 @@ jobs:
         echo "--- Listing contents of VCPKG_ROOT lib directory ---"
         dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\lib /s || true
         echo "--- Searching for rocksdb.h ---"
-        # Adjust path if needed based on VCPKG_ROOT
         Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
         echo "--- Searching for rocksdb.lib/dll ---"
         Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
-      shell: pwsh # Use PowerShell for Windows commands
+      shell: pwsh
 
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
         # --- BEGIN MODIFIED SECTION ---
+        # Install RocksDB inside the manylinux container before the build
+        CIBW_BEFORE_BUILD_LINUX: "yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev"
         # Explicitly set CFLAGS and LDFLAGS for cibuildwheel to pass directly to the compiler.
-        # This gives us precise control over include and library paths.
-        # The -I/usr/include/ is correct because rocksdb/db.h is found under /usr/include/rocksdb/
-        # The -L/usr/lib/ is correct because librocksdb.so is found directly under /usr/lib/
         CIBW_CFLAGS_LINUX: "-I/usr/include/"
-        CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb" # -lrocksdb for linking the library
+        CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb"
 
         # macOS specific flags (assuming brew installs to /usr/local)
         CIBW_CFLAGS_MACOS: "-I/usr/local/include/"
@@ -127,7 +120,7 @@ jobs:
 
         # Windows specific flags (adjust based on vcpkg output)
         CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
-        CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb" # Use rocksdb.lib
+        CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
         # --- END MODIFIED SECTION ---
 
         # Other cibuildwheel environment variables (if needed for other purposes)
