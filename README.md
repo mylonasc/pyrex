@@ -19,7 +19,7 @@ After saving the files, follow these steps to build and use your Python wrapper:
 
 * RocksDB C++ Library Installed (headers and libraries accessible). (in Ubuntu `sudo apt-get install librocksdb` may suffice)
 * C++11 compatible compiler (e.g., g++ or clang++).
-* Python 3.7+ and its development headers. 
+* Python 3.7+ and its development headers.   
 
 * Python pybind11 package: `pip install pybind11`
 
