@@ -1,21 +1,52 @@
 # pyproject.toml
 [build-system]
-requires = ["setuptools>=61.0", "pybind11>=2.6.0"]
+requires = ["setuptools>=61.0", "wheel", "pybind11[global]>=2.10"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyrex-wrapper"
+name = "pyrex-rocksdb"
 version = "0.1.0"
-description = "A simple Python wrapper for RocksDB using pybind11"
 authors = [
   { name="Charilaos Mylonas", email="mylonas.charilaos@gmail.com" },
 ]
+description = "A fast RocksDB wrapper for Python using pybind11."
 readme = "README.md"
-requires-python = ">=3.7"
-dependencies = [
-    "pybind11>=2.6.0",
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+keywords = ["rocksdb", "database", "key-value", "pybind11"]
+
+# Remove 'classifiers' from the dynamic list because you are providing it statically below.
+# dynamic = ["classifiers"] # <-- REMOVE THIS LINE IF YOU PROVIDE CLASSIFIERS STATICALY
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Apache-2.0",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/mylonasc/pyrex" # Replace with your repo
-"Bug Tracker" = "https://github.com/mylonasc/pyrex/issues" # Replace with your repo
+Homepage = "https://github.com/mylonasc/pyrex"
+Repository = "https://github.com/mylonasc/pyrex"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "cibuildwheel",
+    "twine"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pyrex*"]
