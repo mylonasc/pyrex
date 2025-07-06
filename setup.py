@@ -18,7 +18,7 @@ class get_pybind_include(object):
 ext_modules = [
     Extension(
         'pyrex', # Name of the Python module that will be imported (e.g., `import pyrocksdb`)
-        ['rocksdb_wrapper.cpp'], # List of C++ source files
+        ['pyrex/rocksdb_wrapper.cpp'], # List of C++ source files
         # IMPORTANT: These paths and libraries depend on your RocksDB installation!
         # You might need to adjust them.
         # Common include paths for RocksDB
@@ -56,13 +56,14 @@ setup(
     author='Charilaos Mylonas',
     author_email='mylonas.charilaos@gmail.com',
     description='A simple Python wrapper for RocksDB using pybind11',
-    long_description='',
+    long_description=open('README.md').read(),
     ext_modules=ext_modules,
     # Use pybind11's custom build_ext command to ensure correct compilation flags
     cmdclass={'build_ext': build_ext},
     zip_safe=False, # Important for C++ extensions
     install_requires=['pybind11>=2.6.0'], # Specify pybind11 as a dependency
     python_requires='>=3.7',
+    packages=setuptools.find_packages(), # Automatically find packages (now will find 'pyrex')
 )
 
 
