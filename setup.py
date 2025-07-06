@@ -42,7 +42,7 @@ ext_modules = [
             # e.g., 'snappy', 'bz2', 'z', 'lz4', 'zstd'
         ],
         # Compiler arguments
-        extra_compile_args=['-std=c++11', '-fPIC'], # -fPIC is crucial for shared libraries
+        extra_compile_args=['-std=c++14', '-fPIC'], # -fPIC is crucial for shared libraries
         # Linker arguments
         extra_link_args=[],
         language='c++',
