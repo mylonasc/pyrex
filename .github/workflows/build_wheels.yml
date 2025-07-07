@@ -19,7 +19,7 @@ jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45 # Set a higher timeout for the job (e.g., 45 minutes)
+    timeout-minutes: 120 # Set a higher timeout for the job (e.g., 45 minutes)
     strategy:
       # Define a matrix to build on different OS
       matrix:
