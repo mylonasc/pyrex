@@ -1,46 +1,62 @@
-# .github/workflows/build_wheels.yml
-
 name: Build Python Wheels
 
 on:
   push:
     branches:
-      - main  # Trigger on pushes to the 'main' branch
-      - develop # Optional: Trigger on pushes to a 'develop' branch
+      - main
+      - develop
   pull_request:
     branches:
       - main
       - develop
-  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+  workflow_dispatch:
 
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45 # Set a higher timeout for the job (e.g., 45 minutes)
+    timeout-minutes: 90 # Increased timeout to ensure the *initial* long build finishes
     strategy:
-      # Define a matrix to build on different OS
       matrix:
-        os: [ubuntu-latest] #, macos-latest, windows-latest]
-        # cibuildwheel will manage the specific Python versions (e.g., cp38, cp39, etc.)
-        # within each OS environment, so we don't need to list them explicitly here.
-
+        os: [ubuntu-latest, macos-latest, windows-latest] # Uncomment these when ready
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # Fetch all history for setuptools_scm if you use it for dynamic versioning
         fetch-depth: 0
+
+    # --- Start Vcpkg Caching ---
+    # Cache the vcpkg tool itself (cloned repository)
+    - name: Cache vcpkg tool
+      id: cache-vcpkg-tool
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg
+        key: ${{ runner.os }}-vcpkg-tool-${{ hashFiles('vcpkg/.git/HEAD') }} # Key changes if vcpkg repo updates
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-tool-
+
+    # Cache vcpkg's installed binary packages (pre-built RocksDB)
+    - name: Cache vcpkg installed packages
+      id: cache-vcpkg-installed
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg/installed
+        key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg/vcpkg.exe') }}-${{ hashFiles('vcpkg/ports/rocksdb/portfile.cmake') }} # Key for installed packages
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-installed-
+    # --- End Vcpkg Caching ---
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.x' # cibuildwheel handles specific Python versions
+        python-version: '3.x'
 
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install cibuildwheel # Install cibuildwheel
+        pip install cibuildwheel
 
     - name: Install RocksDB (macOS)
       if: runner.os == 'macOS'
@@ -72,20 +88,26 @@ jobs:
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
       run: |
-        git clone https://github.com/microsoft/vcpkg.git
+        # Only clone if vcpkg wasn't restored by cache
+        if (-not (Test-Path -Path ".\vcpkg")) {
+          git clone https://github.com/microsoft/vcpkg.git
+        }
+        # Bootstrap vcpkg
         .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        # Install rocksdb, leveraging the binary cache
         .\vcpkg\vcpkg.exe install rocksdb:x64-windows
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite" # This enables GitHub Actions Cache for Vcpkg binaries
 
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
       run: |
         echo "--- Listing contents of VCPKG_ROOT include directory ---"
-        dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb /s || true
+        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb" /s || true
         echo "--- Listing contents of VCPKG_ROOT lib directory ---"
-        dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\lib /s || true
-        echo "--- Searching for rocksdb.h ---"
+        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" /s || true
+        echo "--- Searching for db.h ---"
         Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
         echo "--- Searching for rocksdb.lib/dll ---"
         Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
@@ -94,17 +116,12 @@ jobs:
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
-        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64" # This will target all CPython versions for manylinux_x86_64
-        CIBW_SKIP: "*-musllinux_*" # Skips all Python versions and architectures for musllinux
+        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64"
+        CIBW_SKIP: "*-musllinux_*"
 
-
-        # Install RocksDB inside the manylinux container before the build
         CIBW_BEFORE_BUILD_LINUX: |
-          # Try yum install first (for CentOS/RHEL-based manylinux images)
           yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \
-          # Fallback to apt-get (for Debian/Ubuntu-based manylinux images, though less common)
           (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
-
           echo "--- Debugging inside manylinux container after RocksDB install (via rpm -ql) ---"
           echo "Files installed by rocksdb-devel:"
           rpm -ql rocksdb-devel || true
@@ -112,49 +129,20 @@ jobs:
           rpm -ql rocksdb || true
           echo "--- End rpm -ql output ---"
 
-          # Previous ls/find debugging commands (still useful for visual confirmation)
-          #echo "Contents of /usr/include/:"
-          #ls -F /usr/include/ || true
-          #echo "Contents of /usr/include/rocksdb/:"
-          #ls -F /usr/include/rocksdb/ || true
-          #echo "Contents of /usr/lib/:"
-          #ls -F /usr/lib/ | grep -E "rocksdb|librocksdb" || true
-          #echo "Contents of /usr/lib64/:"
-          #ls -F /usr/lib64/ | grep -E "rocksdb|librocksdb" || true
-          #echo "Searching for db.h:"
-          #find /usr/include -name "db.h" 2>/dev/null | grep "rocksdb" || true
-          #echo "Searching for librocksdb.so:"
-          #find /usr/lib /usr/lib64 -name "librocksdb.so*" 2>/dev/null || true
-        # Explicitly set CFLAGS and LDFLAGS for cibuildwheel to pass directly to the compiler.
-        # These will need to be adjusted based on the rpm -ql output from the next run.
         CIBW_CFLAGS_LINUX: "-I/usr/include/"
         CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb"
 
-        # macOS specific flags (using the dynamically determined Homebrew prefix)
         CIBW_CFLAGS_MACOS: "-I${{ steps.brew_prefix.outputs.BREW_PREFIX }}/include/"
         CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
 
-        # Windows specific flags (adjust based on vcpkg output)
+        # Corrected Windows specific flags: Ensure DLLs are on PATH for runtime linking if needed
         CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
         CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
-
-        # Other cibuildwheel environment variables (if needed for other purposes)
-        # CIBW_SKIP: "pp* cp36* cp37*"
-        # CIBW_ARCHS_WINDOWS: "AMD64"
+        # Add VCPKG_ROOT/installed/x64-windows/bin to PATH for runtime DLL discovery
+        PATH: "${{ env.PATH }};${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\bin"
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
       with:
         name: python-wheels
         path: ./wheelhouse/*.whl
-
-    # Optional: Add a step to publish to PyPI on release tags
-    # - name: Publish to PyPI
-    #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    #   run: |
-    #     pip install twine
-    #     twine upload --non-interactive --username __token__ --password ${{ secrets.PYPI_API_TOKEN }} wheelhouse/*.whl
-    #   env:
-    #     TWINE_USERNAME: __token__
-    #     TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-
