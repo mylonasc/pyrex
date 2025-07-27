@@ -59,6 +59,10 @@ jobs:
     - name: Configure NuGet for vcpkg (Windows)
       if: runner.os == 'Windows'
       run: |
+
+        Write-Host "OWNER variable for NuGet.Config: $env:OWNER" # Add this line
+        # Define the full path to the NuGet config directory
+        $NuGetConfigDir = Join-Path -Path $env:UserProfile -ChildPath ".nuget\NuGet"
         # Define the full path to the NuGet config directory
         $NuGetConfigDir = Join-Path -Path $env:UserProfile -ChildPath ".nuget\NuGet"
 
@@ -160,6 +164,8 @@ jobs:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
         # VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
         VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite" # Use the NuGet backend with the 'github' key
+        VCPKG_DEBUG: 1 # Add this line
+
 
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
