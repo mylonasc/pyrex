@@ -5,9 +5,9 @@ name: Build Python Wheels
 on:
   push:
     branches:
-      - main  # Trigger on pushes to the 'main' branch
+      - main
       - fix-windows-build
-      - develop # Optional: Trigger on pushes to a 'develop' branch
+      - develop
   pull_request:
     branches:
       - main
@@ -21,23 +21,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120 # Set a higher timeout for the job (e.g., 45 minutes)
     permissions:
-      contents: read  # Often default, but good to explicitly state
+      contents: read
       packages: write # <-- THIS IS CRUCIAL FOR PUSHING TO GITHUB PACKAGES
     strategy:
-      # Define a matrix to build on different OS
       matrix:
         os: [windows-latest] #, macos-latest, windows-latest]
-        # cibuildwheel will manage the specific Python versions (e.g., cp38, cp39, etc.)
-        # within each OS environment, so we don't need to list them explicitly here.
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-    # -------------------------
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # Fetch all history for setuptools_scm if you use it for dynamic versioning
         fetch-depth: 0
 
     - name: Set up Python
@@ -56,72 +51,9 @@ jobs:
         brew update
         brew install rocksdb
 
-    - name: Configure NuGet for vcpkg (Windows)
-      if: runner.os == 'Windows'
-      run: |
-
-        Write-Host "OWNER variable for NuGet.Config: $env:OWNER" # Add this line
-        # Define the full path to the NuGet config directory
-        $NuGetConfigDir = Join-Path -Path $env:UserProfile -ChildPath ".nuget\NuGet"
-        # Define the full path to the NuGet config directory
-        $NuGetConfigDir = Join-Path -Path $env:UserProfile -ChildPath ".nuget\NuGet"
-
-        # Ensure the directory exists. -Force will create it if it doesn't,
-        # and do nothing if it already exists, without error.
-        New-Item -ItemType Directory -Path $NuGetConfigDir -Force
-
-        # Create a NuGet.Config file to point vcpkg to GitHub Packages
-        # The env:OWNER variable will be replaced by PowerShell in the here-string
-        $content = @"
-        <?xml version="1.0" encoding="utf-8"?>
-        <configuration>
-            <packageSources>
-                <clear />
-                <add key="github" value="https://nuget.pkg.github.com/$env:OWNER/index.json" />
-            </packageSources>
-            <packageSourceCredentials>
-                <github>
-                    <add key="Username" value="$env:OWNER" />
-                    <add key="ClearTextPassword" value="${{ github.token }}" />
-                </github>
-            </packageSourceCredentials>
-        </configuration>
-        "@
-        Set-Content -Path (Join-Path -Path $NuGetConfigDir -ChildPath "NuGet.Config") -Value $content
-      shell: pwsh
-      env:
-        OWNER: ${{ github.repository_owner }}
-
-
-    - name: Verify NuGet.Config setup (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        $NuGetConfigFile = Join-Path -Path $env:UserProfile -ChildPath ".nuget\NuGet\NuGet.Config"
-        $ExpectedPackageSourceUrl = "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-
-        Write-Host "Verifying NuGet.Config at: $NuGetConfigFile"
-
-        if (-not (Test-Path $NuGetConfigFile)) {
-            Write-Error "Error: NuGet.Config file not found at $NuGetConfigFile"
-            exit 1
-        }
-
-        $ConfigFileContent = Get-Content -Path $NuGetConfigFile -Raw
-
-        if ($ConfigFileContent -match [regex]::Escape($ExpectedPackageSourceUrl)) {
-            Write-Host "Success: NuGet.Config exists and contains the expected GitHub Packages source."
-            Write-Host "Content of NuGet.Config:"
-            $ConfigFileContent
-        } else {
-            Write-Error "Error: NuGet.Config found but does not contain the expected GitHub Packages source URL."
-            Write-Error "Expected URL fragment: $ExpectedPackageSourceUrl"
-            Write-Error "Actual content:"
-            $ConfigFileContent
-            exit 1
-        }
-      shell: pwsh
-      env:
-        OWNER: ${{ github.repository_owner }} # Ensure OWNER is available for the verification step as well
+    # This "Configure NuGet for vcpkg (Windows)" step is now integrated
+    # into the "Install RocksDB (Windows via vcpkg)" step below.
+    # The previous logic in this step was flawed as it didn't use vcpkg's internal nuget.exe.
 
     - name: Get Homebrew prefix (macOS)
       if: runner.os == 'macOS'
@@ -144,7 +76,6 @@ jobs:
         find "$BREW_PREFIX/lib" -name "librocksdb*.dylib" || true
       shell: bash
 
-
     - name: Export GitHub Actions cache environment variables (for Windows)
       uses: actions/github-script@v7 # Use a recent version
       if: runner.os == 'Windows' # Only needed for Windows, or where vcpkg is used
@@ -156,16 +87,112 @@ jobs:
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
       run: |
-        git clone https://github.com/microsoft/vcpkg.git
-        .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-        .\vcpkg\vcpkg.exe install rocksdb:x64-windows --debug
-        echo ${{ env.VCPKG_ROOT }}
+        # 1. Bootstrap vcpkg
+        git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_ROOT }}"
+        cmd /c "`"${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat`" -disableMetrics"
+        
+        # 2. Get the path to the nuget.exe that vcpkg uses internally.
+        # This command outputs the path directly to stdout.
+        $NuGetExePath = & "${{ env.VCPKG_ROOT }}\vcpkg.exe" fetch nuget
+        # Trim any whitespace, newlines, or quotation marks from the output.
+        $NuGetExePath = $NuGetExePath.Trim()
+        $NuGetExePath = $NuGetExePath.Trim('"')
+
+        # Verify that the nuget.exe path was successfully retrieved.
+        if (-not (Test-Path $NuGetExePath)) {
+            Write-Error "Error: Vcpkg's nuget.exe not found at $NuGetExePath. Fetch command might have failed."
+            exit 1
+        }
+        Write-Host "Vcpkg's nuget.exe path: $NuGetExePath"
+
+        # 3. Define variables for NuGet feed configuration.
+        $Owner = "${{ github.repository_owner }}"
+        $FeedUrl = "https://nuget.pkg.github.com/$Owner/index.json"
+        $Username = "$Owner"
+        $Password = "${{ github.token }}"
+
+        # 4. Add the 'github' source using vcpkg's nuget.exe.
+        # This command modifies the default NuGet.Config for this user/environment,
+        # which vcpkg's internal nuget.exe is likely to use.
+        & "$NuGetExePath" sources add `
+            -Name github `
+            -Source "$FeedUrl" `
+            -UserName "$Username" `
+            -Password "$Password" `
+            -ProtocolVersion 3 `
+            -StorePasswordInClearText # Required for the GitHub token to work as a password.
+
+        # 5. Determine the standard NuGet.Config location and add package source mapping.
+        # This is typically %APPDATA%\NuGet\NuGet.Config on Windows.
+        $NuGetConfigDir = Join-Path -Path $env:APPDATA -ChildPath "NuGet"
+        $NuGetConfigFile = Join-Path -Path $NuGetConfigDir -ChildPath "NuGet.Config"
+
+        # Ensure the directory exists (it should after `sources add`).
+        New-Item -ItemType Directory -Path $NuGetConfigDir -Force | Out-Null
+
+        Write-Host "Modifying NuGet.Config at: $NuGetConfigFile"
+
+        # Read the existing NuGet.Config file as XML.
+        # Using UTF8 encoding for robustness with XML.
+        [xml]$config = Get-Content -Path $NuGetConfigFile -Encoding UTF8
+
+        # Get or create the <packageSourceMapping> node.
+        $packageSourceMapping = $config.configuration.packageSourceMapping
+        if (-not $packageSourceMapping) {
+            $packageSourceMapping = $config.configuration.AppendChild($config.CreateElement("packageSourceMapping"))
+        }
+
+        # Get or create the <packageSource key="github"> node.
+        $githubSourceMapping = $packageSourceMapping.SelectSingleNode("packageSource[@key='github']")
+        if (-not $githubSourceMapping) {
+            $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
+            $githubSourceMapping.SetAttribute("key", "github")
+        }
+
+        # Clear any existing patterns under the 'github' source mapping
+        # to ensure only our desired patterns are present and prevent duplicates.
+        $githubSourceMapping.RemoveAll()
+        $githubSourceMapping.SetAttribute("key", "github") # Re-add the key attribute after clearing.
+
+        # Define the package patterns. These must match the beginning of the actual NuGet package IDs vcpkg uses.
+        # For RocksDB, common dependencies include zlib, lz4, snappy.
+        # You might need to adjust these based on what vcpkg actually produces as package IDs.
+        $patterns = @(
+            "rocksdb_x64-windows",
+            "zlib_x64-windows",
+            "lz4_x64-windows",
+            "snappy_x64-windows",
+            "vcpkg-cmake_x64-windows",       # Often needed by vcpkg itself
+            "vcpkg-cmake-config_x64-windows" # Often needed by vcpkg itself
+        )
+
+        # Add each pattern as a <package> element to the 'github' source mapping.
+        foreach ($pattern in $patterns) {
+            $packageNode = $githubSourceMapping.AppendChild($config.CreateElement("package"))
+            $packageNode.SetAttribute("pattern", $pattern)
+        }
+
+        # Save the modified XML back to the NuGet.Config file.
+        $config.Save($NuGetConfigFile)
+
+        # --- DEBUG STEP: Print the raw content of the modified NuGet.Config ---
+        Write-Host "--- Raw content of NuGet.Config (after vcpkg's nuget.exe config) ---"
+        Get-Content -Path $NuGetConfigFile -Raw
+        Write-Host "----------------------------------"
+
+        # --- DEBUG STEP: Verify registered NuGet sources using vcpkg's nuget.exe ---
+        Write-Host "--- Verifying sources with vcpkg's nuget.exe ---"
+        & "$NuGetExePath" sources list -ConfigFile "$NuGetConfigFile" -Verbosity detailed -ForceEnglishOutput
+        Write-Host "------------------------------------------------"
+
+        # 6. Install RocksDB using vcpkg, which will now use the configured NuGet cache.
+        & "${{ env.VCPKG_ROOT }}\vcpkg.exe" install rocksdb:x64-windows --debug
+        echo "VCPKG_ROOT: ${{ env.VCPKG_ROOT }}" # Confirm VCPKG_ROOT is set correctly
+      shell: pwsh
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-        # VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite" # Use the NuGet backend with the 'github' key
-        VCPKG_DEBUG: 1 # Add this line
-
+        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite" # This is crucial for vcpkg to use your cache
+        VCPKG_DEBUG: 1 # Add this line for verbose output from vcpkg
 
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
@@ -174,12 +201,10 @@ jobs:
         echo "Current VCPKG_ROOT value: ${{ env.VCPKG_ROOT }}" # This should now be correct
         echo "--- Listing contents of VCPKG_ROOT include directory ---"
         $RocksDBIncludePath = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\include\rocksdb"
-        # CORRECTED LINE: Use Get-ChildItem -Recurse -ErrorAction SilentlyContinue
         Get-ChildItem -Path $RocksDBIncludePath -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
 
         echo "--- Listing contents of VCPKG_ROOT lib directory ---"
         $RocksDBLibPath = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\lib"
-        # CORRECTED LINE: Use Get-ChildItem -Recurse -ErrorAction SilentlyContinue
         Get-ChildItem -Path $RocksDBLibPath -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
 
         echo "--- Searching for rocksdb.h ---"
@@ -196,15 +221,11 @@ jobs:
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
-        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64" # This will target all CPython versions for manylinux_x86_64
-        CIBW_SKIP: "*-musllinux_*" # Skips all Python versions and architectures for musllinux
+        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64"
+        CIBW_SKIP: "*-musllinux_*"
 
-
-        # Install RocksDB inside the manylinux container before the build
         CIBW_BEFORE_BUILD_LINUX: |
-          # Try yum install first (for CentOS/RHEL-based manylinux images)
           yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \
-          # Fallback to apt-get (for Debian/Ubuntu-based manylinux images, though less common)
           (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
 
           echo "--- Debugging inside manylinux container after RocksDB install (via rpm -ql) ---"
@@ -214,37 +235,18 @@ jobs:
           rpm -ql rocksdb || true
           echo "--- End rpm -ql output ---"
 
-        # Explicitly set CFLAGS and LDFLAGS for cibuildwheel to pass directly to the compiler.
-        # These will need to be adjusted based on the rpm -ql output from the next run.
         CIBW_CFLAGS_LINUX: "-I/usr/include/"
         CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb"
 
-        # macOS specific flags (using the dynamically determined Homebrew prefix)
         CIBW_CFLAGS_MACOS: "-I${{ steps.brew_prefix.outputs.BREW_PREFIX }}/include/"
         CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
 
-        # Windows specific flags (adjust based on vcpkg output)
         CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
         CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
         CIBW_ARCHS_WINDOWS: "AMD64"
-
-        # Other cibuildwheel environment variables (if needed for other purposes)
-        # CIBW_SKIP: "pp* cp36* cp37*"
-        # CIBW_ARCHS_WINDOWS: "AMD64"
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
       with:
         name: python-wheels
         path: ./wheelhouse/*.whl
-
-    # Optional: Add a step to publish to PyPI on release tags
-    # - name: Publish to PyPI
-    #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    #   run: |
-    #     pip install twine
-    #     twine upload --non-interactive --username __token__ --password ${{ secrets.PYPI_API_TOKEN }} wheelhouse/*.whl
-    #   env:
-    #     TWINE_USERNAME: __token__
-    #     TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-
