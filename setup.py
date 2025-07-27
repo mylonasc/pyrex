@@ -52,7 +52,10 @@ class build_ext(_build_ext):
             ext.include_dirs.extend(ROCKSDB_INCLUDE_DIRS)
             ext.library_dirs.extend(ROCKSDB_LIBRARY_DIRS)
             ext.libraries.extend(ROCKSDB_LIBRARIES)
-            ext.extra_compile_args = ['-std=c++17'] # Ensure C++17 or later for modern C++ features
+            if sys.platform.startswith('win'):
+                ext.extra_compile_args = ['/std:c++17']
+            else:
+                ext.extra_compile_args = ['-std=c++17'] # Ensure C++17 or later for modern C++ features
 
         _build_ext.build_extensions(self)
 
