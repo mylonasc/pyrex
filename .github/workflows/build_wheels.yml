@@ -226,6 +226,7 @@ jobs:
         # Windows specific flags (adjust based on vcpkg output)
         CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
         CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
+        CIBW_ARCHS_WINDOWS: "AMD64"
 
         # Other cibuildwheel environment variables (if needed for other purposes)
         # CIBW_SKIP: "pp* cp36* cp37*"
