@@ -20,6 +20,9 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120 # Set a higher timeout for the job (e.g., 45 minutes)
+    permissions:
+      contents: read  # Often default, but good to explicitly state
+      packages: write # <-- THIS IS CRUCIAL FOR PUSHING TO GITHUB PACKAGES
     strategy:
       # Define a matrix to build on different OS
       matrix:
@@ -160,26 +163,26 @@ jobs:
 
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
+      continue-on-error: true
       run: |
+        echo "Current VCPKG_ROOT value: ${{ env.VCPKG_ROOT }}" # This should now be correct
         echo "--- Listing contents of VCPKG_ROOT include directory ---"
-        # CORRECTED: Use Join-Path for robust path construction
         $RocksDBIncludePath = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\include\rocksdb"
-        dir $RocksDBIncludePath /s || true
+        # CORRECTED LINE: Use Get-ChildItem -Recurse -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $RocksDBIncludePath -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
 
         echo "--- Listing contents of VCPKG_ROOT lib directory ---"
-        # CORRECTED: Use Join-Path for robust path construction
         $RocksDBLibPath = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\lib"
-        dir $RocksDBLibPath /s || true
+        # CORRECTED LINE: Use Get-ChildItem -Recurse -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $RocksDBLibPath -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
 
         echo "--- Searching for rocksdb.h ---"
-        # These Get-ChildItem -Path commands already use -Path correctly,
-        # so they might have been fine, but ensuring full path is good.
         $RocksDBHeadersRoot = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\include"
-        Get-ChildItem -Path $RocksDBHeadersRoot -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+        Get-ChildItem -Path $RocksDBHeadersRoot -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
 
         echo "--- Searching for rocksdb.lib/dll ---"
         $RocksDBLibsRoot = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\lib"
-        Get-ChildItem -Path $RocksDBLibsRoot -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+        Get-ChildItem -Path $RocksDBLibsRoot -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       shell: pwsh
