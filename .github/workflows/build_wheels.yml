@@ -50,6 +50,33 @@ jobs:
         brew update
         brew install rocksdb
 
+
+    - name: Configure NuGet for vcpkg (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        # Create a NuGet.Config file to point vcpkg to GitHub Packages
+        # The env:OWNER variable will be replaced by PowerShell in the here-string
+        $content = @"
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+            <packageSources>
+                <clear />
+                <add key="github" value="https://nuget.pkg.github.com/$env:OWNER/index.json" />
+            </packageSources>
+            <packageSourceCredentials>
+                <github>
+                    <add key="Username" value="$env:OWNER" />
+                    <add key="ClearTextPassword" value="${{ github.token }}" />
+                </github>
+            </packageSourceCredentials>
+        </configuration>
+        "@
+        Set-Content -Path $env:UserProfile\.nuget\NuGet\NuGet.Config -Value $content
+      shell: pwsh
+      env:
+        OWNER: ${{ github.repository_owner }} # Automatically get your username/org
+
+
     - name: Get Homebrew prefix (macOS)
       if: runner.os == 'macOS'
       id: brew_prefix
@@ -89,7 +116,8 @@ jobs:
         echo ${{ env.VCPKG_ROOT }}
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-        VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        # VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        VCPKG_BINARY_SOURCES: "clear;nuget,github" # Use the NuGet backend with the 'github' key
 
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
@@ -114,7 +142,7 @@ jobs:
         $RocksDBLibsRoot = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\lib"
         Get-ChildItem -Path $RocksDBLibsRoot -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
       shell: pwsh
-      
+
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
