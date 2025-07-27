@@ -156,7 +156,7 @@ jobs:
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
         # VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-        VCPKG_BINARY_SOURCES: "clear;nuget,github" # Use the NuGet backend with the 'github' key
+        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite" # Use the NuGet backend with the 'github' key
 
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
