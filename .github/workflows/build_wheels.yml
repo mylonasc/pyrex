@@ -158,7 +158,7 @@ jobs:
       run: |
         git clone https://github.com/microsoft/vcpkg.git
         .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-        .\vcpkg\vcpkg.exe install rocksdb:x64-windows
+        .\vcpkg\vcpkg.exe install rocksdb:x64-windows --debug
         echo ${{ env.VCPKG_ROOT }}
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
