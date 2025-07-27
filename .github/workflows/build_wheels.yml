@@ -50,10 +50,16 @@ jobs:
         brew update
         brew install rocksdb
 
-
     - name: Configure NuGet for vcpkg (Windows)
       if: runner.os == 'Windows'
       run: |
+        # Define the full path to the NuGet config directory
+        $NuGetConfigDir = Join-Path -Path $env:UserProfile -ChildPath ".nuget\NuGet"
+
+        # Ensure the directory exists. -Force will create it if it doesn't,
+        # and do nothing if it already exists, without error.
+        New-Item -ItemType Directory -Path $NuGetConfigDir -Force
+
         # Create a NuGet.Config file to point vcpkg to GitHub Packages
         # The env:OWNER variable will be replaced by PowerShell in the here-string
         $content = @"
@@ -71,11 +77,10 @@ jobs:
             </packageSourceCredentials>
         </configuration>
         "@
-        Set-Content -Path $env:UserProfile\.nuget\NuGet\NuGet.Config -Value $content
+        Set-Content -Path (Join-Path -Path $NuGetConfigDir -ChildPath "NuGet.Config") -Value $content
       shell: pwsh
       env:
-        OWNER: ${{ github.repository_owner }} # Automatically get your username/org
-
+        OWNER: ${{ github.repository_owner }}
 
     - name: Get Homebrew prefix (macOS)
       if: runner.os == 'macOS'
