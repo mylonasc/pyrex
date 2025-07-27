@@ -71,6 +71,27 @@ jobs:
         find "$BREW_PREFIX/lib" -name "librocksdb*.dylib" || true
       shell: bash
 
+    - name: Debug RocksDB Paths (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        echo "--- Listing contents of VCPKG_ROOT include directory ---"
+        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb" /s || true
+        echo "--- Listing contents of VCPKG_ROOT lib directory ---"
+        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" /s || true
+        echo "--- Searching for rocksdb.h ---"
+        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+        echo "--- Searching for rocksdb.lib/dll ---"
+        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+      shell: pwsh
+
+    - name: Export GitHub Actions cache environment variables (for Windows)
+      uses: actions/github-script@v7 # Use a recent version
+      if: runner.os == 'Windows' # Only needed for Windows, or where vcpkg is used
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
       run: |
@@ -79,19 +100,8 @@ jobs:
         .\vcpkg\vcpkg.exe install rocksdb:x64-windows
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
-    - name: Debug RocksDB Paths (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        echo "--- Listing contents of VCPKG_ROOT include directory ---"
-        dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb /s || true
-        echo "--- Listing contents of VCPKG_ROOT lib directory ---"
-        dir ${{ env.VCPKG_ROOT }}\installed\x64-windows\lib /s || true
-        echo "--- Searching for rocksdb.h ---"
-        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
-        echo "--- Searching for rocksdb.lib/dll ---"
-        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
-      shell: pwsh
 
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
