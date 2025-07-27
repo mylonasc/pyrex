@@ -95,15 +95,24 @@ jobs:
       if: runner.os == 'Windows'
       run: |
         echo "--- Listing contents of VCPKG_ROOT include directory ---"
-        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb" /s || true
+        # CORRECTED: Use Join-Path for robust path construction
+        $RocksDBIncludePath = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\include\rocksdb"
+        dir $RocksDBIncludePath /s || true
+
         echo "--- Listing contents of VCPKG_ROOT lib directory ---"
-        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" /s || true
+        # CORRECTED: Use Join-Path for robust path construction
+        $RocksDBLibPath = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\lib"
+        dir $RocksDBLibPath /s || true
+
         echo "--- Searching for rocksdb.h ---"
-        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+        # These Get-ChildItem -Path commands already use -Path correctly,
+        # so they might have been fine, but ensuring full path is good.
+        $RocksDBHeadersRoot = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\include"
+        Get-ChildItem -Path $RocksDBHeadersRoot -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+
         echo "--- Searching for rocksdb.lib/dll ---"
-        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
-      env:
-        VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        $RocksDBLibsRoot = Join-Path -Path "${{ env.VCPKG_ROOT }}" -ChildPath "installed\x64-windows\lib"
+        Get-ChildItem -Path $RocksDBLibsRoot -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
       shell: pwsh
       
     - name: Build wheels
