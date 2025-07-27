@@ -82,6 +82,8 @@ jobs:
         Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
         echo "--- Searching for rocksdb.lib/dll ---"
         Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
+      env:
+        VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       shell: pwsh
 
     - name: Export GitHub Actions cache environment variables (for Windows)
@@ -98,6 +100,7 @@ jobs:
         git clone https://github.com/microsoft/vcpkg.git
         .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
         .\vcpkg\vcpkg.exe install rocksdb:x64-windows
+        echo ${{ env.VCPKG_ROOT }}
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
         VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
