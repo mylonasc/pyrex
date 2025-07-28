@@ -190,71 +190,9 @@ jobs:
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
       env:
-        # Linux specific configurations
-        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64"
-        # CIBW_SKIP: "*-musllinux_*"
-        CIBW_BEFORE_BUILD_LINUX: |
-          yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \
-          (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
-          echo "--- Debugging inside manylinux container after RocksDB install (via rpm -ql) ---"
-          echo "Files installed by rocksdb-devel:"
-          rpm -ql rocksdb-devel || true
-          echo "Files installed by rocksdb (main library):"
-          rpm -ql rocksdb || true
-          echo "--- End rpm -ql output ---"
-        CIBW_CFLAGS_LINUX: "-I/usr/include/"
-        CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb"
-
-        # macOS specific configurations
+        # macOS specific configurations (BREW_PREFIX comes from the previous step output)
         CIBW_CFLAGS_MACOS: "-I${{ steps.brew_prefix.outputs.BREW_PREFIX }}/include/"
         CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
-
-        # Windows specific configurations
-        # Only target CPython 3.9
-        CIBW_BUILD_WINDOWS: "cp39-win_amd64" # Ensure this is the ONLY target for Windows
-        CIBW_ARCHS_WINDOWS: "AMD64"
-        CIBW_FORCE_INSTALL: "1"
-        CIBW_DEBUG: "1"
-        CIBW_PRERELEASE_PYTHONS: "True"
-        CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/" 
-
-
-        # --- CRUCIAL FIX FOR ROCKSDB INCLUDE/LIB PATHS ON WINDOWS ---
-        # This script runs before the wheel build and sets environment variables
-        # that the MSVC compiler (cl.exe) and linker (link.exe) will use.
-
-        CIBW_BEFORE_BUILD_WINDOWS_COMMAND: "pwsh -Command \"& { " # Start PowerShell command with '& { '
-
-        # The actual PowerShell script content (must be valid PowerShell)
-        CIBW_BEFORE_BUILD_WINDOWS: |
-          $VCPKG_ROOT_WIN = "${{ github.workspace }}\vcpkg"
-          $ROCKSDB_INCLUDE_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\include"
-          $ROCKSDB_LIB_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\lib"
-
-          Write-Host "Setting INCLUDE environment variable to include: $ROCKSDB_INCLUDE_PATH"
-          Write-Host "Setting LIB environment variable to include: $ROCKSDB_LIB_PATH"
-
-          # Append to existing INCLUDE and LIB environment variables.
-          # This is the most reliable way to pass paths to MSVC.
-          # 'Process' scope makes it available to child processes (the build).
-          [System.Environment]::SetEnvironmentVariable('INCLUDE', "$ROCKSDB_INCLUDE_PATH;" + $env:INCLUDE, 'Process')
-          [System.Environment]::SetEnvironmentVariable('LIB', "$ROCKSDB_LIB_PATH;" + $env:LIB, 'Process')
-
-          # Also set CFLAGS and LDFLAGS for setuptools/distutils which might pick these up
-          # Using quoted paths for robustness against spaces in paths
-          $env:CFLAGS = "-I`"$ROCKSDB_INCLUDE_PATH`""
-          $env:LDFLAGS = "-L`"$ROCKSDB_LIB_PATH`" -lrocksdb"
-
-          Write-Host "Current INCLUDE environment variable: $env:INCLUDE"
-          Write-Host "Current LIB environment variable: $env:LIB"
-          Write-Host "Current CFLAGS environment variable: $env:CFLAGS"
-          Write-Host "Current LDFLAGS environment variable: $env:LDFLAGS"
-        # IMPORTANT: Add a closing ' } "' for the CIBW_BEFORE_BUILD_WINDOWS_COMMAND string.
-        # This will be appended to the 'pwsh -Command "& { ' part by cibuildwheel internally.
-        CIBW_AFTER_BUILD_WINDOWS: ' } "' # This is a trick to close the PowerShell command block.
-                                         # cibuildwheel stitches CIBW_BEFORE_BUILD_WINDOWS_COMMAND + CIBW_BEFORE_BUILD_WINDOWS + CIBW_AFTER_BUILD_WINDOWS together.
-
-
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
