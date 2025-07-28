@@ -1,3 +1,5 @@
+[![Build Status](https://github.com/mylonasc/pyrex/actions/workflows/build_wheels.yml/badge.svg)](https://github.com/mylonasc/pyrex/actions/workflows/build_wheels.yml)
+
 # pyrex
 a python rocksdb wrapper
 
