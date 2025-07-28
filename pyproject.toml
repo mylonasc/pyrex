@@ -72,15 +72,22 @@ environment = "CFLAGS='-I/usr/include/' LDFLAGS='-L/usr/lib/ -lrocksdb'"
 [tool.cibuildwheel.macos]
 # Note: BREW_PREFIX is an environment variable set by the GitHub Actions workflow.
 # We will use setup-args to directly pass include and library directories to setuptools.
-environment = "CFLAGS='-I${BREW_PREFIX}/include/' LDFLAGS='-L${BREW_PREFIX}/lib/ -lrocksdb'"
+# environment = "CFLAGS='-I${BREW_PREFIX}/include/' LDFLAGS='-L${BREW_PREFIX}/lib/ -lrocksdb'"
+before-build = """
+  echo "Setting CFLAGS and LDFLAGS explicitly in before-build hook..."
+  echo "-- brew prefix: ${BREW_PREFIX}"
+  export CFLAGS="-I${BREW_PREFIX}/include/"
+  export LDFLAGS="-L${BREW_PREFIX}/lib/ -lrocksdb"
+  echo "CFLAGS set: $CFLAGS"
+  echo "LDFLAGS set: $LDFLAGS"
+  # You might also try:
+  # export CXXFLAGS="$CFLAGS" # Sometimes CXXFLAGS is used for C++
+"""
 
 
 # Windows specific configurations
 [tool.cibuildwheel.windows]
-# Only 'build' and 'archs' remain here as they are truly Windows-specific build targets.
 build = "cp39-win_amd64"
 archs = ["AMD64"]
-
-# environment = "CFLAGS='-ID:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include' LDFLAGS='-LD:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib -lrocksdb -lshlwapi -lrpcrt4 -lzlib -lsnappy -llz4'"
 environment = { INCLUDE = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include;${INCLUDE}", LIB = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib;${LIB}" }
 
