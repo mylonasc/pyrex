@@ -34,7 +34,7 @@ jobs:
     # This job depends on the 'build_wheels' job from your other workflow
     # (e.g., build-wheels.yml) completing successfully.
     # It ensures that the artifacts (wheels) are available for download.
-    needs: build_wheels # Replace 'build_wheels' with the actual job ID of your build job if different
+    # needs: build_wheels # Replace 'build_wheels' with the actual job ID of your build job if different
 
     # The publishing step typically runs on a single Ubuntu runner.
     runs-on: ubuntu-latest
