@@ -24,8 +24,8 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        # Build on all three platforms
         os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false # <--- ADD THIS LINE: Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
@@ -56,7 +56,6 @@ jobs:
 
     - name: Get Homebrew prefix (macOS)
       if: runner.os == 'macOS'
-      id: brew_prefix
       # Set BREW_PREFIX as an environment variable that cibuildwheel will pick up
       run: echo "BREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
       shell: bash
@@ -185,8 +184,6 @@ jobs:
     # --- Build Wheels Step ---
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
-      # All CIBW_* environment variables should now be managed by pyproject.toml
-      # except for the BREW_PREFIX which is set dynamically in the workflow.
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
