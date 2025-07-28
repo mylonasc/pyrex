@@ -36,7 +36,7 @@ jobs:
       CIBW_DEBUG: "1"
       CIBW_PRERELEASE_PYTHONS: "True"
       # This one was specifically for Windows, so we can keep it targeted if desired
-      CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/"
+      CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/" # Note: This might interfere with cibuildwheel's NuGet logic, monitor if removing it helps after this test.
 
     steps:
     - name: Checkout code
@@ -54,6 +54,20 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install cibuildwheel
+
+    # --- NEW DIAGNOSTIC STEP FOR WINDOWS ---
+    - name: Diagnose NuGet Python Packages (Windows Only)
+      if: runner.os == 'Windows'
+      shell: pwsh # Using PowerShell for consistency with other Windows steps
+      run: |
+        Write-Host "--- Checking NuGet connectivity for Python packages ---"
+        # Ensure nuget.exe is available; it usually is on GitHub Actions Windows runners.
+        # Use -Source to explicitly target the main NuGet feed.
+        # -AllVersions and -PreRelease to see everything.
+        # -Verbosity detailed for maximum diagnostic info.
+        nuget list python -Source https://api.nuget.org/v3/index.json -AllVersions -PreRelease -Verbosity detailed
+        Write-Host "--- NuGet check complete ---"
+    # ---------------------------------------
 
     # --- macOS Specific Steps ---
     - name: Install RocksDB (macOS)
