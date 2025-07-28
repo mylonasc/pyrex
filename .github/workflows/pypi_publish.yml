@@ -1,34 +1,93 @@
-# Publish workflow
-name: Publish Python Package
+# .github/workflows/publish-to-pypi.yml
+name: Publish Python Wheels to PyPI
 
+# This workflow is triggered when a new GitHub Release is 'published'.
+# This is the recommended way for formal releases to PyPI.
 on:
   release:
-    types: [published] # Trigger this workflow when a new GitHub Release is *published*
+    types: [published]
+
+  # Allows manual triggering from the GitHub Actions UI.
+  # This can be useful for testing the release process without creating a full GitHub Release.
+  workflow_dispatch:
+    inputs:
+      # Optional input for a specific version, though 'release' event is preferred
+      # for versioning. If using workflow_dispatch, ensure your package version
+      # matches the tag you intend to publish.
+      version:
+        description: '0.1.1'
+        required: false
+        type: string
+      # Optional input to specify a target environment, useful for TestPyPI vs. PyPI
+      environment:
+        description: 'Target environment (e.g., pypi-test, pypi)'
+        required: false
+        type: choice
+        options:
+          - pypi-test
+          - pypi
+        default: 'pypi'
 
 jobs:
-  pypi-publish:
-    name: Upload release to PyPI
+  publish:
+    name: Publish Wheels to PyPI
+    # This job depends on the 'build_wheels' job from your other workflow
+    # (e.g., build-wheels.yml) completing successfully.
+    # It ensures that the artifacts (wheels) are available for download.
+    needs: build_wheels # Replace 'build_wheels' with the actual job ID of your build job if different
+
+    # The publishing step typically runs on a single Ubuntu runner.
     runs-on: ubuntu-latest
+
+    # Define the GitHub Environment for this job.
+    # You MUST create this environment in your GitHub repository settings
+    # (Settings -> Environments -> New environment).
+    # This allows you to add protection rules like required reviewers.
     environment:
-      name: pypi # This environment name should match what you configure on PyPI for Trusted Publishers
-      url: https://pypi.org/p/pyrex-rocksdb # Replace with your PyPI project URL
+      # Use the input environment if provided, otherwise default to 'pypi'.
+      name: ${{ github.event.inputs.environment || 'pypi' }}
+      # Replace with your actual PyPI project URL.
+      # Example: [https://pypi.org/project/your-package-name/](https://pypi.org/project/your-package-name/)
+      url: [https://pypi.org/project/pyrex-rocksdb](https://pypi.org/project/pyrex-rocksdb)
+
+    # Permissions required for PyPI Trusted Publishing (id-token: write)
+    # and to access repository contents (contents: read).
     permissions:
-      id-token: write # IMPORTANT: This permission is mandatory for trusted publishing
+      id-token: write # IMPORTANT: This is mandatory for PyPI Trusted Publishing via OIDC.
+      contents: read  # Required to checkout the repository and access artifacts.
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      # This step is generally good practice, even if you're primarily
+      # using artifacts, as it ensures the repository context is available.
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x' # Or specific versions like 3.9, 3.10, 3.11
+    - name: Download all built wheels
+      uses: actions/download-artifact@v4
+      with:
+        # IMPORTANT: Do NOT specify a 'name' here.
+        # This will download ALL artifacts uploaded in the current workflow run
+        # (e.g., 'python-wheels-macos-latest', 'python-wheels-ubuntu-latest',
+        # 'python-wheels-windows-latest' from your build job).
+        # The contents of these artifacts will be placed into subdirectories
+        # within the 'dist' folder.
+        path: dist # The directory where all downloaded wheels will be placed.
 
-      - name: Install build tools
-        run: |
-          pip install build twine # Install the necessary tools
+    - name: List downloaded files (for debugging and verification)
+      run: |
+        echo "Contents of the 'dist' directory after downloading artifacts:"
+        ls -R dist
+        echo "---"
+      shell: bash # Use bash for consistent `ls -R` behavior
 
-      - name: Build sdist and wheel
-        run: python -m build # This will use your pyproject.toml configuration
-
-      - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1 # Uses Trusted Publishing by default if permissions are set
+    - name: Publish package to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # The 'packages-dir' points to the directory where the downloaded wheels are.
+        # The 'pypa/gh-action-pypi-publish' action will recursively find all
+        # .whl (wheels) and .tar.gz (source distributions) files within this directory
+        # and upload them to PyPI.
+        packages-dir: dist
+        # No username or password is required here when using PyPI Trusted Publishing.
+        # The 'id-token: write' permission handles the authentication securely.
+        #
