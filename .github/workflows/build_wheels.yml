@@ -213,14 +213,15 @@ jobs:
         # CRITICAL CHANGE HERE: Targeting CPython 3.9 instead of 3.8
         CIBW_BUILD_WINDOWS: "cp39-win_amd64" # Changed from cp38
         CIBW_ARCHS_WINDOWS: "AMD64"
-        # Enable pre-release Pythons (allows specific patch versions)
-        CIBW_PRERELEASE_PYTHONS: "True"
         # Force cibuildwheel to re-install Python interpreters using its own robust method
         CIBW_FORCE_INSTALL: "1"
-        # Explicitly set the download URL for Python on Windows to avoid NuGet issues
-        CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/"
         # Enable debug output for cibuildwheel for more verbose logging
         CIBW_DEBUG: "1"
+
+        # IMPORTANT: These environment variables must be set directly in the 'env' block
+        # of the step for cibuildwheel to pick them up for Python installation.
+        CIBW_PRERELEASE_PYTHONS: "True"
+        CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/"
 
         # --- CRUCIAL FIX FOR ROCKSDB INCLUDE/LIB PATHS ON WINDOWS ---
         # This script runs before the wheel build and sets environment variables
