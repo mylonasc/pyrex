@@ -21,11 +21,23 @@ ROCKSDB_LIBRARY_DIRS = [
 ]
 ROCKSDB_LIBRARIES = ['rocksdb'] # The library name to link against
 
+
+required_libraries_win = [
+    'rocksdb',
+    'shlwapi',  # For PathIsDirectoryA, PathIsRelativeA
+    'rpcrt4',   # For UuidCreateSequential, UuidToStringA, RpcStringFreeA
+    'zlib',     # For deflate, inflate functions
+]
+
+required_libraries = []
+if sys.platform.startswith('win'):
+    required_libraries = required_libraries_win
+
 # Helper to find rocksdb on systems where it might be in a non-standard location
 class build_ext(_build_ext):
     def build_extensions(self):
         # On Windows, you might need vcpkg integration or explicit paths
-        if sys.platform == 'win32':
+        if sys.platform.startswith('win'):
             # Example for vcpkg. Adjust as needed.
             # You might need to set VCPKG_ROOT environment variable
             vcpkg_root = os.environ.get('VCPKG_ROOT')
@@ -42,6 +54,7 @@ class build_ext(_build_ext):
             # ROCKSDB_INCLUDE_DIRS.append("C:/path/to/rocksdb/include")
             # ROCKSDB_LIBRARY_DIRS.append("C:/path/to/rocksdb/lib")
             # ROCKSDB_LIBRARIES = ['rocksdb'] # Or 'rocksdb_static'
+
 
         # This part ensures that pybind11's include path is found.
         import pybind11
@@ -68,7 +81,7 @@ pyrex_module = Extension(
     # These are handled by the custom build_ext command
     include_dirs=[],
     library_dirs=[],
-    libraries=[],
+    libraries=required_libraries,
 )
 
 setup(
