@@ -49,11 +49,22 @@ packages = ["pyrex"] # Explicitly list your package
 package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
 [tool.cibuildwheel]
-skip = ["*-muslinux-*"] # Move Windows specific skips to the Windows section
+# Global options - these apply to all platforms unless overridden in a platform-specific table.
+# Do NOT use platform suffixes (like -linux, -macos, -windows) for these options here.
 
-# Global Linux specific configurations (assuming you want to build Linux wheels)
-# If you only want to build for Windows and macOS, you can remove CIBW_BUILD_LINUX
-build-linux = "cp*-manylinux_x86_64"
+# Specify which Python versions/architectures to build for all platforms.
+# You can override this in platform-specific tables if needed.
+# If you only want to build for specific OSes (e.g., only Windows, macOS), you can list
+# all desired patterns here and then use 'skip' in the specific platform section
+# if you want to skip something.
+build = "cp38-* cp39-* cp310-* cp311-* cp312-*" # Example: Build for CPython 3.8 to 3.12 on all platforms
+
+# Skip certain builds globally if they are not relevant to any platform
+skip = ["*-muslinux_*"] # Example: Skip musllinux builds globally
+
+# Global before-build script for Linux (if you uncomment other OSes in workflow)
+# Note: For 'before-build-linux', 'cflags-linux', 'ldflags-linux', the suffix IS correct
+# because these are platform-specific *actions* rather than global configuration options.
 before-build-linux = """
   yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \\
   (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
@@ -67,18 +78,20 @@ before-build-linux = """
 cflags-linux = "-I/usr/include/"
 ldflags-linux = "-L/usr/lib/ -lrocksdb"
 
-# macOS specific configurations
+# macOS specific configurations (these are also platform-specific actions/flags)
 cflags-macos = "-I${BREW_PREFIX}/include/" # BREW_PREFIX is set by the workflow
 ldflags-macos = "-L${BREW_PREFIX}/lib/ -lrocksdb" # BREW_PREFIX is set by the workflow
 
-# Windows specific configurations
+# Windows specific configurations - these go under a sub-table
 [tool.cibuildwheel.windows]
-build = "cp39-win_amd64" # Target CPython 3.9 for Windows
-archs = ["AMD64"]
+# These options only apply to Windows builds.
+build = "cp39-win_amd64" # Target CPython 3.9 for Windows specifically
+archs = ["AMD64"] # Only build for AMD64 on Windows
 force-install = true
 debug = true
 prerelease-pythons = true
-download-url = "https://www.python.org/ftp/python/"
+download-url = "https://www.python.org/ftp/python/" # Specific download URL for Windows Python versions
+
 # Use PowerShell for before-build script on Windows
 before-build = """
   $VCPKG_ROOT_WIN = "$env:GITHUB_WORKSPACE\\vcpkg"
