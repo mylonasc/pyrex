@@ -71,8 +71,13 @@ environment = "CFLAGS='-I/usr/include/' LDFLAGS='-L/usr/lib/ -lrocksdb'"
 # macOS specific configurations
 [tool.cibuildwheel.macos]
 # Note: BREW_PREFIX is an environment variable set by the GitHub Actions workflow.
-environment = "CFLAGS='-I${BREW_PREFIX}/include/' LDFLAGS='-L${BREW_PREFIX}/lib/ -lrocksdb'"
 
+# macOS specific configurations
+[tool.cibuildwheel.macos]
+# Note: BREW_PREFIX is an environment variable set by the GitHub Actions workflow.
+# We will use setup-args to directly pass include and library directories to setuptools.
+environment = "LDFLAGS='-L${BREW_PREFIX}/lib/ -lrocksdb'"
+setup-args = "-I${BREW_PREFIX}/include" # Pass include directory directly to setuptools
 
 # Windows specific configurations
 [tool.cibuildwheel.windows]
