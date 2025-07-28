@@ -52,3 +52,6 @@ dev = [
 packages = ["pyrex"] # Explicitly list your package
 package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
+[tool.cibuildwheel]
+skip = ["cp38-win*"]
+
