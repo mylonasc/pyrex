@@ -21,12 +21,14 @@ jobs:
     timeout-minutes: 120 # Set a higher timeout for the job (e.g., 120 minutes)
     permissions:
       contents: read
-      packages: write # <-- THIS IS CRUCIAL FOR PUSHING TO GITHUB PACKAGES
+      packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [windows-latest] #, macos-latest, windows-latest]
+        # Build on all three platforms
+        os: [ubuntu-latest, macos-latest, windows-latest]
     env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg # Define VCPKG_ROOT for Windows
+      # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
 
     steps:
     - name: Checkout code
@@ -37,17 +39,15 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        # Use a general 3.x version. cibuildwheel will manage specific Python versions
-        # within its isolated environments.
-        python-version: '3.x'
+        python-version: '3.x' # cibuildwheel will manage specific Python versions
         architecture: 'x64' # Ensure 64-bit Python is set up
 
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install cibuildwheel # Install cibuildwheel
+        pip install cibuildwheel
 
-    # --- macOS Specific Steps (Keep as is) ---
+    # --- macOS Specific Steps ---
     - name: Install RocksDB (macOS)
       if: runner.os == 'macOS'
       run: |
@@ -57,28 +57,24 @@ jobs:
     - name: Get Homebrew prefix (macOS)
       if: runner.os == 'macOS'
       id: brew_prefix
-      run: echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_OUTPUT"
+      # Set BREW_PREFIX as an environment variable that cibuildwheel will pick up
+      run: echo "BREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
       shell: bash
 
     - name: Debug RocksDB Paths (macOS)
       if: runner.os == 'macOS'
       run: |
-        BREW_PREFIX="${{ steps.brew_prefix.outputs.BREW_PREFIX }}"
-        echo "Homebrew prefix: $BREW_PREFIX"
-        echo "--- Listing contents of $BREW_PREFIX/include/ ---"
-        ls -R "$BREW_PREFIX/include/" | grep -E "rocksdb|db.h" || true
-        echo "--- Listing contents of $BREW_PREFIX/lib/ ---"
-        ls -R "$BREW_PREFIX/lib/" | grep -E "rocksdb|librocksdb" || true
-        echo "--- Searching for db.h globally (within brew prefix) ---"
-        find "$BREW_PREFIX" -name "db.h" 2>/dev/null | grep "rocksdb" || true
-        echo "--- Checking dynamic libraries for rocksdb (within brew prefix) ---"
-        find "$BREW_PREFIX/lib" -name "librocksdb*.dylib" || true
+        echo "Homebrew prefix: ${{ env.BREW_PREFIX }}"
+        echo "--- Listing contents of ${{ env.BREW_PREFIX }}/include/ ---"
+        ls -R "${{ env.BREW_PREFIX }}/include/" | grep -E "rocksdb|db.h" || true
+        echo "--- Listing contents of ${{ env.BREW_PREFIX }}/lib/ ---"
+        ls -R "${{ env.BREW_PREFIX }}/lib/" | grep -E "rocksdb|librocksdb" || true
       shell: bash
 
     # --- Windows Specific Steps (Vcpkg and RocksDB Installation) ---
     - name: Export GitHub Actions cache environment variables (for Windows)
-      uses: actions/github-script@v7 # Use a recent version
-      if: runner.os == 'Windows' # Only needed for Windows, or where vcpkg is used
+      uses: actions/github-script@v7
+      if: runner.os == 'Windows'
       with:
         script: |
           core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
@@ -186,13 +182,11 @@ jobs:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       shell: pwsh
 
-    # --- Build Wheels Step (with crucial cibuildwheel and RocksDB fixes) ---
+    # --- Build Wheels Step ---
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
-      env:
-        # macOS specific configurations (BREW_PREFIX comes from the previous step output)
-        CIBW_CFLAGS_MACOS: "-I${{ steps.brew_prefix.outputs.BREW_PREFIX }}/include/"
-        CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
+      # All CIBW_* environment variables should now be managed by pyproject.toml
+      # except for the BREW_PREFIX which is set dynamically in the workflow.
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4

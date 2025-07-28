@@ -52,20 +52,14 @@ package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 # Global options - these apply to all platforms unless overridden in a platform-specific table.
 # Do NOT use platform suffixes (like -linux, -macos, -windows) for these options here.
 
-# Specify which Python versions/architectures to build for all platforms.
-# If you omit 'build', cibuildwheel will build for all supported Python versions on the runner's OS.
+# Specify which Python versions/architectures to build for all platforms by default.
+# You can override this in platform-specific tables if needed.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
 
 # Skip certain builds globally if they are not relevant to any platform
 skip = ["*-muslinux_*"] # Example: Skip musllinux builds globally
 
-# macOS specific configurations (these are also platform-specific actions/flags)
-# Note: For macOS, you still rely on the workflow to set BREW_PREFIX.
-# This is an exception where dynamic workflow variables are still needed.
-cflags-macos = "-I${BREW_PREFIX}/include/"
-ldflags-macos = "-L${BREW_PREFIX}/lib/ -lrocksdb"
-
-# Linux specific configurations - these go under a sub-table
+# Linux specific configurations
 [tool.cibuildwheel.linux]
 # These options only apply to Linux builds.
 before-build = """
@@ -81,7 +75,15 @@ before-build = """
 cflags = "-I/usr/include/"
 ldflags = "-L/usr/lib/ -lrocksdb"
 
-# Windows specific configurations - these go under a sub-table
+# macOS specific configurations
+[tool.cibuildwheel.macos]
+# These options only apply to macOS builds.
+# Note: For macOS, we still rely on the workflow to set BREW_PREFIX via an environment variable.
+# cibuildwheel picks up environment variables set by the GitHub Actions runner.
+cflags = "-I${BREW_PREFIX}/include/"
+ldflags = "-L${BREW_PREFIX}/lib/ -lrocksdb"
+
+# Windows specific configurations
 [tool.cibuildwheel.windows]
 # These options only apply to Windows builds.
 build = "cp39-win_amd64" # Target CPython 3.9 for Windows specifically
