@@ -24,7 +24,7 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [windows-latest] #[ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
@@ -202,45 +202,46 @@ jobs:
         VCPKG_DEBUG: 1
 
 
-    - name: Set build environment variables (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        $VCPKG_ROOT_WIN = "${{ env.VCPKG_ROOT }}"
-        $ROCKSDB_INCLUDE_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\include"
-        $ROCKSDB_LIB_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\lib"
-        # Zlib headers are usually in the same include path as RocksDB in vcpkg
-        $ZLIB_INCLUDE_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\include"
-        # Zlib lib is usually in the same lib path as RocksDB in vcpkg
-        $ZLIB_LIB_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\lib"
+#    - name: Set build environment variables (Windows)
+#      if: runner.os == 'Windows'
+#      shell: pwsh
+#      run: |
+#        $VCPKG_ROOT_WIN = "${{ env.VCPKG_ROOT }}"
+#        $ROCKSDB_INCLUDE_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\include"
+#        $ROCKSDB_LIB_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\lib"
+#        # Zlib headers are usually in the same include path as RocksDB in vcpkg
+#        $ZLIB_INCLUDE_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\include"
+#        # Zlib lib is usually in the same lib path as RocksDB in vcpkg
+#        $ZLIB_LIB_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\x64-windows\lib"
 
-        Write-Host "Setting INCLUDE environment variable to include: $ROCKSDB_INCLUDE_PATH"
-        Write-Host "Setting LIB environment variable to include: $ROCKSDB_LIB_PATH"
+#        Write-Host "Setting INCLUDE environment variable to include: $ROCKSDB_INCLUDE_PATH"
+#        Write-Host "Setting LIB environment variable to include: $ROCKSDB_LIB_PATH"
 
-        # Set for the CURRENT PowerShell session and for subsequent steps
-        # Append existing values to ensure other system paths are preserved
-        $env:INCLUDE = "$ROCKSDB_INCLUDE_PATH;$env:INCLUDE"
-        $env:LIB = "$ROCKSDB_LIB_PATH;$env:LIB"
+#        # Set for the CURRENT PowerShell session and for subsequent steps
+#        # Append existing values to ensure other system paths are preserved
+#        $env:INCLUDE = "$ROCKSDB_INCLUDE_PATH;$env:INCLUDE"
+#        $env:LIB = "$ROCKSDB_LIB_PATH;$env:LIB"
 
-        # Update GITHUB_ENV for subsequent steps
-        echo "INCLUDE=$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "LIB=$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
+#        # Update GITHUB_ENV for subsequent steps
+#        echo "INCLUDE=$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
+#        echo "LIB=$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-        # Set CFLAGS and LDFLAGS for the CURRENT session
-        # Ensure correct quoting for paths with spaces if they ever arise
-        $env:CFLAGS = "-I`"$ROCKSDB_INCLUDE_PATH`" -I`"$ZLIB_INCLUDE_PATH`""
-        # LDFLAGS now includes RocksDB, Shlwapi, Rpcrt4, and Zlib
-        $env:LDFLAGS = "-L`"$ROCKSDB_LIB_PATH`" -L`"$ZLIB_LIB_PATH`" -lrocksdb -lshlwapi -lrpcrt4 -lzlib"
+#        # Set CFLAGS and LDFLAGS for the CURRENT session
+#        # Ensure correct quoting for paths with spaces if they ever arise
+#        $env:CFLAGS = "-I`"$ROCKSDB_INCLUDE_PATH`" -I`"$ZLIB_INCLUDE_PATH`""
+#        # LDFLAGS now includes RocksDB, Shlwapi, Rpcrt4, and Zlib
+#        $env:LDFLAGS = "-L`"$ROCKSDB_LIB_PATH`" -L`"$ZLIB_LIB_PATH`" -lrocksdb -lshlwapi -lrpcrt4 -lzlib"
 
-        # Update GITHUB_ENV for subsequent steps with the full CFLAGS/LDFLAGS
-        echo "CFLAGS=$env:CFLAGS" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "LDFLAGS=$env:LDFLAGS" | Out-File -FilePath $env:GITHUB_ENV -Append # <-- This was the corrected line
+#        # Update GITHUB_ENV for subsequent steps with the full CFLAGS/LDFLAGS
+#        echo "CFLAGS=$env:CFLAGS" | Out-File -FilePath $env:GITHUB_ENV -Append
+#        echo "LDFLAGS=$env:LDFLAGS" | Out-File -FilePath $env:GITHUB_ENV -Append # <-- This was the corrected line
 
 
-        Write-Host "Current (after setting in current session) INCLUDE: $env:INCLUDE"
-        Write-Host "Current (after setting in current session) LIB: $env:LIB"
-        Write-Host "Current (after setting in current session) CFLAGS: $env:CFLAGS"
-        Write-Host "Current (after setting in current session) LDFLAGS: $env:LDFLAGS"        
+#        Write-Host "Current (after setting in current session) INCLUDE: $env:INCLUDE"
+#        Write-Host "Current (after setting in current session) LIB: $env:LIB"
+#        Write-Host "Current (after setting in current session) CFLAGS: $env:CFLAGS"
+#        Write-Host "Current (after setting in current session) LDFLAGS: $env:LDFLAGS"        
+
 #    - name: Debug RocksDB Paths (Windows)
 #      if: runner.os == 'Windows'
 #      continue-on-error: true

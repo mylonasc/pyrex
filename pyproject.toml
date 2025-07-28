@@ -80,4 +80,4 @@ environment = "CFLAGS='-I${BREW_PREFIX}/include/' LDFLAGS='-L${BREW_PREFIX}/lib/
 build = "cp39-win_amd64"
 archs = ["AMD64"]
 
-
+environment = "CFLAGS='-ID:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include' LDFLAGS='-LD:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib -lrocksdb -lshlwapi -lrpcrt4 -lzlib -lsnappy -llz4'"
