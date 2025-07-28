@@ -1,42 +1,53 @@
 name: Publish to PyPI
 
 on:
-  workflow_dispatch:  # Manual trigger from GitHub Actions UI
+  workflow_dispatch:
 
 jobs:
   publish:
-    name: Upload to PyPI
+    name: Upload prebuilt wheels to PyPI
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
 
-    environment:
-      name: pypi
-      url: https://pypi.org/project/<your-package-name>/  # Optional, for UI
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - name: Download wheel artifacts (macOS)
+      uses: actions/download-artifact@v4
+      with:
+        name: python-wheels-macos-latest
+        path: dist
+
+    - name: Download wheel artifacts (Linux)
+      uses: actions/download-artifact@v4
+      with:
+        name: python-wheels-ubuntu-latest
+        path: dist
+
+    - name: Download wheel artifacts (Windows)
+      uses: actions/download-artifact@v4
+      with:
+        name: python-wheels-windows-latest
+        path: dist
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
 
-    - name: Install dependencies
+    - name: Install twine
       run: |
         python -m pip install --upgrade pip
-        pip install build twine
+        pip install twine
 
-    - name: Build the distribution
+    - name: Verify contents
       run: |
-        python -m build
+        echo "Wheels in dist/:"
+        ls dist/
 
     - name: Publish to PyPI
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        twine upload dist/*
-
+        twine upload dist/*.whl
