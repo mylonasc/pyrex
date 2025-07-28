@@ -49,17 +49,9 @@ packages = ["pyrex"] # Explicitly list your package
 package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
 [tool.cibuildwheel]
-# Global options - these apply to all platforms unless overridden in a platform-specific table.
-# Do NOT use platform suffixes for these, and they should not be in platform-specific sub-tables.
+# Global build filter and skip patterns.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
 skip = ["*-muslinux_*"]
-
-# These were previously in [tool.cibuildwheel.windows] but are global options.
-force-install = true
-debug = true
-prerelease-pythons = true
-download-url = "https://www.python.org/ftp/python/"
-
 
 # Linux specific configurations
 [tool.cibuildwheel.linux]
@@ -79,7 +71,6 @@ environment = "CFLAGS='-I/usr/include/' LDFLAGS='-L/usr/lib/ -lrocksdb'"
 # macOS specific configurations
 [tool.cibuildwheel.macos]
 # Note: BREW_PREFIX is an environment variable set by the GitHub Actions workflow.
-# cibuildwheel picks up environment variables that are present in the runner's environment.
 environment = "CFLAGS='-I${BREW_PREFIX}/include/' LDFLAGS='-L${BREW_PREFIX}/lib/ -lrocksdb'"
 
 

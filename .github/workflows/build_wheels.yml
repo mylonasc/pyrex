@@ -25,10 +25,18 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-      fail-fast: false # <--- ADD THIS LINE: Ensures all jobs run even if one fails
+      fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+
+      # --- Global CIBW environment variables (reintroduced) ---
+      # These flags are intended to be set as environment variables, not in pyproject.toml.
+      CIBW_FORCE_INSTALL: "1"
+      CIBW_DEBUG: "1"
+      CIBW_PRERELEASE_PYTHONS: "True"
+      # This one was specifically for Windows, so we can keep it targeted if desired
+      CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/"
 
     steps:
     - name: Checkout code
