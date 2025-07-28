@@ -210,10 +210,10 @@ jobs:
         CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
 
         # Windows specific configurations
-        # Explicitly target CPython 3.8 on Windows AMD64 (as per previous error)
-        CIBW_BUILD_WINDOWS: "cp38-win_amd64"
+        # CRITICAL CHANGE HERE: Targeting CPython 3.9 instead of 3.8
+        CIBW_BUILD_WINDOWS: "cp39-win_amd64" # Changed from cp38
         CIBW_ARCHS_WINDOWS: "AMD64"
-        # Enable pre-release Pythons (allows specific patch versions like 3.8.10)
+        # Enable pre-release Pythons (allows specific patch versions)
         CIBW_PRERELEASE_PYTHONS: "True"
         # Force cibuildwheel to re-install Python interpreters using its own robust method
         CIBW_FORCE_INSTALL: "1"
@@ -240,18 +240,15 @@ jobs:
           [System.Environment]::SetEnvironmentVariable('LIB', "$ROCKSDB_LIB_PATH;" + $env:LIB, 'Process')
 
           # Also set CFLAGS and LDFLAGS for setuptools/distutils which might pick these up
-          $env:CFLAGS = "-I`"$ROCKSDB_INCLUDE_PATH`"" # Use quoted path for spaces
-          $env:LDFLAGS = "-L`"$ROCKSDB_LIB_PATH`" -lrocksdb" # Use quoted path for spaces
+          # Using quoted paths for robustness against spaces in paths
+          $env:CFLAGS = "-I`"$ROCKSDB_INCLUDE_PATH`""
+          $env:LDFLAGS = "-L`"$ROCKSDB_LIB_PATH`" -lrocksdb"
 
           Write-Host "Current INCLUDE environment variable: $env:INCLUDE"
           Write-Host "Current LIB environment variable: $env:LIB"
           Write-Host "Current CFLAGS environment variable: $env:CFLAGS"
           Write-Host "Current LDFLAGS environment variable: $env:LDFLAGS"
 
-        # Remove direct CIBW_CFLAGS_WINDOWS and CIBW_LDFLAGS_WINDOWS as they are
-        # now handled by CIBW_BEFORE_BUILD_WINDOWS for better control.
-        # CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
-        # CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
