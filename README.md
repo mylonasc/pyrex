@@ -38,7 +38,8 @@ Compile the Wrapper:
 Navigate to the directory containing rocksdb_wrapper.cpp and setup.py in your terminal, and run:
 
 ```Bash
-
-python setup.py install
+# build with pyproject.toml (uses setup.py for some programmatic parts)
+pip install build
+python -m build
 ```
 
