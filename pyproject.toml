@@ -81,8 +81,5 @@ build = "cp39-win_amd64"
 archs = ["AMD64"]
 
 # environment = "CFLAGS='-ID:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include' LDFLAGS='-LD:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib -lrocksdb -lshlwapi -lrpcrt4 -lzlib -lsnappy -llz4'"
-environment = {
-    INCLUDE = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include;${INCLUDE}",
-    LIB = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib;${LIB}"
-}
+environment = { INCLUDE = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include;${INCLUDE}", LIB = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib;${LIB}" }
 
