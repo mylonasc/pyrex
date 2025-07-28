@@ -1,92 +1,123 @@
-# .github/workflows/publish-to-pypi.yml
+Got it. To achieve this, you'll want to modify the on trigger of the publish workflow. We'll remove the workflow_run trigger and replace it with release and a conditional workflow_dispatch for manual releases. The release trigger will activate when a new GitHub Release is published (which typically involves pushing a tag).
+
+Here's the modified publish-to-pypi.yml workflow:
+
+YAML
+
 name: Publish Python Wheels to PyPI
 
-# This workflow is triggered when a new GitHub Release is 'published'.
-# This is the recommended way for formal releases to PyPI.
 on:
   release:
-    types: [published, edited]
+    types: [published] # This workflow runs when a new GitHub Release is published
 
-  # Allows manual triggering from the GitHub Actions UI.
-  # This can be useful for testing the release process without creating a full GitHub Release.
+  # Allows manual triggering from the GitHub Actions UI, typically for re-publishing
   workflow_dispatch:
     inputs:
-      # Optional input for a specific version, though 'release' event is preferred
-      # for versioning. If using workflow_dispatch, ensure your package version
-      # matches the tag you intend to publish.
-      version:
-        description: '0.1.1'
-        required: false
-        type: string
-      # Optional input to specify a target environment, useful for TestPyPI vs. PyPI
-      environment:
-        description: 'Target environment (e.g., pypi-test, pypi)'
-        required: false
-        type: choice
-        options:
-          - pypi-test
-          - pypi
-        default: 'pypi'
+      tag_name:
+        description: 'Tag name of the release to publish (e.g., v1.0.0)'
+        required: true
 
 jobs:
-  publish:
-    name: Publish Wheels to PyPI
-    # This job depends on the 'build_wheels' job from your other workflow
-    # (e.g., build-wheels.yml) completing successfully.
-    # It ensures that the artifacts (wheels) are available for download.
-    # needs: build_wheels # Replace 'build_wheels' with the actual job ID of your build job if different
-
-    # The publishing step typically runs on a single Ubuntu runner.
+  publish_to_pypi:
+    name: Publish to PyPI
     runs-on: ubuntu-latest
-
-    # Define the GitHub Environment for this job.
-    # You MUST create this environment in your GitHub repository settings
-    # (Settings -> Environments -> New environment).
-    # This allows you to add protection rules like required reviewers.
-    environment:
-      name: ${{ github.event.inputs.environment || 'pypi' }}
-      # Replace with your actual PyPI project URL.
-      # Example: [https://pypi.org/project/your-package-name/](https://pypi.org/project/your-package-name/)
-      url: https://pypi.org/project/pyrex-rocksdb
-
-    # Permissions required for PyPI Trusted Publishing (id-token: write)
-    # and to access repository contents (contents: read).
     permissions:
-      id-token: write # IMPORTANT: This is mandatory for PyPI Trusted Publishing via OIDC.
-      contents: read  # Required to checkout the repository and access artifacts.
+      contents: read
+      id-token: write # Required for trusted publishing to PyPI
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      # This step is generally good practice, even if you're primarily
-      # using artifacts, as it ensures the repository context is available.
-
-    - name: Download all built wheels
-      uses: actions/download-artifact@v4
       with:
-        # IMPORTANT: Do NOT specify a 'name' here.
-        # This will download ALL artifacts uploaded in the current workflow run
-        # (e.g., 'python-wheels-macos-latest', 'python-wheels-ubuntu-latest',
-        # 'python-wheels-windows-latest' from your build job).
-        # The contents of these artifacts will be placed into subdirectories
-        # within the 'dist' folder.
-        path: dist # The directory where all downloaded wheels will be placed.
+        # If triggered by release, this will checkout the tag associated with the release.
+        # If triggered by workflow_dispatch, we need to fetch the specific tag.
+        ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.tag_name }}
+        fetch-depth: 0
 
-    - name: List downloaded files (for debugging and verification)
+    # This step is crucial: it finds the 'Build Python Wheels' workflow run
+    # associated with the tag that just triggered this release workflow.
+    - name: Find and download workflow artifacts from the matching build
+      uses: actions/github-script@v7
+      id: download_artifacts
+      with:
+        script: |
+          const tag = ${{ github.event_name == 'release' ? 'context.payload.release.tag_name' : 'github.event.inputs.tag_name' }};
+          console.log(`Looking for workflow runs associated with tag: ${tag}`);
+
+          // Find the workflow runs for 'Build Python Wheels' on the current repository
+          // that are associated with the specific tag.
+          // Note: GitHub Actions does not directly link a release to a specific workflow_run ID.
+          // We look for successful 'Build Python Wheels' runs on the same commit/ref as the tag.
+          const runs = await github.rest.actions.listWorkflowRunsForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'build-python-wheels.yml', // Replace with the actual filename if different
+            branch: tag, // Search runs on the specific tag
+            status: 'success', // Only consider successful builds
+            per_page: 10 // Get a few recent runs
+          });
+
+          let foundRun = null;
+          if (runs.data.workflow_runs.length > 0) {
+              // Iterate through runs to find one that matches the commit SHA of the tag
+              // For a release, the commit SHA of the tag should match the commit SHA of the workflow run.
+              // For workflow_dispatch, we are checking out the tag directly, so the commit SHA will match.
+              const currentRefSha = context.sha; // This is the SHA of the tag
+              console.log(`Current ref SHA for tag ${tag}: ${currentRefSha}`);
+
+              for (const run of runs.data.workflow_runs) {
+                  console.log(`Checking build run ${run.id}, head_sha: ${run.head_sha}, event: ${run.event}, branch: ${run.head_branch}`);
+                  if (run.head_sha === currentRefSha && run.conclusion === 'success') {
+                      foundRun = run;
+                      break;
+                  }
+              }
+          }
+
+          if (!foundRun) {
+            console.log(`No successful 'Build Python Wheels' workflow run found for tag: ${tag} (commit SHA: ${context.sha}).`);
+            core.setFailed('No successful build artifacts found for this release tag.');
+            return;
+          }
+
+          console.log(`Found matching build run: ${foundRun.id}`);
+
+          // Now, download artifacts from the found run ID
+          const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            run_id: foundRun.id,
+          });
+
+          const fs = require('fs');
+          const path = require('path');
+          const admZip = require('adm-zip');
+
+          // Create the base directory for downloaded wheels
+          const baseDownloadPath = path.join(process.env.GITHUB_WORKSPACE, 'downloaded-wheels');
+          if (!fs.existsSync(baseDownloadPath)){
+              fs.mkdirSync(baseDownloadPath, { recursive: true });
+          }
+
+          for (const artifact of artifacts.data.artifacts) {
+            console.log(`Downloading artifact: ${artifact.name} (ID: ${artifact.id})`);
+            const download = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: artifact.id,
+              archive_format: 'zip',
+            });
+            const zip = new admZip(Buffer.from(download.data));
+            const targetPath = path.join(baseDownloadPath, artifact.name);
+            zip.extractAllTo(targetPath, true);
+            console.log(`Extracted artifact ${artifact.name} to ${targetPath}`);
+          }
+
+    - name: List downloaded wheels for verification
       run: |
-        echo "Contents of the 'dist' directory after downloading artifacts:"
-        ls -R dist
-        echo "---"
-      shell: bash # Use bash for consistent `ls -R` behavior
+        ls -R downloaded-wheels/
 
-    - name: Publish package to PyPI
+    - name: Publish wheels to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
-        # The 'packages-dir' points to the directory where the downloaded wheels are.
-        # The 'pypa/gh-action-pypi-publish' action will recursively find all
-        # .whl (wheels) and .tar.gz (source distributions) files within this directory
-        # and upload them to PyPI.
-        packages-dir: dist
-        # No username or password is required here when using PyPI Trusted Publishing.
-        # The 'id-token: write' permission handles the authentication securely.
-        #
+        packages_dir: downloaded-wheels/ # This path holds the extracted wheels from each artifact
