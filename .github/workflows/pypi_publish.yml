@@ -5,7 +5,7 @@ name: Publish Python Wheels to PyPI
 # This is the recommended way for formal releases to PyPI.
 on:
   release:
-    types: [published]
+    types: [published, edited]
 
   # Allows manual triggering from the GitHub Actions UI.
   # This can be useful for testing the release process without creating a full GitHub Release.
