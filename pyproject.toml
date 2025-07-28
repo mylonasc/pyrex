@@ -53,19 +53,22 @@ package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 # Do NOT use platform suffixes (like -linux, -macos, -windows) for these options here.
 
 # Specify which Python versions/architectures to build for all platforms.
-# You can override this in platform-specific tables if needed.
-# If you only want to build for specific OSes (e.g., only Windows, macOS), you can list
-# all desired patterns here and then use 'skip' in the specific platform section
-# if you want to skip something.
-build = "cp38-* cp39-* cp310-* cp311-* cp312-*" # Example: Build for CPython 3.8 to 3.12 on all platforms
+# If you omit 'build', cibuildwheel will build for all supported Python versions on the runner's OS.
+build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
 
 # Skip certain builds globally if they are not relevant to any platform
 skip = ["*-muslinux_*"] # Example: Skip musllinux builds globally
 
-# Global before-build script for Linux (if you uncomment other OSes in workflow)
-# Note: For 'before-build-linux', 'cflags-linux', 'ldflags-linux', the suffix IS correct
-# because these are platform-specific *actions* rather than global configuration options.
-before-build-linux = """
+# macOS specific configurations (these are also platform-specific actions/flags)
+# Note: For macOS, you still rely on the workflow to set BREW_PREFIX.
+# This is an exception where dynamic workflow variables are still needed.
+cflags-macos = "-I${BREW_PREFIX}/include/"
+ldflags-macos = "-L${BREW_PREFIX}/lib/ -lrocksdb"
+
+# Linux specific configurations - these go under a sub-table
+[tool.cibuildwheel.linux]
+# These options only apply to Linux builds.
+before-build = """
   yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \\
   (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
   echo "--- Debugging inside manylinux container after RocksDB install (via rpm -ql) ---"
@@ -75,12 +78,8 @@ before-build-linux = """
   rpm -ql rocksdb || true
   echo "--- End rpm -ql output ---"
 """
-cflags-linux = "-I/usr/include/"
-ldflags-linux = "-L/usr/lib/ -lrocksdb"
-
-# macOS specific configurations (these are also platform-specific actions/flags)
-cflags-macos = "-I${BREW_PREFIX}/include/" # BREW_PREFIX is set by the workflow
-ldflags-macos = "-L${BREW_PREFIX}/lib/ -lrocksdb" # BREW_PREFIX is set by the workflow
+cflags = "-I/usr/include/"
+ldflags = "-L/usr/lib/ -lrocksdb"
 
 # Windows specific configurations - these go under a sub-table
 [tool.cibuildwheel.windows]
