@@ -30,7 +30,7 @@ elif sys.platform.startswith('win'):
     if vcpkg_root:
         ROCKSDB_INCLUDE_DIRS.append(os.path.join(vcpkg_root, 'installed', 'x64-windows', 'include'))
         ROCKSDB_LIBRARY_DIRS.append(os.path.join(vcpkg_root, 'installed', 'x64-windows', 'lib'))
-    ROCKSDB_LIBRARIES.extend(['rocksdb', 'shlwapi', 'rpcrt4', 'zlib', 'snappy', 'lz4'])
+    ROCKSDB_LIBRARIES.extend(['rocksdb', 'shlwapi', 'rpcrt4', 'zlib'])
     extra_compile_args.append('/std:c++17')
 
 
