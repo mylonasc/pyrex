@@ -50,18 +50,11 @@ package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
 [tool.cibuildwheel]
 # Global options - these apply to all platforms unless overridden in a platform-specific table.
-# Do NOT use platform suffixes (like -linux, -macos, -windows) for these options here.
-
-# Specify which Python versions/architectures to build for all platforms by default.
-# You can override this in platform-specific tables if needed.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
-
-# Skip certain builds globally if they are not relevant to any platform
-skip = ["*-muslinux_*"] # Example: Skip musllinux builds globally
+skip = ["*-muslinux_*"]
 
 # Linux specific configurations
 [tool.cibuildwheel.linux]
-# These options only apply to Linux builds.
 before-build = """
   yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \\
   (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
@@ -72,28 +65,26 @@ before-build = """
   rpm -ql rocksdb || true
   echo "--- End rpm -ql output ---"
 """
-cflags = "-I/usr/include/"
-ldflags = "-L/usr/lib/ -lrocksdb"
+# Define CFLAGS and LDFLAGS within the 'environment' option for Linux
+environment = "CFLAGS='-I/usr/include/' LDFLAGS='-L/usr/lib/ -lrocksdb'"
+
 
 # macOS specific configurations
 [tool.cibuildwheel.macos]
-# These options only apply to macOS builds.
-# Note: For macOS, we still rely on the workflow to set BREW_PREFIX via an environment variable.
-# cibuildwheel picks up environment variables set by the GitHub Actions runner.
-cflags = "-I${BREW_PREFIX}/include/"
-ldflags = "-L${BREW_PREFIX}/lib/ -lrocksdb"
+# Note: BREW_PREFIX is an environment variable set by the GitHub Actions workflow.
+# cibuildwheel picks up environment variables that are present in the runner's environment.
+environment = "CFLAGS='-I${BREW_PREFIX}/include/' LDFLAGS='-L${BREW_PREFIX}/lib/ -lrocksdb'"
+
 
 # Windows specific configurations
 [tool.cibuildwheel.windows]
-# These options only apply to Windows builds.
-build = "cp39-win_amd64" # Target CPython 3.9 for Windows specifically
-archs = ["AMD64"] # Only build for AMD64 on Windows
+build = "cp39-win_amd64"
+archs = ["AMD64"]
 force-install = true
 debug = true
 prerelease-pythons = true
-download-url = "https://www.python.org/ftp/python/" # Specific download URL for Windows Python versions
+download-url = "https://www.python.org/ftp/python/"
 
-# Use PowerShell for before-build script on Windows
 before-build = """
   $VCPKG_ROOT_WIN = "$env:GITHUB_WORKSPACE\\vcpkg"
   $ROCKSDB_INCLUDE_PATH = Join-Path -Path $VCPKG_ROOT_WIN -ChildPath "installed\\x64-windows\\include"
