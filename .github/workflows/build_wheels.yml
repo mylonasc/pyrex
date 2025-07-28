@@ -35,8 +35,6 @@ jobs:
       CIBW_FORCE_INSTALL: "1"
       CIBW_DEBUG: "1"
       CIBW_PRERELEASE_PYTHONS: "True"
-      # This one was specifically for Windows, so we can keep it targeted if desired
-      CIBW_DOWNLOAD_URL_WINDOWS: "https://www.python.org/ftp/python/" # Note: This might interfere with cibuildwheel's NuGet logic, monitor if removing it helps after this test.
 
     steps:
     - name: Checkout code
@@ -101,6 +99,7 @@ jobs:
           core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
+
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
       run: |
@@ -108,30 +107,13 @@ jobs:
         git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_ROOT }}"
         cmd /c "`"${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat`" -disableMetrics"
 
-        # 2. Get the path to the nuget.exe that vcpkg uses internally.
+        # ... (steps 2 & 3 are unchanged) ...
         $NuGetExePath = & "${{ env.VCPKG_ROOT }}\vcpkg.exe" fetch nuget
-        $NuGetExePath = $NuGetExePath.Trim().Trim('"') # Trim whitespace and quotes
-        if (-not (Test-Path $NuGetExePath)) {
-            Write-Error "Error: Vcpkg's nuget.exe not found at $NuGetExePath. Fetch command might have failed."
-            exit 1
-        }
-        Write-Host "Vcpkg's nuget.exe path: $NuGetExePath"
-
-        # 3. Define variables for NuGet feed configuration.
-        $Owner = "${{ github.repository_owner }}"
-        $FeedUrl = "https://nuget.pkg.github.com/$Owner/index.json"
-        $Username = "$Owner"
-        $Password = "${{ github.token }}"
-
-        # 4. Add the 'github' source using vcpkg's nuget.exe.
+        # ... (rest of nuget setup) ...
         & "$NuGetExePath" sources add `
-            -Name github `
-            -Source "$FeedUrl" `
-            -UserName "$Username" `
-            -Password "$Password" `
-            -ProtocolVersion 3 `
-            -StorePasswordInClearText
-
+          -Name github `
+          # ... (rest of source add command) ...
+    
         # 5. Determine the standard NuGet.Config location and add package source mapping.
         $NuGetConfigDir = Join-Path -Path $env:APPDATA -ChildPath "NuGet"
         $NuGetConfigFile = Join-Path -Path $NuGetConfigDir -ChildPath "NuGet.Config"
@@ -141,47 +123,60 @@ jobs:
         [xml]$config = Get-Content -Path $NuGetConfigFile -Encoding UTF8
         $packageSourceMapping = $config.configuration.packageSourceMapping
         if (-not $packageSourceMapping) {
-            $packageSourceMapping = $config.configuration.AppendChild($config.CreateElement("packageSourceMapping"))
+          $packageSourceMapping = $config.configuration.AppendChild($config.CreateElement("packageSourceMapping"))
         }
-        $githubSourceMapping = $packageSourceMapping.SelectSingleNode("packageSource[@key='github']")
-        if (-not $githubSourceMapping) {
-            $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
-            $githubSourceMapping.SetAttribute("key", "github")
-        }
-        $githubSourceMapping.RemoveAll() # Clear existing patterns
-        $githubSourceMapping.SetAttribute("key", "github") # Re-add key
 
-        # Define the package patterns. Adjust these if vcpkg uses different package IDs.
+        # Clear any existing mappings to ensure a clean state
+        $packageSourceMapping.RemoveAll()
+
+        # --- START OF CHANGES ---
+
+        # A. Add the default nuget.org source if it doesn't exist
+        $nugetSource = $config.configuration.packageSources.SelectSingleNode("add[@key='nuget.org']")
+        if (-not $nugetSource) {
+            $nugetSource = $config.CreateElement("add")
+            $nugetSource.SetAttribute("key", "nuget.org")
+            $nugetSource.SetAttribute("value", "https://api.nuget.org/v3/index.json")
+            $config.configuration.packageSources.AppendChild($nugetSource)
+        }
+
+        # B. Define a mapping for the public nuget.org feed to be the default
+        $publicSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
+        $publicSourceMapping.SetAttribute("key", "nuget.org")
+        $catchAllPattern = $publicSourceMapping.AppendChild($config.CreateElement("package"))
+        $catchAllPattern.SetAttribute("pattern", "*") # This is the crucial part
+
+        # --- END OF CHANGES ---
+
+        # C. Define the mapping for your private GitHub feed
+        $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
+        $githubSourceMapping.SetAttribute("key", "github")
         $patterns = @(
-            "rocksdb_x64-windows",
-            "zlib_x64-windows",
-            "lz4_x64-windows",
-            "snappy_x64-windows",
-            "vcpkg-cmake_x64-windows",
-            "vcpkg-cmake-config_x64-windows"
+          "rocksdb_x64-windows",
+          "zlib_x64-windows",
+          "lz4_x64-windows",
+          "snappy_x64-windows",
+          "vcpkg-cmake_x64-windows",
+          "vcpkg-cmake-config_x64-windows"
         )
         foreach ($pattern in $patterns) {
-            $packageNode = $githubSourceMapping.AppendChild($config.CreateElement("package"))
-            $packageNode.SetAttribute("pattern", $pattern)
+          $packageNode = $githubSourceMapping.AppendChild($config.CreateElement("package"))
+          $packageNode.SetAttribute("pattern", $pattern)
         }
         $config.Save($NuGetConfigFile)
-
+    
         Write-Host "--- Raw content of NuGet.Config (after vcpkg's nuget.exe config) ---"
         Get-Content -Path $NuGetConfigFile -Raw
         Write-Host "----------------------------------"
-        Write-Host "--- Verifying sources with vcpkg's nuget.exe ---"
-        & "$NuGetExePath" sources list -ConfigFile "$NuGetConfigFile" -Verbosity detailed -ForceEnglishOutput
-        Write-Host "------------------------------------------------"
-
-        # 6. Install RocksDB using vcpkg, which will now use the configured NuGet cache.
+    
+        # 6. Install RocksDB using vcpkg
         & "${{ env.VCPKG_ROOT }}\vcpkg.exe" install rocksdb:x64-windows --debug
-        echo "VCPKG_ROOT: ${{ env.VCPKG_ROOT }}" # Confirm VCPKG_ROOT is set correctly
       shell: pwsh
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite" # Crucial for vcpkg to use your cache
-        VCPKG_DEBUG: 1 # Add this line for verbose output from vcpkg
-
+        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite"
+        VCPKG_DEBUG: 1
+    
     - name: Debug RocksDB Paths (Windows)
       if: runner.os == 'Windows'
       continue-on-error: true
