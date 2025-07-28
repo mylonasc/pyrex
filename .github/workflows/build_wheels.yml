@@ -5,21 +5,44 @@ on:
     branches:
       - main
       - develop
+    paths-ignore: # Only trigger if these paths are NOT changed
+      - '**.md' # Ignore Markdown files (like README.md)
+      - 'docs/**' # Ignore changes in the docs folder
+      - 'LICENSE' # Ignore license file changes
+      - '.github/workflows/README.md' # Specific workflow README
   pull_request:
     branches:
       - main
       - develop
-  workflow_dispatch:
+    paths-ignore: # Only trigger if these paths are NOT changed
+      - '**.md' # Ignore Markdown files (like README.md)
+      - 'docs/**' # Ignore changes in the docs folder
+      - 'LICENSE' # Ignore license file changes
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90 # Increased timeout to ensure the *initial* long build finishes
+    timeout-minutes: 120 # Set a higher timeout for the job (e.g., 120 minutes)
+    permissions:
+      contents: read
+      packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest] # Uncomment these when ready
-    
+        os: [macos-latest, ubuntu-latest, windows-latest]
+      fail-fast: false # Ensures all jobs run even if one fails
+    env:
+      # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+
+      # --- Global CIBW environment variables (reintroduced) ---
+      # These flags are intended to be set as environment variables, not in pyproject.toml.
+      CIBW_FORCE_INSTALL: "1"
+      CIBW_DEBUG: "1"
+      CIBW_PRERELEASE_PYTHONS: "True"
+
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -51,13 +74,16 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.x'
+        python-version: '3.x' # cibuildwheel will manage specific Python versions
+        architecture: 'x64' # Ensure 64-bit Python is set up
+
 
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
         pip install cibuildwheel
 
+    # --- macOS Specific Steps ---
     - name: Install RocksDB (macOS)
       if: runner.os == 'macOS'
       run: |
@@ -66,83 +92,133 @@ jobs:
 
     - name: Get Homebrew prefix (macOS)
       if: runner.os == 'macOS'
-      id: brew_prefix
-      run: echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_OUTPUT"
+      # Set BREW_PREFIX as an environment variable that cibuildwheel will pick up
+      run: echo "BREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
       shell: bash
 
     - name: Debug RocksDB Paths (macOS)
       if: runner.os == 'macOS'
       run: |
-        BREW_PREFIX="${{ steps.brew_prefix.outputs.BREW_PREFIX }}"
-        echo "Homebrew prefix: $BREW_PREFIX"
-        echo "--- Listing contents of $BREW_PREFIX/include/ ---"
-        ls -R "$BREW_PREFIX/include/" | grep -E "rocksdb|db.h" || true
-        echo "--- Listing contents of $BREW_PREFIX/lib/ ---"
-        ls -R "$BREW_PREFIX/lib/" | grep -E "rocksdb|librocksdb" || true
-        echo "--- Searching for db.h globally (within brew prefix) ---"
-        find "$BREW_PREFIX" -name "db.h" 2>/dev/null | grep "rocksdb" || true
-        echo "--- Checking dynamic libraries for rocksdb (within brew prefix) ---"
-        find "$BREW_PREFIX/lib" -name "librocksdb*.dylib" || true
+        echo "Homebrew prefix: ${{ env.BREW_PREFIX }}"
+        echo "--- Listing contents of ${{ env.BREW_PREFIX }}/include/ ---"
+        ls -R "${{ env.BREW_PREFIX }}/include/" | grep -E "rocksdb|db.h" || true
+        echo "--- Listing contents of ${{ env.BREW_PREFIX }}/lib/ ---"
+        ls -R "${{ env.BREW_PREFIX }}/lib/" | grep -E "rocksdb|librocksdb" || true
       shell: bash
+
+    # --- Windows Specific Steps (Vcpkg and RocksDB Installation) ---
+    - name: Export GitHub Actions cache environment variables (for Windows)
+      uses: actions/github-script@v7
+      if: runner.os == 'Windows'
+
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
       run: |
-        # Only clone if vcpkg wasn't restored by cache
-        if (-not (Test-Path -Path ".\vcpkg")) {
-          git clone https://github.com/microsoft/vcpkg.git
+        # 1. Bootstrap vcpkg
+        git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_ROOT }}"
+        cmd /c "`"${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat`" -disableMetrics"
+        
+        # 2. Get the path to the nuget.exe that vcpkg uses internally.
+        # This command outputs the path directly to stdout.
+        $NuGetExePath = & "${{ env.VCPKG_ROOT }}\vcpkg.exe" fetch nuget
+        
+        # Trim any whitespace, newlines, or quotation marks from the output.
+        $NuGetExePath = $NuGetExePath.Trim()
+        $NuGetExePath = $NuGetExePath.Trim('"')
+        # Verify that the nuget.exe path was successfully retrieved.
+        if (-not (Test-Path $NuGetExePath)) {
+            Write-Error "Error: Vcpkg's nuget.exe not found at $NuGetExePath. Fetch command might have failed."
+            exit 1
         }
-        # Bootstrap vcpkg
-        .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-        # Install rocksdb, leveraging the binary cache
-        .\vcpkg\vcpkg.exe install rocksdb:x64-windows
+        Write-Host "Vcpkg's nuget.exe path: $NuGetExePath"
+        # 3. Define variables for NuGet feed configuration.
+        $Owner = "${{ github.repository_owner }}"
+        $FeedUrl = "https://nuget.pkg.github.com/$Owner/index.json"
+        $Username = "$Owner"
+        $Password = "${{ github.token }}"
+        
+        # 4. Add the 'github' source using vcpkg's nuget.exe.
+        # This command modifies the default NuGet.Config for this user/environment,
+        # which vcpkg's internal nuget.exe is likely to use.
+        & "$NuGetExePath" sources add `
+            -Name github `
+            -Source "$FeedUrl" `
+            -UserName "$Username" `
+            -Password "$Password" `
+            -ProtocolVersion 3 `
+            -StorePasswordInClearText # Required for the GitHub token to work as a password.
+
+    
+        # 5. Determine the standard NuGet.Config location and add package source mapping.
+        $NuGetConfigDir = Join-Path -Path $env:APPDATA -ChildPath "NuGet"
+        $NuGetConfigFile = Join-Path -Path $NuGetConfigDir -ChildPath "NuGet.Config"
+        New-Item -ItemType Directory -Path $NuGetConfigDir -Force | Out-Null
+        Write-Host "Modifying NuGet.Config at: $NuGetConfigFile"
+
+        [xml]$config = Get-Content -Path $NuGetConfigFile -Encoding UTF8
+        $packageSourceMapping = $config.configuration.packageSourceMapping
+        if (-not $packageSourceMapping) {
+          $packageSourceMapping = $config.configuration.AppendChild($config.CreateElement("packageSourceMapping"))
+        }
+
+        # Clear any existing mappings to ensure a clean state
+        $packageSourceMapping.RemoveAll()
+
+        # A. Add the default nuget.org source if it doesn't exist
+        $nugetSource = $config.configuration.packageSources.SelectSingleNode("add[@key='nuget.org']")
+        if (-not $nugetSource) {
+            $nugetSource = $config.CreateElement("add")
+            $nugetSource.SetAttribute("key", "nuget.org")
+            $nugetSource.SetAttribute("value", "https://api.nuget.org/v3/index.json")
+            $config.configuration.packageSources.AppendChild($nugetSource)
+        }
+
+        # B. Define a mapping for the public nuget.org feed to be the default
+        $publicSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
+        $publicSourceMapping.SetAttribute("key", "nuget.org")
+        $catchAllPattern = $publicSourceMapping.AppendChild($config.CreateElement("package"))
+        $catchAllPattern.SetAttribute("pattern", "*") # This is the crucial part
+
+        # C. Define the mapping for your private GitHub feed
+        $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
+        $githubSourceMapping.SetAttribute("key", "github")
+        $patterns = @(
+          "rocksdb_x64-windows",
+          "zlib_x64-windows",
+          "lz4_x64-windows",
+          "snappy_x64-windows",
+          "vcpkg-cmake_x64-windows",
+          "vcpkg-cmake-config_x64-windows"
+        )
+        foreach ($pattern in $patterns) {
+          $packageNode = $githubSourceMapping.AppendChild($config.CreateElement("package"))
+          $packageNode.SetAttribute("pattern", $pattern)
+        }
+        $config.Save($NuGetConfigFile)
+    
+        Write-Host "--- Raw content of NuGet.Config (after vcpkg's nuget.exe config) ---"
+        Get-Content -Path $NuGetConfigFile -Raw
+        Write-Host "----------------------------------"
+    
+        # 6. Install RocksDB using vcpkg
+        & "${{ env.VCPKG_ROOT }}\vcpkg.exe" install rocksdb:x64-windows --debug
+      shell: pwsh
       env:
         VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-        VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite" # This enables GitHub Actions Cache for Vcpkg binaries
+        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite"
+        VCPKG_DEBUG: 1
 
-    - name: Debug RocksDB Paths (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        echo "--- Listing contents of VCPKG_ROOT include directory ---"
-        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\include\rocksdb" /s || true
-        echo "--- Listing contents of VCPKG_ROOT lib directory ---"
-        dir "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" /s || true
-        echo "--- Searching for db.h ---"
-        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\include" -Filter "db.h" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
-        echo "--- Searching for rocksdb.lib/dll ---"
-        Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Filter "rocksdb*" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName || true
-      shell: pwsh
-
+    # --- Build Wheels Step ---
     - name: Build wheels
       run: cibuildwheel --output-dir wheelhouse
-      env:
-        CIBW_BUILD_LINUX: "cp*-manylinux_x86_64"
-        CIBW_SKIP: "*-musllinux_*"
-
-        CIBW_BEFORE_BUILD_LINUX: |
-          yum install -y rocksdb-devel snappy-devel lz4-devel zlib-devel bzip2-devel || \
-          (apt-get update && apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev)
-          echo "--- Debugging inside manylinux container after RocksDB install (via rpm -ql) ---"
-          echo "Files installed by rocksdb-devel:"
-          rpm -ql rocksdb-devel || true
-          echo "Files installed by rocksdb (main library):"
-          rpm -ql rocksdb || true
-          echo "--- End rpm -ql output ---"
-
-        CIBW_CFLAGS_LINUX: "-I/usr/include/"
-        CIBW_LDFLAGS_LINUX: "-L/usr/lib/ -lrocksdb"
-
-        CIBW_CFLAGS_MACOS: "-I${{ steps.brew_prefix.outputs.BREW_PREFIX }}/include/"
-        CIBW_LDFLAGS_MACOS: "-L${{ steps.brew_prefix.outputs.BREW_PREFIX }}/lib/ -lrocksdb"
-
-        # Corrected Windows specific flags: Ensure DLLs are on PATH for runtime linking if needed
-        CIBW_CFLAGS_WINDOWS: "-I${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\include"
-        CIBW_LDFLAGS_WINDOWS: "-L${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\lib -lrocksdb"
-        # Add VCPKG_ROOT/installed/x64-windows/bin to PATH for runtime DLL discovery
-        PATH: "${{ env.PATH }};${{ github.workspace }}\\vcpkg\\installed\\x64-windows\\bin"
 
     - name: Upload wheels as artifact
       uses: actions/upload-artifact@v4
       with:
-        name: python-wheels
+        name: python-wheels-${{ matrix.os }}
         path: ./wheelhouse/*.whl
