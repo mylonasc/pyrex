@@ -29,14 +29,23 @@ jobs:
         ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.tag_name }}
         fetch-depth: 0
 
-    # This step is crucial: it finds the 'Build Python Wheels' workflow run
-    # associated with the tag that just triggered this release workflow.
     - name: Find and download workflow artifacts from the matching build
       uses: actions/github-script@v7
       id: download_artifacts
       with:
         script: |
-          const tag = ${{ github.event_name == 'release' ? 'context.payload.release.tag_name' : 'github.event.inputs.tag_name' }};
+          let tag;
+          if (context.eventName === 'release') {
+            tag = context.payload.release.tag_name;
+          } else if (context.eventName === 'workflow_dispatch') {
+            // For workflow_dispatch, the tag name is expected to be provided as an input.
+            // Ensure you have an 'tag_name' input defined in your workflow_dispatch trigger.
+            tag = github.event.inputs.tag_name;
+          } else {
+            core.setFailed(`Unsupported event: ${context.eventName}. This workflow is designed for 'release' or 'workflow_dispatch' events.`);
+            return;
+          }
+
           console.log(`Looking for workflow runs associated with tag: ${tag}`);
 
           // Find the workflow runs for 'Build Python Wheels' on the current repository
@@ -46,10 +55,10 @@ jobs:
           const runs = await github.rest.actions.listWorkflowRunsForRepo({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            workflow_id: 'build-python-wheels.yml', // Replace with the actual filename if different
+            workflow_id: 'build-python-wheels.yml', // Make sure this is the exact filename of your build workflow
             branch: tag, // Search runs on the specific tag
             status: 'success', // Only consider successful builds
-            per_page: 10 // Get a few recent runs
+            per_page: 10 // Get a few recent runs; consider increasing if you have many builds
           });
 
           let foundRun = null;
@@ -84,6 +93,7 @@ jobs:
             run_id: foundRun.id,
           });
 
+          // These modules are typically available in actions/github-script environment
           const fs = require('fs');
           const path = require('path');
           const admZip = require('adm-zip');
@@ -107,7 +117,7 @@ jobs:
             zip.extractAllTo(targetPath, true);
             console.log(`Extracted artifact ${artifact.name} to ${targetPath}`);
           }
-
+      
     - name: List downloaded wheels for verification
       run: |
         ls -R downloaded-wheels/
