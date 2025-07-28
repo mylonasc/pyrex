@@ -53,19 +53,19 @@ jobs:
         python -m pip install --upgrade pip
         pip install cibuildwheel
 
-    # --- NEW DIAGNOSTIC STEP FOR WINDOWS ---
-    - name: Diagnose NuGet Python Packages (Windows Only)
-      if: runner.os == 'Windows'
-      shell: pwsh # Using PowerShell for consistency with other Windows steps
-      run: |
-        Write-Host "--- Checking NuGet connectivity for Python packages ---"
-        # Ensure nuget.exe is available; it usually is on GitHub Actions Windows runners.
-        # Use -Source to explicitly target the main NuGet feed.
-        # -AllVersions and -PreRelease to see everything.
-        # -Verbosity detailed for maximum diagnostic info.
-        nuget list python -Source https://api.nuget.org/v3/index.json -AllVersions -PreRelease -Verbosity detailed
-        Write-Host "--- NuGet check complete ---"
-    # ---------------------------------------
+#    # --- NEW DIAGNOSTIC STEP FOR WINDOWS ---
+#    - name: Diagnose NuGet Python Packages (Windows Only)
+#      if: runner.os == 'Windows'
+#      shell: pwsh # Using PowerShell for consistency with other Windows steps
+#      run: |
+#        Write-Host "--- Checking NuGet connectivity for Python packages ---"
+#        # Ensure nuget.exe is available; it usually is on GitHub Actions Windows runners.
+#        # Use -Source to explicitly target the main NuGet feed.
+#        # -AllVersions and -PreRelease to see everything.
+#        # -Verbosity detailed for maximum diagnostic info.
+#        nuget list python -Source https://api.nuget.org/v3/index.json -AllVersions -PreRelease -Verbosity detailed
+#        Write-Host "--- NuGet check complete ---"
+#    # ---------------------------------------
 
     # --- macOS Specific Steps ---
     - name: Install RocksDB (macOS)
@@ -106,13 +106,37 @@ jobs:
         # 1. Bootstrap vcpkg
         git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_ROOT }}"
         cmd /c "`"${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat`" -disableMetrics"
-
-        # ... (steps 2 & 3 are unchanged) ...
+        
+        # 2. Get the path to the nuget.exe that vcpkg uses internally.
+        # This command outputs the path directly to stdout.
         $NuGetExePath = & "${{ env.VCPKG_ROOT }}\vcpkg.exe" fetch nuget
-        # ... (rest of nuget setup) ...
+        
+        # Trim any whitespace, newlines, or quotation marks from the output.
+        $NuGetExePath = $NuGetExePath.Trim()
+        $NuGetExePath = $NuGetExePath.Trim('"')
+        # Verify that the nuget.exe path was successfully retrieved.
+        if (-not (Test-Path $NuGetExePath)) {
+            Write-Error "Error: Vcpkg's nuget.exe not found at $NuGetExePath. Fetch command might have failed."
+            exit 1
+        }
+        Write-Host "Vcpkg's nuget.exe path: $NuGetExePath"
+        # 3. Define variables for NuGet feed configuration.
+        $Owner = "${{ github.repository_owner }}"
+        $FeedUrl = "https://nuget.pkg.github.com/$Owner/index.json"
+        $Username = "$Owner"
+        $Password = "${{ github.token }}"
+        
+        # 4. Add the 'github' source using vcpkg's nuget.exe.
+        # This command modifies the default NuGet.Config for this user/environment,
+        # which vcpkg's internal nuget.exe is likely to use.
         & "$NuGetExePath" sources add `
-          -Name github `
-          # ... (rest of source add command) ...
+            -Name github `
+            -Source "$FeedUrl" `
+            -UserName "$Username" `
+            -Password "$Password" `
+            -ProtocolVersion 3 `
+            -StorePasswordInClearText # Required for the GitHub token to work as a password.
+
     
         # 5. Determine the standard NuGet.Config location and add package source mapping.
         $NuGetConfigDir = Join-Path -Path $env:APPDATA -ChildPath "NuGet"
