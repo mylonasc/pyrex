@@ -1,11 +1,9 @@
-# .github/workflows/build_wheels.yml
 name: Build Python Wheels
 
 on:
   push:
     branches:
       - main
-      - fix-windows-build
       - develop
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
@@ -15,7 +13,6 @@ on:
   pull_request:
     branches:
       - main
-      - fix-windows-build
       - develop
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
@@ -45,17 +42,41 @@ jobs:
       CIBW_DEBUG: "1"
       CIBW_PRERELEASE_PYTHONS: "True"
 
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
+    # --- Start Vcpkg Caching ---
+    # Cache the vcpkg tool itself (cloned repository)
+    - name: Cache vcpkg tool
+      id: cache-vcpkg-tool
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg
+        key: ${{ runner.os }}-vcpkg-tool-${{ hashFiles('vcpkg/.git/HEAD') }} # Key changes if vcpkg repo updates
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-tool-
+
+    # Cache vcpkg's installed binary packages (pre-built RocksDB)
+    - name: Cache vcpkg installed packages
+      id: cache-vcpkg-installed
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg/installed
+        key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg/vcpkg.exe') }}-${{ hashFiles('vcpkg/ports/rocksdb/portfile.cmake') }} # Key for installed packages
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-installed-
+    # --- End Vcpkg Caching ---
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.x' # cibuildwheel will manage specific Python versions
         architecture: 'x64' # Ensure 64-bit Python is set up
+
 
     - name: Install build dependencies
       run: |
@@ -89,11 +110,11 @@ jobs:
     - name: Export GitHub Actions cache environment variables (for Windows)
       uses: actions/github-script@v7
       if: runner.os == 'Windows'
+
       with:
         script: |
           core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
 
     - name: Install RocksDB (Windows via vcpkg)
       if: runner.os == 'Windows'
