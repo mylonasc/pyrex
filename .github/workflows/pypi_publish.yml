@@ -44,11 +44,10 @@ jobs:
     # (Settings -> Environments -> New environment).
     # This allows you to add protection rules like required reviewers.
     environment:
-      # Use the input environment if provided, otherwise default to 'pypi'.
       name: ${{ github.event.inputs.environment || 'pypi' }}
       # Replace with your actual PyPI project URL.
       # Example: [https://pypi.org/project/your-package-name/](https://pypi.org/project/your-package-name/)
-      url: [https://pypi.org/project/pyrex-rocksdb](https://pypi.org/project/pyrex-rocksdb)
+      url: https://pypi.org/project/pyrex-rocksdb
 
     # Permissions required for PyPI Trusted Publishing (id-token: write)
     # and to access repository contents (contents: read).
