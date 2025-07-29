@@ -181,7 +181,7 @@ public:
     rocksdb::Iterator* it_;
     PyRocksDB* parent_db_; // <<< CHANGED: Pointer to parent to check its state
 
-    explicit PyRocksDBIterator(rocksdb::Iterator* it, PyRocksDB* parent_db) 
+    explicit PyRocksDBIterator(rocksdb::Iterator* it, PyRocksDB* parent_db)
         : it_(it), parent_db_(parent_db) { // <<< CHANGED: Constructor
         if (!it_) {
             throw RocksDBException("Failed to create RocksDB iterator: null pointer received.");
@@ -255,15 +255,15 @@ public:
 
 // --- PyRocksDB: The original class, now implicitly operating on the default CF ---
 class PyRocksDB {
-protected: 
+protected:
     rocksdb::DB* db_;
     PyOptions opened_options_;
     std::string path_;
     std::map<std::string, std::shared_ptr<PyColumnFamilyHandle>> cf_handles_;
-    
+
     // <<< ADDED: Atomic flag to track closed state for iterator safety
     std::atomic<bool> is_closed_{false};
-    
+
     // <<< ADDED: Friend class declaration to allow iterator access to is_closed_
     friend class PyRocksDBIterator;
 
@@ -289,11 +289,11 @@ public:
         std::vector<rocksdb::ColumnFamilyDescriptor> cf_descriptors;
         std::vector<std::string> existing_cf_names;
         bool db_likely_exists = false;
-        
+
         // Check for the presence of the 'CURRENT' file, which indicates a RocksDB instance
         std::string current_file_path = path_ + "/CURRENT";
         #ifdef _WIN32
-            if (_access(current_file_path.c_c_str(), 0) == 0) { // Check if file exists
+            if (_access(current_file_path.c_str(), 0) == 0) { // Check if file exists
                 db_likely_exists = true;
             }
         #else
@@ -350,9 +350,9 @@ public:
             for (auto const& [name, handle_ptr] : cf_handles_) {
                 handle_ptr->cf_handle_ = nullptr;
             }
-            cf_handles_.clear(); 
-            
-            delete db_; 
+            cf_handles_.clear();
+
+            delete db_;
             db_ = nullptr;
         }
     }
@@ -427,7 +427,7 @@ public:
         return opened_options_;
     }
 
-protected: 
+protected:
     rocksdb::ColumnFamilyHandle* get_default_cf_handle() const {
         if (db_ == nullptr) {
             throw RocksDBException("Database is not open or has been closed. Cannot get default CF handle.");
@@ -572,7 +572,7 @@ public:
         if (!s.ok()) {
             throw RocksDBException("Failed to drop column family '" + cf_name + "': " + s.ToString());
         }
-        
+
         // CRITICAL: Destroy the handle after dropping the family
         s = db_->DestroyColumnFamilyHandle(raw_handle);
         if (!s.ok()) {
@@ -856,4 +856,3 @@ PYBIND11_MODULE(_pyrex, m) {
              "    ColumnFamilyHandle or None: The handle if found, None otherwise."
         );
 }
-
