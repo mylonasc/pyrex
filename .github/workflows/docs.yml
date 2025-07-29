@@ -18,39 +18,51 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x' # Use your desired Python version, e.g., '3.9', '3.10', '3.11'
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x' # Use your desired Python version, e.g., '3.9', '3.10', '3.11'
+        architecture: 'x64' # Ensure 64-bit Python is set up
 
-      - name: Install Sphinx and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          # If you have a requirements.txt file for your docs:
-          pip install -r docs/requirements.txt
-          # Otherwise, install Sphinx and any themes/extensions directly:
-          # pip install sphinx sphinx_rtd_theme # Example theme
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install cibuildwheel
 
-      - name: Build Sphinx documentation
-        run: |
-          cd docs
-          make html
-          # Or, if you don't use make:
-          # sphinx-build -b html . _build/html
-        env:
-          SPHINXOPTS: "-W --keep-going" # Add -W to treat warnings as errors, --keep-going to continue on errors
+    - name: Install Sphinx and dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r docs/requirements.txt
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+    - name: Build wheels
+      run: cibuildwheel --output-dir wheelhouse
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: 'docs/_build/html' # Path to your built HTML documentation
+    - name: Upload wheels as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-${{ matrix.os }}
+        path: ./wheelhouse/*.whl
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+    - name: Build Sphinx documentation
+      run: |
+        cd docs
+        make html
+        # Or, if you don't use make:
+        # sphinx-build -b html . _build/html
+      env:
+        SPHINXOPTS: "-W --keep-going" # Add -W to treat warnings as errors, --keep-going to continue on errors
+
+    - name: Configure GitHub Pages
+      uses: actions/configure-pages@v5
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: 'docs/build/html' # Path to your built HTML documentation
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
