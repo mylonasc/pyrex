@@ -43,3 +43,9 @@ pip install build
 python -m build
 ```
 
+## For PyPi compatible build
+Either rely on the CICD/Actions to work, or use a local `.toml`:
+
+```
+cibuildwheel --platform linux --config-file pyproject_localbuild.toml 
+```
