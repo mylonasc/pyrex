@@ -4,16 +4,17 @@ on:
   push:
     branches:
       - main
-      - develop
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
       - 'LICENSE' # Ignore license file changes
       - '.github/workflows/README.md' # Specific workflow README
+    tags:
+      - 'v*'
+    
   pull_request:
     branches:
       - main
-      - develop
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
