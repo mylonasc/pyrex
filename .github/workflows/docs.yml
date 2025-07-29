@@ -1,0 +1,56 @@
+name: Deploy Sphinx Docs to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main  # Or 'master', or whatever your main branch is called
+    paths:
+      - 'docs/**' # Trigger only if changes are within the 'docs' directory
+      - '.github/workflows/docs.yml' # Also trigger if the workflow itself changes
+  workflow_dispatch: {} # Allows manual triggering from the GitHub Actions UI
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x' # Use your desired Python version, e.g., '3.9', '3.10', '3.11'
+
+      - name: Install Sphinx and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # If you have a requirements.txt file for your docs:
+          pip install -r docs/requirements.txt
+          # Otherwise, install Sphinx and any themes/extensions directly:
+          # pip install sphinx sphinx_rtd_theme # Example theme
+
+      - name: Build Sphinx documentation
+        run: |
+          cd docs
+          make html
+          # Or, if you don't use make:
+          # sphinx-build -b html . _build/html
+        env:
+          SPHINXOPTS: "-W --keep-going" # Add -W to treat warnings as errors, --keep-going to continue on errors
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs/_build/html' # Path to your built HTML documentation
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
