@@ -21,7 +21,7 @@ except ImportError:
 
 # --- Configuration ---
 DB_DIR = "kv_benchmark_data"
-NUM_KEYS = 10_000_000 # Increased number of key-value pairs to operate on
+NUM_KEYS = 1_000_000 # Increased number of key-value pairs to operate on
 VALUE_SIZE = 500    # Increased size of each value in bytes
 BATCH_SIZE = 1000   # Number of operations per batch write
 KEY_PREFIX_LENGTH = 8 # Length of the fixed part of the key
