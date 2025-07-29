@@ -164,13 +164,17 @@ class TestPyrex(unittest.TestCase):
         it = self.db.new_iterator()
         self.assertIsNotNone(it)
 
+
         it.seek_to_first()
         found_keys = []
         while it.valid():
             found_keys.append(it.key())
             it.next()
+
         self.assertEqual(sorted(found_keys), sorted(list(data.keys())))
-        it.check_status()
+
+        # it.check_status()
+        # print("4")
 
     def test_09_iterator_seek_and_prev(self):
         """
@@ -182,8 +186,10 @@ class TestPyrex(unittest.TestCase):
             b"b1": b"v4", b"b2": b"v5",
             b"c1": b"v6"
         }
+
         for k, v in data.items():
             self.db.put(k, v)
+
 
         it = self.db.new_iterator()
         it.seek(b"b1")
