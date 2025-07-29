@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyrex-rocksdb"
-version = "0.1.1a"
+version = "0.1.2"
 authors = [
   { name="Charilaos Mylonas", email="mylonas.charilaos@gmail.com" },
 ]
