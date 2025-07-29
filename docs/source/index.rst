@@ -17,6 +17,7 @@ documentation for details.
    :caption: Contents:
    
    examples
+   column_families
    api 
 
 Indices and tables
