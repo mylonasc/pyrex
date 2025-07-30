@@ -1,137 +1,185 @@
 # setup.py
 import os
+import io
 import sys
 import subprocess
+import tarfile
+import urllib.request
 from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext as _build_ext
 
-# Path to the RocksDB submodule
-ROCKSDB_SRC_DIR = Path(__file__).parent / "third_party" / "rocksdb"
+# Use the standard library tomllib on Python 3.11+
+# and fall back to the tomli package on older versions.
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
+# --- Project Configuration ---
+
+PROJECT_DIR = Path(__file__).parent.resolve()
+
+# The default version of RocksDB to build if the env var is not set.
+DEFAULT_ROCKSDB_VERSION = "10.2.1"
+
+# --- Versioning Logic ---
+
+# Read the base version from pyproject.toml
+pyproject_path = PROJECT_DIR / "pyproject.toml"
+with open(pyproject_path, "rb") as f:
+    pyproject_data = tomllib.load(f)
+    BASE_VERSION = pyproject_data["project"]["version"]
+
+# The version of RocksDB that will be built.
+# It can be overridden by the ROCKSDB_VERSION environment variable.
+rocksdb_version = os.environ.get("ROCKSDB_VERSION", DEFAULT_ROCKSDB_VERSION)
+print("-="*20)
+print(rocksdb_version)
+
+# Construct a PEP 440-compliant version string for the final Python package.
+# This appends a local version identifier (e.g., +rocksdb1021) to the base version.
+sanitized_rocksdb_version = rocksdb_version.replace('.', '')
+final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
+
+# --- Custom Build Logic ---
 
 class CMakeRocksDBExtension(Extension):
-    """A placeholder for our CMake-built RocksDB library."""
-    def __init__(self, name, sourcedir=''):
-        Extension.__init__(self, name, sources=[])
-        self.sourcedir = os.path.abspath(sourcedir)
+    """A placeholder to signal a CMake-based dependency."""
+    def __init__(self, name):
+        super().__init__(name, sources=[])
 
 class build_ext(_build_ext):
     """
-    Custom build_ext command to compile RocksDB using CMake
-    and then build the pyrex extension.
+    Custom 'build_ext' command to download and build RocksDB before
+    building the actual Python extension.
     """
     def run(self):
-        # Ensure CMake is available
-        try:
-            subprocess.check_output(['cmake', '--version'])
-        except OSError:
-            raise RuntimeError("CMake must be installed to build the following extensions: " +
-                             ", ".join(e.name for e in self.extensions))
+        self._ensure_cmake_is_available()
 
-        # Separate CMake extensions from regular extensions
-        cmake_extensions = []
-        regular_extensions = []
-        for ext in self.extensions:
-            if isinstance(ext, CMakeRocksDBExtension):
-                cmake_extensions.append(ext)
-            else:
-                regular_extensions.append(ext)
+        # 1. Download and build RocksDB for the specified version.
+        rocksdb_install_path = self._get_and_build_rocksdb()
 
-        # Build all CMake-based extensions (our static RocksDB library)
-        for ext in cmake_extensions:
-            self.build_cmake_extension(ext)
 
-        self.extensions = regular_extensions
+        # 2. 
+        pyrex_ext = self._get_pyrex_extension()
+        if not pyrex_ext:
+            raise RuntimeError("Could not find the 'pyrex._pyrex' extension.")
+        self._configure_pyrex_extension(pyrex_ext, rocksdb_install_path)
 
+        self.extensions = [pyrex_ext]
+        # 3. Call the parent run() to build the pyrex extension.
         super().run()
 
-    def build_cmake_extension(self, ext):
-        # The project's root directory
-        project_root = Path(__file__).parent.resolve()
-
-        # Define an absolute path for the RocksDB build directory
-        build_temp = project_root / self.build_temp / "rocksdb"
-        build_temp.mkdir(parents=True, exist_ok=True)
-
-        # Define a single, absolute path for where RocksDB will be installed
-        install_dir = build_temp / "install"
-
-        # C++ flags from the first fix
-        cxx_flags = "-std=c++17 -include cstdint -include system_error"
-
-        # CMake configuration arguments using the absolute install path
-        cmake_args = [
-            f'-DCMAKE_INSTALL_PREFIX={install_dir}',
-            '-DCMAKE_BUILD_TYPE=Release',
-            '-DROCKSDB_BUILD_SHARED=OFF',
-            '-DWITH_SNAPPY=ON',
-            f'-DCMAKE_CXX_FLAGS={cxx_flags}',
-            '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
-            '-DWITH_LZ4=ON',
-            '-DWITH_ZLIB=ON',
-            '-DWITH_BZ2=ON',
-            '-DFAIL_ON_WARNINGS=OFF',
-        ]
-
-        # Build arguments
-        build_args = ['--config', 'Release', '--', 'VERBOSE=1']
-
-        # 1. Configure CMake
-        subprocess.check_call(['cmake', str(ROCKSDB_SRC_DIR)] + cmake_args, cwd=build_temp)
-
-        # 2. Build and install RocksDB
-        subprocess.check_call(['cmake', '--build', '.', '--target', 'install'] + build_args, cwd=build_temp)
-
-        # --- Update the pyrex extension with the correct, absolute paths ---
-        pyrex_ext = self.get_pyrex_extension()
-        if pyrex_ext:
-            rocksdb_include_dir = install_dir / "include"
-            
-            # Detect lib64 vs lib and use the correct one
-            rocksdb_library_dir = install_dir / "lib"
-            if not rocksdb_library_dir.exists() and (install_dir / "lib64").exists():
-                rocksdb_library_dir = install_dir / "lib64"
-
-            print(f"Updating pyrex extension with RocksDB paths:")
-            print(f"  Includes: {rocksdb_include_dir}")
-            print(f"  Libraries: {rocksdb_library_dir}")
-
-            pyrex_ext.include_dirs.append(str(rocksdb_include_dir))
-            pyrex_ext.library_dirs.append(str(rocksdb_library_dir))
-
-            # Static library names are different across platforms
-            if sys.platform == "win32":
-                 pyrex_ext.libraries.extend(['rocksdb', 'shlwapi', 'rpcrt4', 'zlibstatic', 'snappy', 'lz4', 'bz2'])
-            else:
-                 pyrex_ext.libraries.extend(['rocksdb', 'snappy', 'lz4', 'z', 'bz2'])
-
-
-                 
-    def get_pyrex_extension(self):
+    def _get_pyrex_extension(self) -> Extension | None:
+        """Finds the 'pyrex._pyrex' extension object from the list."""
         for ext in self.extensions:
             if ext.name == 'pyrex._pyrex':
                 return ext
         return None
 
+    def _ensure_cmake_is_available(self):
+        """Check if CMake is installed and available."""
+        try:
+            subprocess.check_output(['cmake', '--version'])
+        except OSError:
+            raise RuntimeError("CMake must be installed to build this project.")
 
-# The main Python extension module
+    def _get_and_build_rocksdb(self):
+        """
+        Downloads, extracts, and builds a specific version of RocksDB.
+        Implements a simple caching mechanism to avoid rebuilding.
+        """
+
+        build_dir = Path(self.build_temp)
+        # Create a version-specific installation directory for caching.
+        install_dir = build_dir / f"rocksdb_install_{rocksdb_version}"
+
+        # If the library for this version already exists, use the cache.
+        if (install_dir / "lib" / "librocksdb.a").exists() or \
+           (install_dir / "lib64" / "librocksdb.a").exists():
+            print(f"--- Using cached RocksDB v{rocksdb_version} from {install_dir} ---")
+            return install_dir
+
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Download and Extract RocksDB Source
+        url = f"https://github.com/facebook/rocksdb/archive/refs/tags/v{rocksdb_version}.tar.gz"
+        print(f"--- Downloading RocksDB v{rocksdb_version} from {url} ---")
+        with urllib.request.urlopen(url) as response:
+            download_content = response.read()
+
+        with io.BytesIO(download_content) as buffer:
+            with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
+                top_level_dir = Path(tar.getmembers()[0].name).parts[0]
+                # ** FIX: Add filter='data' to address the DeprecationWarning **
+                tar.extractall(path=build_dir, filter='data')
+
+        source_dir = build_dir / top_level_dir
+
+        # 2. Configure and Build with CMake
+        cmake_build_dir = source_dir / "build"
+        cmake_build_dir.mkdir(exist_ok=True)
+
+
+        # C++ flags (rocksdb version 6.x)
+        cxx_flags = "-std=c++17 -include cstdint -include system_error"
+
+        cmake_args = [
+            f'-DCMAKE_INSTALL_PREFIX={install_dir.resolve()}',
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
+            f'-DCMAKE_CXX_FLAGS={cxx_flags}',
+            '-DROCKSDB_BUILD_SHARED=OFF',
+            '-DFAIL_ON_WARNINGS=OFF',
+            '-DWITH_SNAPPY=ON', '-DWITH_LZ4=ON', '-DWITH_ZLIB=ON', 
+            '-DWITH_BZ2=ON', '-DWITH_ZSTD=ON',
+        ]
+        
+        print(f"--- Configuring RocksDB v{rocksdb_version} ---")
+        subprocess.check_call(['cmake', '..'] + cmake_args, cwd=cmake_build_dir)
+        
+        print(f"--- Building and installing RocksDB v{rocksdb_version} ---")
+        subprocess.check_call(['cmake', '--build', '.', '--target', 'install'], cwd=cmake_build_dir)
+            
+        return install_dir
+
+    def _configure_pyrex_extension(self, ext, rocksdb_install_path):
+        """Updates the pyrex extension with the correct paths and libraries."""
+        ext.include_dirs.append(str(rocksdb_install_path / "include"))
+        
+
+        """Updates a Python extension with the necessary RocksDB paths and libraries."""
+        ext.include_dirs.append(str(rocksdb_install_path / "include"))
+
+        lib_dir = rocksdb_install_path / ("lib64" if (rocksdb_install_path / "lib64").exists() else "lib")
+        ext.library_dirs.append(str(lib_dir))
+
+
+        if sys.platform == "win32":
+            ext.libraries.extend(['rocksdb', 'shlwapi', 'rpcrt4', 'zlibstatic', 'snappy', 'lz4', 'bz2','zstd'])
+        else:
+            ext.libraries.extend(['rocksdb', 'snappy', 'lz4', 'z', 'bz2','zstd'])
+        
+        print(f"--- Configured pyrex extension with RocksDB paths ---")
+
+# --- Extension Definitions ---
+
 pyrex_module = Extension(
-    'pyrex._pyrex',
+    name='pyrex._pyrex',
     sources=['src/pyrex/_pyrex.cpp'],
     language='c++',
-    # We will populate these dynamically in our custom build_ext
     include_dirs=[], 
     library_dirs=[],
     libraries=[],
-    extra_compile_args=['-std=c++17', '-include', 'cstdint'] if sys.platform != 'win32' else ['/std:c++17', '/FIcstdint'],
-    # extra_compile_args=['-std=c++17'] if sys.platform != 'win32' else ['/std:c++17'],
-    extra_link_args=[],
+    extra_compile_args=['-std=c++17'] if sys.platform != 'win32' else ['/std:c++17'],
 )
 
+# --- Main Setup Call ---
+
 setup(
-    # Our extensions list now includes the placeholder for RocksDB
+    version=final_version,
     ext_modules=[CMakeRocksDBExtension('rocksdb'), pyrex_module],
     cmdclass={'build_ext': build_ext},
     zip_safe=False,
 )
-
