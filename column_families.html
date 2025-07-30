@@ -1,0 +1,233 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>&lt;no title&gt; &mdash; pyrex-rocksdb 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="prev" title="Examples" href="examples.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html#class-docs">Class Docs</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">&lt;no title&gt;</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/column_families.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <p># Column Family Usage Example</p>
+<p>This example demonstrates how to use <cite>PyRocksDBExtended</cite> to manage and interact with multiple column families within a RocksDB database.</p>
+<p>Column families are an advanced feature of RocksDB that allow you to logically
+partition your data within a single database instance. This can be useful for
+managing different types of data with different access patterns or configurations.</p>
+<p>First, ensure you have the <cite>_pyrex</cite> module installed (your Python wrapper for RocksDB).</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+<p><a href="#id1"><span class="problematic" id="id2">``</span></a>`
+import _pyrex
+import os
+import shutil</p>
+<p># Define a path for our test database
+DB_PATH = “./rocksdb_cf_example”</p>
+<p># Clean up any previous database instance for a fresh start
+if os.path.exists(DB_PATH):</p>
+<blockquote>
+<div><p>shutil.rmtree(DB_PATH)
+print(f”Cleaned up existing database at {DB_PATH}”)</p>
+</div></blockquote>
+<p>print(”— Starting Column Family Example —“)</p>
+<p># 1. Open a PyRocksDBExtended instance
+#    This class provides methods for managing column families.
+#    We use a ‘with’ statement to ensure the database is properly closed.
+try:</p>
+<blockquote>
+<div><dl>
+<dt>with _pyrex.PyRocksDBExtended(DB_PATH) as db:</dt><dd><p>print(f”nOpened database at {DB_PATH}”)</p>
+<p># The default column family is always present
+default_cf = db.default_cf
+print(f”Default Column Family: {default_cf.name}”)</p>
+<p># 2. List initial column families (should only be ‘default’)
+cfs_before_creation = db.list_column_families()
+print(f”Column Families before creation: {cfs_before_creation}”)</p>
+<p># 3. Create new column families
+#    You can optionally pass PyOptions to configure the new CF.
+#    Here, we’ll create two new column families: ‘users’ and ‘products’.
+users_cf = db.create_column_family(“users”)
+products_cf = db.create_column_family(“products”)</p>
+<p>print(f”nCreated column families: ‘{users_cf.name}’ and ‘{products_cf.name}’”)</p>
+<p># 4. List column families again to see the newly created ones
+cfs_after_creation = db.list_column_families()
+print(f”Column Families after creation: {cfs_after_creation}”)</p>
+<p># 5. Put and Get data into specific column families
+print(”n— Writing and Reading Data in Column Families —“)</p>
+<p># Put data into the ‘users’ column family
+db.put_cf(users_cf, b”user:1”, b”Alice”)
+db.put_cf(users_cf, b”user:2”, b”Bob”)
+print(f”Put ‘Alice’ for ‘user:1’ in ‘{users_cf.name}’ CF”)
+print(f”Put ‘Bob’ for ‘user:2’ in ‘{users_cf.name}’ CF”)</p>
+<p># Put data into the ‘products’ column family
+db.put_cf(products_cf, b”prod:A”, b”Laptop”)
+db.put_cf(products_cf, b”prod:B”, b”Mouse”)
+print(f”Put ‘Laptop’ for ‘prod:A’ in ‘{products_cf.name}’ CF”)
+print(f”Put ‘Mouse’ for ‘prod:B’ in ‘{products_cf.name}’ CF”)</p>
+<p># Put data into the default column family
+db.put(b”app_setting:theme”, b”dark”)
+print(f”Put ‘dark’ for ‘app_setting:theme’ in ‘{default_cf.name}’ CF”)</p>
+<p># Get data from the ‘users’ column family
+alice_data = db.get_cf(users_cf, b”user:1”)
+print(f”Get ‘user:1’ from ‘{users_cf.name}’ CF: {alice_data.decode()}”)</p>
+<p># Get data from the ‘products’ column family
+laptop_data = db.get_cf(products_cf, b”prod:A”)
+print(f”Get ‘prod:A’ from ‘{products_cf.name}’ CF: {laptop_data.decode()}”)</p>
+<p># Attempt to get ‘user:1’ from the ‘products’ CF (should be None)
+non_existent_data = db.get_cf(products_cf, b”user:1”)
+print(f”Get ‘user:1’ from ‘{products_cf.name}’ CF (expected None): {non_existent_data}”)</p>
+<p># Get data from the default column family
+theme_data = db.get(b”app_setting:theme”)
+print(f”Get ‘app_setting:theme’ from ‘{default_cf.name}’ CF: {theme_data.decode()}”)</p>
+<p># 6. Delete data from a specific column family
+print(”n— Deleting Data in Column Families —“)
+db.delete_cf(users_cf, b”user:2”)
+print(f”Deleted ‘user:2’ from ‘{users_cf.name}’ CF”)</p>
+<p># Verify deletion
+bob_data_after_del = db.get_cf(users_cf, b”user:2”)
+print(f”Get ‘user:2’ from ‘{users_cf.name}’ CF after deletion: {bob_data_after_del}”)</p>
+<p># 7. Iterate over a specific column family
+print(f”n— Iterating over ‘{products_cf.name}’ Column Family —“)
+with db.new_cf_iterator(products_cf) as it:</p>
+<blockquote>
+<div><p>it.seek_to_first()
+while it.valid():</p>
+<blockquote>
+<div><p>print(f”  Key: {it.key().decode()}, Value: {it.value().decode()}”)
+it.next()</p>
+</div></blockquote>
+</div></blockquote>
+<p># 8. Drop a column family
+print(f”n— Dropping Column Family ‘{products_cf.name}’ —“)
+db.drop_column_family(products_cf)
+print(f”Dropped column family: ‘{products_cf.name}’”)</p>
+<p># 9. List column families again to confirm deletion
+cfs_after_drop = db.list_column_families()
+print(f”Column Families after dropping ‘{products_cf.name}’: {cfs_after_drop}”)</p>
+<p># Attempting to use a dropped column family handle will raise an exception
+try:</p>
+<blockquote>
+<div><p>db.put_cf(products_cf, b”new_prod”, b”TV”)</p>
+</div></blockquote>
+<dl class="simple">
+<dt>except _pyrex.RocksDBException as e:</dt><dd><p>print(f”Caught expected error when using dropped CF handle: {e}”)</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</div></blockquote>
+<dl>
+<dt>except _pyrex.RocksDBException as e:</dt><dd><p>print(f”An error occurred: {e}”)</p>
+</dd>
+<dt>except Exception as e:</dt><dd><p>print(f”An unexpected error occurred: {e}”)</p>
+</dd>
+<dt>finally:</dt><dd><p># Final cleanup
+if os.path.exists(DB_PATH):</p>
+<blockquote>
+<div><p>shutil.rmtree(DB_PATH)
+print(f”nSuccessfully cleaned up database at {DB_PATH}”)</p>
+</div></blockquote>
+</dd>
+</dl>
+<p><a href="#id3"><span class="problematic" id="id4">``</span></a><a href="#id5"><span class="problematic" id="id6">`</span></a></p>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="examples.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
