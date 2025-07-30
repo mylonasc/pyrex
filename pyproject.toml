@@ -1,4 +1,9 @@
-# pyproject.toml
+#
+# NOTE:
+# -----  
+# Version is defined from logic implemented inside setuptools.
+# You need to define environment variables PYREX_VERSION and 
+# ROCKSDB_VERSION before building. 
 
 [build-system]
 # Add cmake to your build requirements
@@ -58,6 +63,12 @@ package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 #build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
 build = "cp312-*"
 skip = ["*-musllinux_*"]
+
+environment-pass = [
+    "ROCKSDB_VERSION",
+    "PYREX_VERSION"
+]
+
 container-engine= "docker; create-args: --network=host"
 
 # Linux specific configurations
@@ -67,7 +78,6 @@ before-build = """
   yum install -y gflags-devel cmake snappy-devel lz4-devel zlib-devel bzip2-devel libzstd-devel || \\
   (apt-get update && apt-get install -y cmake build-essential libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev libzstd-dev)
 """
-environment = { ROCKSDB_VERSION = '6.29.5'} 
 
 # macOS specific configurations
 [tool.cibuildwheel.macos]
