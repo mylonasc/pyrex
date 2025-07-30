@@ -1,6 +1,6 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/pyrex-rocksdb.svg)](https://pypi.org/project/pyrex-rocksdb/)
-[![Python versions]((https://img.shields.io/pypi/pyversions/pyrex-rocksdb)](https://img.shields.io/pypi/pyversions/pyrex-rocksdb)
+[![Python versions](https://img.shields.io/pypi/pyversions/pyrex-rocksdb.svg)](https://img.shields.io/pypi/pyversions/pyrex-rocksdb/)
 
 # pyrex-rocksdb
 A python wrapper, for the C++ version of RocksDB.
