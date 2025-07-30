@@ -9,22 +9,12 @@ from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext as _build_ext
 
-# Use the standard library tomllib on Python 3.11+
-# and fall back to the tomli package on older versions.
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
 
 # --- Project Configuration ---
 
 PROJECT_DIR = Path(__file__).parent.resolve()
 
 # The default version of RocksDB to build if the env var is not set.
-DEFAULT_ROCKSDB_VERSION = "10.2.1"
-
-
-
 
 # --- Versioning Logic ---
 # Read the base package version from an environment variable.
@@ -52,7 +42,6 @@ else:
     final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
 
 # --- Custom Build Logic ---
-
 class CMakeRocksDBExtension(Extension):
     """A placeholder to signal a CMake-based dependency."""
     def __init__(self, name):

@@ -1,9 +1,9 @@
 
-[](https://img.shields.io/pypi/v/pyrex-rocksdb)
-[](https://img.shields.io/pypi/pyversions/pyrex-rocksdb)
+[![PyPI version](https://img.shields.io/pypi/v/pyrex-rocksdb.svg)](https://pypi.org/project/pyrex-rocksdb/)
+[![Python versions]((https://img.shields.io/pypi/pyversions/pyrex-rocksdb)](https://img.shields.io/pypi/pyversions/pyrex-rocksdb)
 
-# pyrex
-a python rocksdb wrapper
+# pyrex-rocksdb
+A python wrapper, for the C++ version of RocksDB.
 
 ## Motivation
 rocksdb python wrappers are broken. This is yet another attempt to create a working python wrapper for rocksdb.
@@ -13,7 +13,27 @@ Check the `test.py` file.
 
 ## Installation
 
-On Linux/macOS: Open your terminal, navigate to the parent directory of my_rocksdb_wrapper, and run:
+
+<details>
+  <summary>Note on CICD</summary>
+The wheels provided are not completely platform-independent at the moment. 
+I heavily rely on github actions to develop since I don't own mac or windows machines.
+The CICD workflow for package builds is under development A windows/macos/linux build was successful, but further development is needed.
+</details>
+
+### Linux/WSL
+
+The library comes with `RocksDB 9` pre-packaged and statically linked. 
+
+Install simply with 
+```
+pip install pyrex-rocksdb
+```
+
+A version that dynamically links Ubuntu's rocksdb was also tried, but presented runtime errors in Ubuntu 24 default rocksdb (v9).
+
+### MacOS/Windows
+There is an early version of the library in pypi for windows and MacOS.
 
 
 Build and Use the Wrapper:
