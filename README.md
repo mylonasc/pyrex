@@ -2,8 +2,11 @@
 [![PyPI version](https://img.shields.io/pypi/v/pyrex-rocksdb.svg)](https://pypi.org/project/pyrex-rocksdb/)
 [![Python versions](https://img.shields.io/pypi/pyversions/pyrex-rocksdb.svg)](https://img.shields.io/pypi/pyversions/pyrex-rocksdb/)
 
+
+![pyrex](https://raw.githubusercontent.com/mylonasc/pyrex/main/assets/logo.png)
+
 # pyrex-rocksdb
-A python wrapper, for the C++ version of RocksDB.
+A python wrapper for the C++ version of RocksDB.
 
 ## Motivation
 rocksdb python wrappers are broken. This is yet another attempt to create a working python wrapper for rocksdb.
