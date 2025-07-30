@@ -80,126 +80,132 @@
   <section id="column-family-usage-example">
 <h1>Column Family Usage Example<a class="headerlink" href="#column-family-usage-example" title="Link to this heading"></a></h1>
 <p>This example demonstrates how to use <cite>PyRocksDBExtended</cite> to manage and interact with multiple column families within a RocksDB database.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
 <p>Column families are an advanced feature of RocksDB that allow you to logically
 partition your data within a single database instance. This can be useful for
 managing different types of data with different access patterns or configurations.</p>
-<p>First, ensure you have the <cite>_pyrex</cite> module installed (your Python wrapper for RocksDB).</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>
+<p>First, ensure you have the <cite>pyrex</cite> module installed (your Python wrapper for RocksDB).</p>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+
+<span class="c1"># Define a path for our test database</span>
+<span class="n">DB_PATH</span> <span class="o">=</span> <span class="s2">&quot;./rocksdb_cf_example&quot;</span>
+
+<span class="c1"># Clean up any previous database instance for a fresh start</span>
+<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">):</span>
+    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cleaned up existing database at </span><span class="si">{</span><span class="n">DB_PATH</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;--- Starting Column Family Example ---&quot;</span><span class="p">)</span>
+
+<span class="c1"># 1. Open a PyRocksDBExtended instance</span>
+<span class="c1">#    This class provides methods for managing column families.</span>
+<span class="c1">#    We use a &#39;with&#39; statement to ensure the database is properly closed.</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDBExtended</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Opened database at </span><span class="si">{</span><span class="n">DB_PATH</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># The default column family is always present</span>
+        <span class="n">default_cf</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">default_cf</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Default Column Family: </span><span class="si">{</span><span class="n">default_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 2. List initial column families (should only be &#39;default&#39;)</span>
+        <span class="n">cfs_before_creation</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">list_column_families</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column Families before creation: </span><span class="si">{</span><span class="n">cfs_before_creation</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 3. Create new column families</span>
+        <span class="c1">#    You can optionally pass PyOptions to configure the new CF.</span>
+        <span class="c1">#    Here, we&#39;ll create two new column families: &#39;users&#39; and &#39;products&#39;.</span>
+        <span class="n">users_cf</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_column_family</span><span class="p">(</span><span class="s2">&quot;users&quot;</span><span class="p">)</span>
+        <span class="n">products_cf</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_column_family</span><span class="p">(</span><span class="s2">&quot;products&quot;</span><span class="p">)</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Created column families: &#39;</span><span class="si">{</span><span class="n">users_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; and &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 4. List column families again to see the newly created ones</span>
+        <span class="n">cfs_after_creation</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">list_column_families</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column Families after creation: </span><span class="si">{</span><span class="n">cfs_after_creation</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 5. Put and Get data into specific column families</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Writing and Reading Data in Column Families ---&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Put data into the &#39;users&#39; column family</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">users_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;user:1&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;Alice&quot;</span><span class="p">)</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">users_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;user:2&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;Bob&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put &#39;Alice&#39; for &#39;user:1&#39; in &#39;</span><span class="si">{</span><span class="n">users_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put &#39;Bob&#39; for &#39;user:2&#39; in &#39;</span><span class="si">{</span><span class="n">users_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Put data into the &#39;products&#39; column family</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">products_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;prod:A&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;Laptop&quot;</span><span class="p">)</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">products_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;prod:B&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;Mouse&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put &#39;Laptop&#39; for &#39;prod:A&#39; in &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put &#39;Mouse&#39; for &#39;prod:B&#39; in &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Put data into the default column family</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;app_setting:theme&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;dark&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put &#39;dark&#39; for &#39;app_setting:theme&#39; in &#39;</span><span class="si">{</span><span class="n">default_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get data from the &#39;users&#39; column family</span>
+        <span class="n">alice_data</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_cf</span><span class="p">(</span><span class="n">users_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;user:1&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Get &#39;user:1&#39; from &#39;</span><span class="si">{</span><span class="n">users_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF: </span><span class="si">{</span><span class="n">alice_data</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get data from the &#39;products&#39; column family</span>
+        <span class="n">laptop_data</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_cf</span><span class="p">(</span><span class="n">products_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;prod:A&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Get &#39;prod:A&#39; from &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF: </span><span class="si">{</span><span class="n">laptop_data</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Attempt to get &#39;user:1&#39; from the &#39;products&#39; CF (should be None)</span>
+        <span class="n">non_existent_data</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_cf</span><span class="p">(</span><span class="n">products_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;user:1&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Get &#39;user:1&#39; from &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF (expected None): </span><span class="si">{</span><span class="n">non_existent_data</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get data from the default column family</span>
+        <span class="n">theme_data</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;app_setting:theme&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Get &#39;app_setting:theme&#39; from &#39;</span><span class="si">{</span><span class="n">default_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF: </span><span class="si">{</span><span class="n">theme_data</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 6. Delete data from a specific column family</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Deleting Data in Column Families ---&quot;</span><span class="p">)</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">delete_cf</span><span class="p">(</span><span class="n">users_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;user:2&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted &#39;user:2&#39; from &#39;</span><span class="si">{</span><span class="n">users_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Verify deletion</span>
+        <span class="n">bob_data_after_del</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_cf</span><span class="p">(</span><span class="n">users_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;user:2&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Get &#39;user:2&#39; from &#39;</span><span class="si">{</span><span class="n">users_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; CF after deletion: </span><span class="si">{</span><span class="n">bob_data_after_del</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 7. Iterate over a specific column family</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Iterating over &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; Column Family ---&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">new_cf_iterator</span><span class="p">(</span><span class="n">products_cf</span><span class="p">)</span> <span class="k">as</span> <span class="n">it</span><span class="p">:</span>
+            <span class="n">it</span><span class="o">.</span><span class="n">seek_to_first</span><span class="p">()</span>
+            <span class="k">while</span> <span class="n">it</span><span class="o">.</span><span class="n">valid</span><span class="p">():</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Key: </span><span class="si">{</span><span class="n">it</span><span class="o">.</span><span class="n">key</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">, Value: </span><span class="si">{</span><span class="n">it</span><span class="o">.</span><span class="n">value</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">it</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+
+        <span class="c1"># 8. Drop a column family</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Dropping Column Family &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; ---&quot;</span><span class="p">)</span>
+        <span class="n">db</span><span class="o">.</span><span class="n">drop_column_family</span><span class="p">(</span><span class="n">products_cf</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dropped column family: &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 9. List column families again to confirm deletion</span>
+        <span class="n">cfs_after_drop</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">list_column_families</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column Families after dropping &#39;</span><span class="si">{</span><span class="n">products_cf</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">cfs_after_drop</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Attempting to use a dropped column family handle will raise an exception</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">products_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;new_prod&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;TV&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Caught expected error when using dropped CF handle: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="k">except</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An unexpected error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">finally</span><span class="p">:</span>
+    <span class="c1"># Final cleanup</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">):</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Successfully cleaned up database at </span><span class="si">{</span><span class="n">DB_PATH</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p><a href="#id1"><span class="problematic" id="id2">``</span></a>`
-import _pyrex
-import os
-import shutil</p>
-<p># Define a path for our test database
-DB_PATH = “./rocksdb_cf_example”</p>
-<p># Clean up any previous database instance for a fresh start
-if os.path.exists(DB_PATH):</p>
-<blockquote>
-<div><p>shutil.rmtree(DB_PATH)
-print(f”Cleaned up existing database at {DB_PATH}”)</p>
-</div></blockquote>
-<p>print(”— Starting Column Family Example —“)</p>
-<p># 1. Open a PyRocksDBExtended instance
-#    This class provides methods for managing column families.
-#    We use a ‘with’ statement to ensure the database is properly closed.
-try:</p>
-<blockquote>
-<div><dl>
-<dt>with _pyrex.PyRocksDBExtended(DB_PATH) as db:</dt><dd><p>print(f”nOpened database at {DB_PATH}”)</p>
-<p># The default column family is always present
-default_cf = db.default_cf
-print(f”Default Column Family: {default_cf.name}”)</p>
-<p># 2. List initial column families (should only be ‘default’)
-cfs_before_creation = db.list_column_families()
-print(f”Column Families before creation: {cfs_before_creation}”)</p>
-<p># 3. Create new column families
-#    You can optionally pass PyOptions to configure the new CF.
-#    Here, we’ll create two new column families: ‘users’ and ‘products’.
-users_cf = db.create_column_family(“users”)
-products_cf = db.create_column_family(“products”)</p>
-<p>print(f”nCreated column families: ‘{users_cf.name}’ and ‘{products_cf.name}’”)</p>
-<p># 4. List column families again to see the newly created ones
-cfs_after_creation = db.list_column_families()
-print(f”Column Families after creation: {cfs_after_creation}”)</p>
-<p># 5. Put and Get data into specific column families
-print(”n— Writing and Reading Data in Column Families —“)</p>
-<p># Put data into the ‘users’ column family
-db.put_cf(users_cf, b”user:1”, b”Alice”)
-db.put_cf(users_cf, b”user:2”, b”Bob”)
-print(f”Put ‘Alice’ for ‘user:1’ in ‘{users_cf.name}’ CF”)
-print(f”Put ‘Bob’ for ‘user:2’ in ‘{users_cf.name}’ CF”)</p>
-<p># Put data into the ‘products’ column family
-db.put_cf(products_cf, b”prod:A”, b”Laptop”)
-db.put_cf(products_cf, b”prod:B”, b”Mouse”)
-print(f”Put ‘Laptop’ for ‘prod:A’ in ‘{products_cf.name}’ CF”)
-print(f”Put ‘Mouse’ for ‘prod:B’ in ‘{products_cf.name}’ CF”)</p>
-<p># Put data into the default column family
-db.put(b”app_setting:theme”, b”dark”)
-print(f”Put ‘dark’ for ‘app_setting:theme’ in ‘{default_cf.name}’ CF”)</p>
-<p># Get data from the ‘users’ column family
-alice_data = db.get_cf(users_cf, b”user:1”)
-print(f”Get ‘user:1’ from ‘{users_cf.name}’ CF: {alice_data.decode()}”)</p>
-<p># Get data from the ‘products’ column family
-laptop_data = db.get_cf(products_cf, b”prod:A”)
-print(f”Get ‘prod:A’ from ‘{products_cf.name}’ CF: {laptop_data.decode()}”)</p>
-<p># Attempt to get ‘user:1’ from the ‘products’ CF (should be None)
-non_existent_data = db.get_cf(products_cf, b”user:1”)
-print(f”Get ‘user:1’ from ‘{products_cf.name}’ CF (expected None): {non_existent_data}”)</p>
-<p># Get data from the default column family
-theme_data = db.get(b”app_setting:theme”)
-print(f”Get ‘app_setting:theme’ from ‘{default_cf.name}’ CF: {theme_data.decode()}”)</p>
-<p># 6. Delete data from a specific column family
-print(”n— Deleting Data in Column Families —“)
-db.delete_cf(users_cf, b”user:2”)
-print(f”Deleted ‘user:2’ from ‘{users_cf.name}’ CF”)</p>
-<p># Verify deletion
-bob_data_after_del = db.get_cf(users_cf, b”user:2”)
-print(f”Get ‘user:2’ from ‘{users_cf.name}’ CF after deletion: {bob_data_after_del}”)</p>
-<p># 7. Iterate over a specific column family
-print(f”n— Iterating over ‘{products_cf.name}’ Column Family —“)
-with db.new_cf_iterator(products_cf) as it:</p>
-<blockquote>
-<div><p>it.seek_to_first()
-while it.valid():</p>
-<blockquote>
-<div><p>print(f”  Key: {it.key().decode()}, Value: {it.value().decode()}”)
-it.next()</p>
-</div></blockquote>
-</div></blockquote>
-<p># 8. Drop a column family
-print(f”n— Dropping Column Family ‘{products_cf.name}’ —“)
-db.drop_column_family(products_cf)
-print(f”Dropped column family: ‘{products_cf.name}’”)</p>
-<p># 9. List column families again to confirm deletion
-cfs_after_drop = db.list_column_families()
-print(f”Column Families after dropping ‘{products_cf.name}’: {cfs_after_drop}”)</p>
-<p># Attempting to use a dropped column family handle will raise an exception
-try:</p>
-<blockquote>
-<div><p>db.put_cf(products_cf, b”new_prod”, b”TV”)</p>
-</div></blockquote>
-<dl class="simple">
-<dt>except _pyrex.RocksDBException as e:</dt><dd><p>print(f”Caught expected error when using dropped CF handle: {e}”)</p>
-</dd>
-</dl>
-</dd>
-</dl>
-</div></blockquote>
-<dl>
-<dt>except _pyrex.RocksDBException as e:</dt><dd><p>print(f”An error occurred: {e}”)</p>
-</dd>
-<dt>except Exception as e:</dt><dd><p>print(f”An unexpected error occurred: {e}”)</p>
-</dd>
-<dt>finally:</dt><dd><p># Final cleanup
-if os.path.exists(DB_PATH):</p>
-<blockquote>
-<div><p>shutil.rmtree(DB_PATH)
-print(f”nSuccessfully cleaned up database at {DB_PATH}”)</p>
-</div></blockquote>
-</dd>
-</dl>
-<p><a href="#id3"><span class="problematic" id="id4">``</span></a><a href="#id5"><span class="problematic" id="id6">`</span></a></p>
 </section>
 
 
