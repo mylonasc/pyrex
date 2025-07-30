@@ -1,0 +1,307 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Examples &mdash; pyrex-rocksdb 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="&lt;no title&gt;" href="column_families.html" />
+    <link rel="prev" title="pyrex-rocksdb documentation" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-put-and-get">Basic Put and Get</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuring-options">Configuring Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#atomic-write-batch">Atomic Write Batch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#iterating-data">Iterating Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#error-handling">Error Handling</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html#class-docs">Class Docs</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Examples</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/examples.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="examples">
+<span id="pyrex-examples"></span><h1>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h1>
+<p>This section provides concise examples of how to use the <cite>pyrex</cite> library, a Python wrapper for RocksDB.
+The examples focus on demonstrating core functionalities directly.</p>
+<section id="basic-put-and-get">
+<h2>Basic Put and Get<a class="headerlink" href="#basic-put-and-get" title="Link to this heading"></a></h2>
+<p>Open a database, store a key-value pair, and retrieve it.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">basic_put_get.py</span><a class="headerlink" href="#id1" title="Link to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<span class="linenos"> 2</span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="linenos"> 3</span><span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span><span class="n">db_path</span> <span class="o">=</span> <span class="s2">&quot;/tmp/pyrex_example_basic&quot;</span>
+<span class="linenos"> 6</span><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="linenos"> 7</span>    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="n">db</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos">10</span>
+<span class="linenos">11</span><span class="c1"># Put a key-value pair</span>
+<span class="linenos">12</span><span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;my_key&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;my_value&quot;</span><span class="p">)</span>
+<span class="linenos">13</span>
+<span class="linenos">14</span><span class="c1"># Get the value</span>
+<span class="linenos">15</span><span class="n">value</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;my_key&quot;</span><span class="p">)</span>
+<span class="linenos">16</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Retrieved: </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Expected: my_value</span>
+<span class="linenos">17</span>
+<span class="linenos">18</span><span class="c1"># Get a non-existent key</span>
+<span class="linenos">19</span><span class="n">none_value</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;non_existent&quot;</span><span class="p">)</span>
+<span class="linenos">20</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Retrieved non-existent: </span><span class="si">{</span><span class="n">none_value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Expected: None</span>
+<span class="linenos">21</span>
+<span class="linenos">22</span><span class="k">del</span> <span class="n">db</span> <span class="c1"># Close the DB</span>
+<span class="linenos">23</span><span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span> <span class="c1"># Clean up</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="configuring-options">
+<h2>Configuring Options<a class="headerlink" href="#configuring-options" title="Link to this heading"></a></h2>
+<p>Customize database behavior using <cite>PyOptions</cite>.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">config_options.py</span><a class="headerlink" href="#id2" title="Link to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<span class="linenos"> 2</span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="linenos"> 3</span><span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span><span class="n">db_path</span> <span class="o">=</span> <span class="s2">&quot;/tmp/pyrex_example_config&quot;</span>
+<span class="linenos"> 6</span><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="linenos"> 7</span>    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="n">options</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyOptions</span><span class="p">()</span>
+<span class="linenos">10</span><span class="n">options</span><span class="o">.</span><span class="n">create_if_missing</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos">11</span><span class="n">options</span><span class="o">.</span><span class="n">max_open_files</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="linenos">12</span><span class="n">options</span><span class="o">.</span><span class="n">compression</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">CompressionType</span><span class="o">.</span><span class="n">kLZ4Compression</span>
+<span class="linenos">13</span><span class="n">options</span><span class="o">.</span><span class="n">optimize_for_small_db</span><span class="p">()</span> <span class="c1"># Apply an optimization preset</span>
+<span class="linenos">14</span>
+<span class="linenos">15</span><span class="n">db</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span>
+<span class="linenos">16</span>
+<span class="linenos">17</span><span class="c1"># Verify some configured options (values might be adjusted by RocksDB internally)</span>
+<span class="linenos">18</span><span class="n">retrieved_options</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_options</span><span class="p">()</span>
+<span class="linenos">19</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Configured max_open_files: </span><span class="si">{</span><span class="n">retrieved_options</span><span class="o">.</span><span class="n">max_open_files</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Expected: 5000 (adjusted by optimize_for_small_db)</span>
+<span class="linenos">20</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Configured compression: </span><span class="si">{</span><span class="n">retrieved_options</span><span class="o">.</span><span class="n">compression</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Expected: CompressionType.kLZ4Compression</span>
+<span class="linenos">21</span>
+<span class="linenos">22</span><span class="k">del</span> <span class="n">db</span>
+<span class="linenos">23</span><span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="atomic-write-batch">
+<h2>Atomic Write Batch<a class="headerlink" href="#atomic-write-batch" title="Link to this heading"></a></h2>
+<p>Perform multiple <cite>put</cite> and <cite>delete</cite> operations in a single, atomic transaction.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-text">write_batch.py</span><a class="headerlink" href="#id3" title="Link to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<span class="linenos"> 2</span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="linenos"> 3</span><span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span><span class="n">db_path</span> <span class="o">=</span> <span class="s2">&quot;/tmp/pyrex_example_batch&quot;</span>
+<span class="linenos"> 6</span><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="linenos"> 7</span>    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="n">db</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos">10</span>
+<span class="linenos">11</span><span class="c1"># Prepare some initial data</span>
+<span class="linenos">12</span><span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+<span class="linenos">13</span><span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;value2&quot;</span><span class="p">)</span>
+<span class="linenos">14</span>
+<span class="linenos">15</span><span class="c1"># Create a write batch</span>
+<span class="linenos">16</span><span class="n">batch</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyWriteBatch</span><span class="p">()</span>
+<span class="linenos">17</span><span class="n">batch</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;key3&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;value3&quot;</span><span class="p">)</span>       <span class="c1"># Add new key</span>
+<span class="linenos">18</span><span class="n">batch</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;key1&quot;</span><span class="p">)</span>               <span class="c1"># Delete existing key</span>
+<span class="linenos">19</span><span class="n">batch</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;updated_value2&quot;</span><span class="p">)</span> <span class="c1"># Update existing key</span>
+<span class="linenos">20</span>
+<span class="linenos">21</span><span class="n">db</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span> <span class="c1"># Apply the batch atomically</span>
+<span class="linenos">22</span>
+<span class="linenos">23</span><span class="c1"># Verify results</span>
+<span class="linenos">24</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Key1: </span><span class="si">{</span><span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s1">&#39;key1&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>       <span class="c1"># Expected: None</span>
+<span class="linenos">25</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Key2: </span><span class="si">{</span><span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s1">&#39;key2&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Expected: updated_value2</span>
+<span class="linenos">26</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Key3: </span><span class="si">{</span><span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s1">&#39;key3&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Expected: value3</span>
+<span class="linenos">27</span>
+<span class="linenos">28</span><span class="k">del</span> <span class="n">db</span>
+<span class="linenos">29</span><span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="iterating-data">
+<h2>Iterating Data<a class="headerlink" href="#iterating-data" title="Link to this heading"></a></h2>
+<p>Traverse key-value pairs using <cite>PyRocksDBIterator</cite> for forward and backward scans.</p>
+<div class="literal-block-wrapper docutils container" id="id4">
+<div class="code-block-caption"><span class="caption-text">iterator_usage.py</span><a class="headerlink" href="#id4" title="Link to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<span class="linenos"> 2</span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="linenos"> 3</span><span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span><span class="n">db_path</span> <span class="o">=</span> <span class="s2">&quot;/tmp/pyrex_example_iterator&quot;</span>
+<span class="linenos"> 6</span><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="linenos"> 7</span>    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="n">db</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos">10</span>
+<span class="linenos">11</span><span class="c1"># Insert sample data</span>
+<span class="linenos">12</span><span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;alpha&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;A&quot;</span><span class="p">)</span>
+<span class="linenos">13</span><span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;B&quot;</span><span class="p">)</span>
+<span class="linenos">14</span><span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;gamma&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;G&quot;</span><span class="p">)</span>
+<span class="linenos">15</span>
+<span class="linenos">16</span><span class="n">it</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_iterator</span><span class="p">()</span>
+<span class="linenos">17</span>
+<span class="linenos">18</span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Forward iteration:&quot;</span><span class="p">)</span>
+<span class="linenos">19</span><span class="n">it</span><span class="o">.</span><span class="n">seek_to_first</span><span class="p">()</span>
+<span class="linenos">20</span><span class="k">while</span> <span class="n">it</span><span class="o">.</span><span class="n">valid</span><span class="p">():</span>
+<span class="linenos">21</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Key: </span><span class="si">{</span><span class="n">it</span><span class="o">.</span><span class="n">key</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">, Value: </span><span class="si">{</span><span class="n">it</span><span class="o">.</span><span class="n">value</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">22</span>    <span class="n">it</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+<span class="linenos">23</span><span class="n">it</span><span class="o">.</span><span class="n">check_status</span><span class="p">()</span> <span class="c1"># Check for errors</span>
+<span class="linenos">24</span>
+<span class="linenos">25</span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Seek and backward iteration:&quot;</span><span class="p">)</span>
+<span class="linenos">26</span><span class="n">it</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;gamma&quot;</span><span class="p">)</span> <span class="c1"># Seek to &#39;gamma&#39;</span>
+<span class="linenos">27</span><span class="k">while</span> <span class="n">it</span><span class="o">.</span><span class="n">valid</span><span class="p">():</span>
+<span class="linenos">28</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Key: </span><span class="si">{</span><span class="n">it</span><span class="o">.</span><span class="n">key</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">, Value: </span><span class="si">{</span><span class="n">it</span><span class="o">.</span><span class="n">value</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">29</span>    <span class="n">it</span><span class="o">.</span><span class="n">prev</span><span class="p">()</span> <span class="c1"># Move backward</span>
+<span class="linenos">30</span>
+<span class="linenos">31</span><span class="k">del</span> <span class="n">db</span>
+<span class="linenos">32</span><span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="error-handling">
+<h2>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading"></a></h2>
+<p>Catch RocksDB-specific exceptions for robust applications.</p>
+<div class="literal-block-wrapper docutils container" id="id5">
+<div class="code-block-caption"><span class="caption-text">error_handling.py</span><a class="headerlink" href="#id5" title="Link to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<span class="linenos"> 2</span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="linenos"> 3</span><span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span><span class="n">db_path</span> <span class="o">=</span> <span class="s2">&quot;/tmp/pyrex_example_error&quot;</span>
+<span class="linenos"> 6</span><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="linenos"> 7</span>    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="c1"># Create an options object to trigger an error</span>
+<span class="linenos">10</span><span class="n">options</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyOptions</span><span class="p">()</span>
+<span class="linenos">11</span><span class="n">options</span><span class="o">.</span><span class="n">create_if_missing</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos">12</span><span class="n">options</span><span class="o">.</span><span class="n">error_if_exists</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos">13</span>
+<span class="linenos">14</span><span class="k">try</span><span class="p">:</span>
+<span class="linenos">15</span>    <span class="c1"># First open creates the DB</span>
+<span class="linenos">16</span>    <span class="n">db1</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span>
+<span class="linenos">17</span>    <span class="n">db1</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;foo&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;bar&quot;</span><span class="p">)</span>
+<span class="linenos">18</span>    <span class="k">del</span> <span class="n">db1</span> <span class="c1"># Close it so we can try to open again</span>
+<span class="linenos">19</span>
+<span class="linenos">20</span>    <span class="c1"># This second open should fail because error_if_exists is True</span>
+<span class="linenos">21</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Attempting to open existing DB with error_if_exists=True...&quot;</span><span class="p">)</span>
+<span class="linenos">22</span>    <span class="n">db2</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span> <span class="c1"># This line should raise an exception</span>
+<span class="linenos">23</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;This line should not be reached.&quot;</span><span class="p">)</span> <span class="c1"># If it is, the error wasn&#39;t caught</span>
+<span class="linenos">24</span><span class="k">except</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<span class="linenos">25</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Caught expected RocksDBException: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">26</span>    <span class="c1"># Assert that the error message contains the expected string</span>
+<span class="linenos">27</span>    <span class="k">assert</span> <span class="s2">&quot;exists (error_if_exists is true)&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+<span class="linenos">28</span><span class="k">finally</span><span class="p">:</span>
+<span class="linenos">29</span>    <span class="c1"># Clean up the database directory regardless of success or failure</span>
+<span class="linenos">30</span>    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="linenos">31</span>        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+<span class="linenos">32</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cleaned up database at </span><span class="si">{</span><span class="n">db_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="pyrex-rocksdb documentation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="column_families.html" class="btn btn-neutral float-right" title="&lt;no title&gt;" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

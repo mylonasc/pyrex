@@ -1,0 +1,410 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; pyrex-rocksdb 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="&lt;no title&gt;" href="column_families.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#class-docs">Class Docs</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#pyrex.PyRocksDB"><code class="docutils literal notranslate"><span class="pre">PyRocksDB</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.close"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.close()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.delete"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.delete()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.get"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.get()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.get_options"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.get_options()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.new_iterator"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.new_iterator()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.put"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.put()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDB.write"><code class="docutils literal notranslate"><span class="pre">PyRocksDB.write()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#pyrex.PyOptions"><code class="docutils literal notranslate"><span class="pre">PyOptions</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.cf_compression"><code class="docutils literal notranslate"><span class="pre">PyOptions.cf_compression</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.cf_write_buffer_size"><code class="docutils literal notranslate"><span class="pre">PyOptions.cf_write_buffer_size</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.compression"><code class="docutils literal notranslate"><span class="pre">PyOptions.compression</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.create_if_missing"><code class="docutils literal notranslate"><span class="pre">PyOptions.create_if_missing</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.error_if_exists"><code class="docutils literal notranslate"><span class="pre">PyOptions.error_if_exists</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.increase_parallelism"><code class="docutils literal notranslate"><span class="pre">PyOptions.increase_parallelism()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.max_background_jobs"><code class="docutils literal notranslate"><span class="pre">PyOptions.max_background_jobs</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.max_open_files"><code class="docutils literal notranslate"><span class="pre">PyOptions.max_open_files</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.optimize_for_small_db"><code class="docutils literal notranslate"><span class="pre">PyOptions.optimize_for_small_db()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.use_block_based_bloom_filter"><code class="docutils literal notranslate"><span class="pre">PyOptions.use_block_based_bloom_filter()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyOptions.write_buffer_size"><code class="docutils literal notranslate"><span class="pre">PyOptions.write_buffer_size</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#pyrex.PyWriteBatch"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.clear"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.clear()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.delete"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.delete()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.delete_cf"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.delete_cf()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.merge"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.merge()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.merge_cf"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.merge_cf()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.put"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.put()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyWriteBatch.put_cf"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch.put_cf()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#pyrex.PyRocksDBIterator"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.check_status"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.check_status()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.key"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.key()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.next"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.next()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.prev"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.prev()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.seek"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.seek()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.seek_to_first"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.seek_to_first()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.seek_to_last"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.seek_to_last()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.valid"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.valid()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyrex.PyRocksDBIterator.value"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator.value()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/api.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-pyrex">
+<span id="api-reference"></span><h1>API Reference<a class="headerlink" href="#module-pyrex" title="Link to this heading"></a></h1>
+</section>
+<section id="class-docs">
+<h1>Class Docs<a class="headerlink" href="#class-docs" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrex.</span></span><span class="sig-name descname"><span class="pre">PyRocksDB</span></span><a class="headerlink" href="#pyrex.PyRocksDB" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">pybind11_object</span></code></p>
+<p>A Python wrapper for RocksDB providing simple key-value storage.</p>
+<p>This class interacts exclusively with the ‘default’ column family.
+For multi-column-family support, use <cite>PyRocksDBExtended</cite>.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.close">
+<span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDB.close" title="Link to this definition"></a></dt>
+<dd><p>Closes the database, releasing resources and the lock.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.delete">
+<span class="sig-name descname"><span class="pre">delete</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDB.delete" title="Link to this definition"></a></dt>
+<dd><p>Deletes a key.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.get">
+<span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">object</span></span></span><a class="headerlink" href="#pyrex.PyRocksDB.get" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the value for a key.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.get_options">
+<span class="sig-name descname"><span class="pre">get_options</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#pyrex.PyOptions" title="pyrex._pyrex.PyOptions"><span class="pre">pyrex._pyrex.PyOptions</span></a></span></span><a class="headerlink" href="#pyrex.PyRocksDB.get_options" title="Link to this definition"></a></dt>
+<dd><p>Returns the options the database was opened with.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.new_iterator">
+<span class="sig-name descname"><span class="pre">new_iterator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></span><a class="headerlink" href="#pyrex.PyRocksDB.new_iterator" title="Link to this definition"></a></dt>
+<dd><p>Creates a new iterator.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.put">
+<span class="sig-name descname"><span class="pre">put</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDB.put" title="Link to this definition"></a></dt>
+<dd><p>Inserts a key-value pair.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDB.write">
+<span class="sig-name descname"><span class="pre">write</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDB" title="pyrex._pyrex.PyRocksDB"><span class="pre">pyrex._pyrex.PyRocksDB</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">write_batch</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDB.write" title="Link to this definition"></a></dt>
+<dd><p>Applies a batch of operations atomically.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrex.PyOptions">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrex.</span></span><span class="sig-name descname"><span class="pre">PyOptions</span></span><a class="headerlink" href="#pyrex.PyOptions" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">pybind11_object</span></code></p>
+<p>Configuration options for opening and managing a RocksDB database.</p>
+<p>This class wraps <cite>rocksdb::Options</cite> and <cite>rocksdb::ColumnFamilyOptions</cite>
+to provide a convenient way to configure database behavior from Python.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.cf_compression">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cf_compression</span></span><a class="headerlink" href="#pyrex.PyOptions.cf_compression" title="Link to this definition"></a></dt>
+<dd><p>Default compression type for newly created Column Families.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.cf_write_buffer_size">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cf_write_buffer_size</span></span><a class="headerlink" href="#pyrex.PyOptions.cf_write_buffer_size" title="Link to this definition"></a></dt>
+<dd><p>Default write_buffer_size for newly created Column Families.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.compression">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">compression</span></span><a class="headerlink" href="#pyrex.PyOptions.compression" title="Link to this definition"></a></dt>
+<dd><p>The compression type to use for sst files. Defaults to Snappy.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.create_if_missing">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">create_if_missing</span></span><a class="headerlink" href="#pyrex.PyOptions.create_if_missing" title="Link to this definition"></a></dt>
+<dd><p>If True, the database will be created if it is missing. Defaults to True.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.error_if_exists">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">error_if_exists</span></span><a class="headerlink" href="#pyrex.PyOptions.error_if_exists" title="Link to this definition"></a></dt>
+<dd><p>If True, an error is raised if the database already exists. Defaults to False.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyOptions.increase_parallelism">
+<span class="sig-name descname"><span class="pre">increase_parallelism</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyOptions" title="pyrex._pyrex.PyOptions"><span class="pre">pyrex._pyrex.PyOptions</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_threads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupportsInt</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyOptions.increase_parallelism" title="Link to this definition"></a></dt>
+<dd><p>Increases RocksDB’s parallelism by tuning background threads.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>total_threads</strong> (<em>int</em>) – The total number of background threads to use.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.max_background_jobs">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">max_background_jobs</span></span><a class="headerlink" href="#pyrex.PyOptions.max_background_jobs" title="Link to this definition"></a></dt>
+<dd><p>Maximum number of concurrent background jobs (compactions and flushes).</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.max_open_files">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">max_open_files</span></span><a class="headerlink" href="#pyrex.PyOptions.max_open_files" title="Link to this definition"></a></dt>
+<dd><p>Number of open files that can be used by the DB. Defaults to -1 (unlimited).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyOptions.optimize_for_small_db">
+<span class="sig-name descname"><span class="pre">optimize_for_small_db</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyOptions" title="pyrex._pyrex.PyOptions"><span class="pre">pyrex._pyrex.PyOptions</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyOptions.optimize_for_small_db" title="Link to this definition"></a></dt>
+<dd><p>Optimizes RocksDB for small databases by reducing memory and CPU consumption.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyOptions.use_block_based_bloom_filter">
+<span class="sig-name descname"><span class="pre">use_block_based_bloom_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyOptions" title="pyrex._pyrex.PyOptions"><span class="pre">pyrex._pyrex.PyOptions</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">bits_per_key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupportsFloat</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyOptions.use_block_based_bloom_filter" title="Link to this definition"></a></dt>
+<dd><p>Enables a Bloom filter for block-based tables to speed up ‘Get’ operations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>bits_per_key</strong> (<em>float</em>) – The number of bits per key for the Bloom filter.
+Higher values reduce false positives but increase memory usage.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyrex.PyOptions.write_buffer_size">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">write_buffer_size</span></span><a class="headerlink" href="#pyrex.PyOptions.write_buffer_size" title="Link to this definition"></a></dt>
+<dd><p>Amount of data to build up in a memory buffer (MemTable) before flushing. Defaults to 64MB.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrex.</span></span><span class="sig-name descname"><span class="pre">PyWriteBatch</span></span><a class="headerlink" href="#pyrex.PyWriteBatch" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">pybind11_object</span></code></p>
+<p>A batch of write operations (Put, Delete) that can be applied atomically.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.clear">
+<span class="sig-name descname"><span class="pre">clear</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.clear" title="Link to this definition"></a></dt>
+<dd><p>Clears all operations from the batch.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.delete">
+<span class="sig-name descname"><span class="pre">delete</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.delete" title="Link to this definition"></a></dt>
+<dd><p>Adds a key deletion to the batch for the default column family.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.delete_cf">
+<span class="sig-name descname"><span class="pre">delete_cf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cf_handle</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">pyrex._pyrex.ColumnFamilyHandle</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.delete_cf" title="Link to this definition"></a></dt>
+<dd><p>Adds a key deletion to the batch for a specific column family.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.merge">
+<span class="sig-name descname"><span class="pre">merge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.merge" title="Link to this definition"></a></dt>
+<dd><p>Adds a merge operation to the batch for the default column family.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.merge_cf">
+<span class="sig-name descname"><span class="pre">merge_cf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cf_handle</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">pyrex._pyrex.ColumnFamilyHandle</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.merge_cf" title="Link to this definition"></a></dt>
+<dd><p>Adds a merge operation to the batch for a specific column family.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.put">
+<span class="sig-name descname"><span class="pre">put</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.put" title="Link to this definition"></a></dt>
+<dd><p>Adds a key-value pair to the batch for the default column family.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyWriteBatch.put_cf">
+<span class="sig-name descname"><span class="pre">put_cf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyWriteBatch" title="pyrex._pyrex.PyWriteBatch"><span class="pre">pyrex._pyrex.PyWriteBatch</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cf_handle</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">pyrex._pyrex.ColumnFamilyHandle</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyWriteBatch.put_cf" title="Link to this definition"></a></dt>
+<dd><p>Adds a key-value pair to the batch for a specific column family.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrex.</span></span><span class="sig-name descname"><span class="pre">PyRocksDBIterator</span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">pybind11_object</span></code></p>
+<p>An iterator for traversing key-value pairs in a RocksDB database.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.check_status">
+<span class="sig-name descname"><span class="pre">check_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.check_status" title="Link to this definition"></a></dt>
+<dd><p>Raises RocksDBException if an error occurred during iteration.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.key">
+<span class="sig-name descname"><span class="pre">key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">object</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.key" title="Link to this definition"></a></dt>
+<dd><p>Returns the current key as bytes, or None if invalid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.next">
+<span class="sig-name descname"><span class="pre">next</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.next" title="Link to this definition"></a></dt>
+<dd><p>Moves the iterator to the next entry.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.prev">
+<span class="sig-name descname"><span class="pre">prev</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.prev" title="Link to this definition"></a></dt>
+<dd><p>Moves the iterator to the previous entry.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.seek">
+<span class="sig-name descname"><span class="pre">seek</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.seek" title="Link to this definition"></a></dt>
+<dd><p>Positions the iterator at the first key &gt;= the given key.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.seek_to_first">
+<span class="sig-name descname"><span class="pre">seek_to_first</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.seek_to_first" title="Link to this definition"></a></dt>
+<dd><p>Positions the iterator at the first key.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.seek_to_last">
+<span class="sig-name descname"><span class="pre">seek_to_last</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.seek_to_last" title="Link to this definition"></a></dt>
+<dd><p>Positions the iterator at the last key.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.valid">
+<span class="sig-name descname"><span class="pre">valid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.valid" title="Link to this definition"></a></dt>
+<dd><p>Returns True if the iterator is currently positioned at a valid entry.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrex.PyRocksDBIterator.value">
+<span class="sig-name descname"><span class="pre">value</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyrex.PyRocksDBIterator" title="pyrex._pyrex.PyRocksDBIterator"><span class="pre">pyrex._pyrex.PyRocksDBIterator</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">object</span></span></span><a class="headerlink" href="#pyrex.PyRocksDBIterator.value" title="Link to this definition"></a></dt>
+<dd><p>Returns the current value as bytes, or None if invalid.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="column_families.html" class="btn btn-neutral float-left" title="&lt;no title&gt;" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
