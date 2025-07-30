@@ -23,24 +23,33 @@ PROJECT_DIR = Path(__file__).parent.resolve()
 # The default version of RocksDB to build if the env var is not set.
 DEFAULT_ROCKSDB_VERSION = "10.2.1"
 
-# --- Versioning Logic ---
 
-# Read the base version from pyproject.toml
-pyproject_path = PROJECT_DIR / "pyproject.toml"
-with open(pyproject_path, "rb") as f:
-    pyproject_data = tomllib.load(f)
-    BASE_VERSION = pyproject_data["project"]["version"]
+
+
+# --- Versioning Logic ---
+# Read the base package version from an environment variable.
+BASE_VERSION = os.environ.get("PYREX_VERSION")
+if not BASE_VERSION:
+    raise RuntimeError("PYREX_VERSION environment variable must be set (e.g., '0.1.2').")
+
+# Read the RocksDB version from an environment variable.
+rocksdb_version = os.environ.get("ROCKSDB_VERSION")
+if not rocksdb_version:
+    raise RuntimeError("ROCKSDB_VERSION environment variable must be set (e.g., '10.2.1').")
 
 # The version of RocksDB that will be built.
 # It can be overridden by the ROCKSDB_VERSION environment variable.
-rocksdb_version = os.environ.get("ROCKSDB_VERSION", DEFAULT_ROCKSDB_VERSION)
-print("-="*20)
-print(rocksdb_version)
+rocksdb_version = os.environ.get("ROCKSDB_VERSION")
 
 # Construct a PEP 440-compliant version string for the final Python package.
 # This appends a local version identifier (e.g., +rocksdb1021) to the base version.
 sanitized_rocksdb_version = rocksdb_version.replace('.', '')
-final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
+
+LOCAL_VERSION_NAMING = os.environ.get('LOCAL_VERSION_NAMING','false')
+if LOCAL_VERSION_NAMING == 'true':
+    final_version = BASE_VERSION
+else:
+    final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
 
 # --- Custom Build Logic ---
 
@@ -125,6 +134,8 @@ class build_ext(_build_ext):
         # C++ flags (rocksdb version 6.x)
         cxx_flags = "-std=c++17 -include cstdint -include system_error"
 
+
+        ## The following flags were found to work with rocksdb 6:
         cmake_args = [
             f'-DCMAKE_INSTALL_PREFIX={install_dir.resolve()}',
             '-DCMAKE_BUILD_TYPE=Release',
@@ -135,6 +146,16 @@ class build_ext(_build_ext):
             '-DWITH_SNAPPY=ON', '-DWITH_LZ4=ON', '-DWITH_ZLIB=ON', 
             '-DWITH_BZ2=ON', '-DWITH_ZSTD=ON',
         ]
+
+        if int(rocksdb_version.split('.')[0]) >= 7:
+            ## Fix for version 7:
+            # This version contains some stress testing tools that are not necessary. 
+            # We skip them by adding the following flags:
+            cmake_args.extend(
+                    ['-DWITH_TOOLS=OFF','-DWITH_TESTS=OFF']
+            )
+
+
         
         print(f"--- Configuring RocksDB v{rocksdb_version} ---")
         subprocess.check_call(['cmake', '..'] + cmake_args, cwd=cmake_build_dir)
