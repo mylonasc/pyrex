@@ -134,6 +134,7 @@ protected:
     std::string path_;
     std::map<std::string, std::shared_ptr<PyColumnFamilyHandle>> cf_handles_;
     std::atomic<bool> is_closed_{false};
+    std::atomic<bool> is_read_only_{false};
     std::mutex active_iterators_mutex_;
     std::set<rocksdb::Iterator*> active_rocksdb_iterators_;
 
@@ -144,6 +145,13 @@ protected:
             throw RocksDBException("Database is not open or has been closed.");
         }
     }
+
+    void check_read_only() const {
+        if (is_read_only_.load()) {
+            throw RocksDBException("Cannot perform put/write/delete operation: Database opened in read-only mode.");
+        }
+    }
+
     rocksdb::ColumnFamilyHandle* get_default_cf_handle() const {
         auto it = cf_handles_.find(rocksdb::kDefaultColumnFamilyName);
         if (it == cf_handles_.end() || !it->second->is_valid()) {
@@ -157,8 +165,9 @@ public:
     PyRocksDB() = default;
 
     // Public constructor for the simple interface
-    PyRocksDB(const std::string& path, PyOptions* py_options) {
+    PyRocksDB(const std::string& path, PyOptions* py_options,  bool read_only = false) {
         this->path_ = path;
+	this->is_read_only_.store(read_only);
         rocksdb::Options options;
         if (py_options) {
             options = py_options->options_;
@@ -168,7 +177,12 @@ public:
             this->opened_options_.options_ = options;
         }
 
-        rocksdb::Status s = rocksdb::DB::Open(options, path, &this->db_);
+        rocksdb::Status s;
+        if (read_only) { // <--- NEW LOGIC FOR READ-ONLY
+            s = rocksdb::DB::OpenForReadOnly(options, path, &this->db_);
+        } else {
+            s = rocksdb::DB::Open(options, path, &this->db_);
+        }
         if (!s.ok()) {
             throw RocksDBException("Failed to open RocksDB at " + path + ": " + s.ToString());
         }
@@ -201,6 +215,7 @@ public:
 
     void put(const py::bytes& key, const py::bytes& value) {
         check_db_open();
+	check_read_only(); 
         rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), get_default_cf_handle(), static_cast<std::string>(key), static_cast<std::string>(value));
         if (!s.ok()) throw RocksDBException("Put failed: " + s.ToString());
     }
@@ -216,12 +231,14 @@ public:
 
     void del(const py::bytes& key) {
         check_db_open();
+        check_read_only();
         rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), get_default_cf_handle(), static_cast<std::string>(key));
         if (!s.ok()) throw RocksDBException("Delete failed: " + s.ToString());
     }
 
     void write(PyWriteBatch& batch) {
         check_db_open();
+        check_read_only();
         rocksdb::Status s = db_->Write(rocksdb::WriteOptions(), &batch.wb_);
         if (!s.ok()) throw RocksDBException("Write failed: " + s.ToString());
     }
@@ -243,8 +260,9 @@ public:
 class PyRocksDBExtended : public PyRocksDB {
 public:
     // Constructor for the extended interface with CF support
-    PyRocksDBExtended(const std::string& path, PyOptions* py_options) {
+    PyRocksDBExtended(const std::string& path, PyOptions* py_options, bool read_only = false) {
         this->path_ = path;
+        this->is_read_only_ = read_only; 
         rocksdb::Options options;
         if (py_options) {
             options = py_options->options_;
@@ -274,8 +292,15 @@ public:
         }
 
         std::vector<rocksdb::ColumnFamilyHandle*> handles;
-        s = rocksdb::DB::Open(options, path, cf_descriptors, &handles, &this->db_);
-        if (!s.ok()) {
+        rocksdb::Status s_open;
+
+        if (read_only) { 
+            s_open = rocksdb::DB::OpenForReadOnly(options, path, cf_descriptors, &handles, &this->db_);
+        } else {
+            s_open = rocksdb::DB::Open(options, path, cf_descriptors, &handles, &this->db_);
+        }
+
+        if (!s_open.ok()) {
             throw RocksDBException("Failed to open RocksDB at " + path + ": " + s.ToString());
         }
 
@@ -286,6 +311,7 @@ public:
 
     void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
         check_db_open();
+	check_read_only();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
         rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), cf.cf_handle_, static_cast<std::string>(key), static_cast<std::string>(value));
         if (!s.ok()) throw RocksDBException("put_cf failed: " + s.ToString());
@@ -303,6 +329,7 @@ public:
 
     void del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
         check_db_open();
+        check_read_only();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
         rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), cf.cf_handle_, static_cast<std::string>(key));
         if (!s.ok()) throw RocksDBException("del_cf failed: " + s.ToString());
@@ -319,6 +346,7 @@ public:
 
     std::shared_ptr<PyColumnFamilyHandle> create_column_family(const std::string& name, PyOptions* cf_py_options) {
         check_db_open();
+	check_read_only();
         if (cf_handles_.count(name)) {
             throw RocksDBException("Column family '" + name + "' already exists.");
         }
@@ -334,6 +362,7 @@ public:
 
     void drop_column_family(PyColumnFamilyHandle& cf_handle) {
         check_db_open();
+        check_read_only();
         if (!cf_handle.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
         if (cf_handle.get_name() == rocksdb::kDefaultColumnFamilyName) throw RocksDBException("Cannot drop the default column family.");
 
