@@ -1,4 +1,4 @@
-import pyrex 
+import pyrex
 import unittest
 import os
 import shutil
@@ -23,9 +23,20 @@ class TestPyrex(unittest.TestCase):
             shutil.rmtree(self.db_path)
         print(f"\nSetting up DB for test '{self._testMethodName}' at: {self.db_path}")
         self.db = None # Initialize db to None for tearDown's check
+        self._additional_dbs = [] # For managing multiple DB instances in a single test
 
     def tearDown(self):
+        # Close any additional DB instances opened in a test
+        for extra_db in self._additional_dbs:
+            if hasattr(extra_db, 'close') and callable(extra_db.close):
+                extra_db.close()
+        self._additional_dbs = []
+
         if hasattr(self, 'db') and self.db is not None:
+            # If the DB was opened via context manager, it should already be closed.
+            # However, if it was opened directly (e.g., test_15), ensure it's closed.
+            if not self.db.is_closed_.load(): # Access the internal state
+                 self.db.close()
             del self.db
             self.db = None
         if os.path.exists(self.db_path):
@@ -86,6 +97,7 @@ class TestPyrex(unittest.TestCase):
 
         self.assertTrue(retrieved_options.create_if_missing)
         self.assertFalse(retrieved_options.error_if_exists)
+        # Note: optimize_for_small_db changes max_open_files to 5000 and write_buffer_size to 2MB
         self.assertEqual(retrieved_options.max_open_files, 5000)
         self.assertEqual(retrieved_options.write_buffer_size, 2 * 1024 * 1024)
         self.assertEqual(retrieved_options.compression, pyrex.CompressionType.kLZ4Compression)
@@ -100,7 +112,7 @@ class TestPyrex(unittest.TestCase):
         """
         db1 = pyrex.PyRocksDB(self.db_path)
         db1.put(b"key", b"value")
-        del db1 # Ensure db1 is closed
+        db1.close() # Ensure db1 is closed before attempting to open with error_if_exists
 
         options = pyrex.PyOptions()
         options.create_if_missing = False # DB must exist
@@ -116,7 +128,7 @@ class TestPyrex(unittest.TestCase):
         """
         test_dir = os.path.join(self.DB_BASE_PATH, "restricted_parent")
         os.makedirs(test_dir, exist_ok=True)
-        
+
         if os.name == 'posix' and os.geteuid() != 0:
             os.chmod(test_dir, 0o555) # r-xr-xr-x (no write permission)
             restricted_path = os.path.join(test_dir, "db_in_restricted")
@@ -363,7 +375,7 @@ class TestPyrex(unittest.TestCase):
         self.assertIn("ColumnFamilyHandle is invalid", str(cm.exception))
 
         # Reopen DB and check if CF is still gone
-        del self.db
+        del self.db # Ensure the current DB instance is released
         self.db = pyrex.PyRocksDBExtended(self.db_path)
         cfs_reopened = self.db.list_column_families()
         self.assertNotIn("temp_cf", cfs_reopened)
@@ -379,7 +391,7 @@ class TestPyrex(unittest.TestCase):
         """
         # We need to manage additional DB instances created in this test
         # so tearDown can clean them up.
-        self._additional_dbs = [] 
+        self._additional_dbs = []
 
         # 1. Open the database (it will acquire and hold the lock)
         db1 = pyrex.PyRocksDB(self.db_path)
@@ -401,6 +413,198 @@ class TestPyrex(unittest.TestCase):
 
         # The tearDown method will now ensure db1 (and any other instances) are closed.
 
+    # --- New tests for context manager and read-only functionality ---
+
+    def test_16_context_manager_basic_rw(self):
+        """
+        Test basic put/get operations using PyRocksDB with a context manager.
+        """
+        key = b"cm_key"
+        value = b"cm_value"
+
+        # Open, put, get, and ensure auto-close
+        with pyrex.PyRocksDB(self.db_path) as db:
+            self.assertFalse(db.is_closed_.load()) # Should be open
+            db.put(key, value)
+            retrieved = db.get(key)
+            self.assertEqual(retrieved, value)
+
+        # After exiting the 'with' block, the DB should be closed
+        # We can't directly assert on db.is_closed_ here because 'db' might be out of scope
+        # or the Python object might have been garbage collected.
+        # Instead, we rely on the next test or teardown to confirm cleanup.
+        # A more robust check would be to try to open it again and verify success/failure
+        # if the lock was released.
+
+        # Verify the data persists by reopening
+        with pyrex.PyRocksDB(self.db_path) as db_reopen:
+            retrieved_after_reopen = db_reopen.get(key)
+            self.assertEqual(retrieved_after_reopen, value)
+
+    def test_17_context_manager_extended_rw(self):
+        """
+        Test put/get operations with Column Families using PyRocksDBExtended with a context manager.
+        """
+        cf_name = "my_cm_cf"
+        key = b"cm_cf_key"
+        value = b"cm_cf_value"
+
+        with pyrex.PyRocksDBExtended(self.db_path) as db:
+            self.assertFalse(db.is_closed_.load())
+            cf_handle = db.create_column_family(cf_name)
+            db.put_cf(cf_handle, key, value)
+            retrieved = db.get_cf(cf_handle, key)
+            self.assertEqual(retrieved, value)
+            self.assertIn(cf_name, db.list_column_families())
+
+        # Verify data and CF persist by reopening
+        with pyrex.PyRocksDBExtended(self.db_path) as db_reopen:
+            self.assertIn(cf_name, db_reopen.list_column_families())
+            reopened_cf_handle = db_reopen.get_column_family(cf_name)
+            self.assertIsNotNone(reopened_cf_handle)
+            retrieved_after_reopen = db_reopen.get_cf(reopened_cf_handle, key)
+            self.assertEqual(retrieved_after_reopen, value)
+
+    def test_18_read_only_open_and_read(self):
+        """
+        Test opening an existing database in read-only mode and successfully reading data.
+        """
+        # First, create a DB and put some data in it in read-write mode
+        key_rw = b"read_only_test_key"
+        value_rw = b"read_only_test_value"
+        with pyrex.PyRocksDB(self.db_path) as db_init:
+            db_init.put(key_rw, value_rw)
+            db_init.put(b"another_key", b"another_value")
+
+        # Now, open the same DB in read-only mode
+        with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
+            self.assertTrue(db_ro.is_read_only_.load()) # Verify it's in read-only state
+            self.assertFalse(db_ro.is_closed_.load()) # Should be open
+
+            # Test successful read
+            retrieved = db_ro.get(key_rw)
+            self.assertEqual(retrieved, value_rw)
+            self.assertEqual(db_ro.get(b"another_key"), b"another_value")
+            self.assertIsNone(db_ro.get(b"non_existent_key"))
+
+            # Test iterator in read-only mode
+            it = db_ro.new_iterator()
+            it.seek_to_first()
+            self.assertTrue(it.valid())
+            self.assertEqual(it.key(), b"another_key") # Keys are sorted alphabetically
+
+    def test_19_read_only_prevent_put(self):
+        """
+        Test that `put` operation fails in read-only mode.
+        """
+        # Create a DB first
+        with pyrex.PyRocksDB(self.db_path) as db_init:
+            db_init.put(b"initial_key", b"initial_value")
+
+        # Open in read-only mode and attempt put
+        with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
+            with self.assertRaises(pyrex.RocksDBException) as cm:
+                db_ro.put(b"new_key", b"new_value")
+            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+
+            # Verify original key is still readable
+            self.assertEqual(db_ro.get(b"initial_key"), b"initial_value")
+            # Verify new key was NOT added
+            self.assertIsNone(db_ro.get(b"new_key"))
+
+    def test_20_read_only_prevent_delete(self):
+        """
+        Test that `delete` operation fails in read-only mode.
+        """
+        # Create a DB with data
+        key_to_delete = b"to_delete"
+        with pyrex.PyRocksDB(self.db_path) as db_init:
+            db_init.put(key_to_delete, b"value_to_delete")
+
+        # Open in read-only mode and attempt delete
+        with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
+            with self.assertRaises(pyrex.RocksDBException) as cm:
+                db_ro.delete(key_to_delete)
+            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+
+            # Verify the key was NOT deleted
+            self.assertEqual(db_ro.get(key_to_delete), b"value_to_delete")
+
+    def test_21_read_only_prevent_write_batch(self):
+        """
+        Test that `write` (batch) operation fails in read-only mode.
+        """
+        # Create a DB with data
+        with pyrex.PyRocksDB(self.db_path) as db_init:
+            db_init.put(b"batch_original", b"original_value")
+
+        # Open in read-only mode and attempt write batch
+        with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
+            batch = pyrex.PyWriteBatch()
+            batch.put(b"batch_new_key", b"batch_new_value")
+            batch.delete(b"batch_original")
+
+            with self.assertRaises(pyrex.RocksDBException) as cm:
+                db_ro.write(batch)
+            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+
+            # Verify no changes were applied
+            self.assertEqual(db_ro.get(b"batch_original"), b"original_value")
+            self.assertIsNone(db_ro.get(b"batch_new_key"))
+
+    def test_22_read_only_prevent_create_cf(self):
+        """
+        Test that `create_column_family` fails in read-only mode.
+        """
+        # Create an extended DB first
+        with pyrex.PyRocksDBExtended(self.db_path) as db_init:
+            db_init.put(b"key", b"value") # Ensure DB is initialized
+
+        # Open in read-only mode and attempt to create CF
+        with pyrex.PyRocksDBExtended(self.db_path, read_only=True) as db_ro:
+            self.assertTrue(db_ro.is_read_only_.load())
+            with self.assertRaises(pyrex.RocksDBException) as cm:
+                db_ro.create_column_family("new_read_only_cf")
+            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+            self.assertNotIn("new_read_only_cf", db_ro.list_column_families())
+
+    def test_23_read_only_prevent_drop_cf(self):
+        """
+        Test that `drop_column_family` fails in read-only mode.
+        """
+        # Create an extended DB with a CF to drop
+        cf_to_drop_name = "cf_to_drop_ro"
+        with pyrex.PyRocksDBExtended(self.db_path) as db_init:
+            cf_handle = db_init.create_column_family(cf_to_drop_name)
+            db_init.put_cf(cf_handle, b"key", b"value")
+            self.assertIn(cf_to_drop_name, db_init.list_column_families())
+
+        # Open in read-only mode and attempt to drop CF
+        with pyrex.PyRocksDBExtended(self.db_path, read_only=True) as db_ro:
+            self.assertTrue(db_ro.is_read_only_.load())
+            cf_handle_ro = db_ro.get_column_family(cf_to_drop_name)
+            self.assertIsNotNone(cf_handle_ro) # Should get the handle
+
+            with self.assertRaises(pyrex.RocksDBException) as cm:
+                db_ro.drop_column_family(cf_handle_ro)
+            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+
+            # Verify CF is still listed and accessible
+            self.assertIn(cf_to_drop_name, db_ro.list_column_families())
+            self.assertEqual(db_ro.get_cf(cf_handle_ro, b"key"), b"value")
+
+    def test_24_read_only_non_existent_db(self):
+        """
+        Test opening a non-existent database in read-only mode (should fail).
+        """
+        # Ensure the path does not exist initially
+        if os.path.exists(self.db_path):
+            shutil.rmtree(self.db_path)
+
+        with self.assertRaises(pyrex.RocksDBException) as cm:
+            # OpenForReadOnly does not create if missing, so this should fail
+            self.db = pyrex.PyRocksDB(self.db_path, read_only=True)
+        self.assertIn("No such file or directory", str(cm.exception) or "DB not found")
 
 
 if __name__ == '__main__':
