@@ -36,7 +36,7 @@ rocksdb_version = os.environ.get("ROCKSDB_VERSION")
 sanitized_rocksdb_version = rocksdb_version.replace('.', '')
 
 LOCAL_VERSION_NAMING = os.environ.get('LOCAL_VERSION_NAMING','false')
-if LOCAL_VERSION_NAMING == 'true':
+if LOCAL_VERSION_NAMING == 'false':
     final_version = BASE_VERSION
 else:
     final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
