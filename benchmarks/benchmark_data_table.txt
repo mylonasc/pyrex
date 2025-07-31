@@ -1,0 +1,24 @@
+db_type           workload  operations  time_taken_sec   ops_per_sec
+LMDB       Batch Writes    10000000       29.058946  3.441281e+05                                        
+Plyvel       Batch Writes    10000000       36.011697  2.776876e+05                                        
+Pyrex       Batch Writes    10000000       **25.670233**  3.895563e+05                                        
+LMDB          Iteration    10000000        1.514440  6.603099e+06                                        
+Plyvel          Iteration    10000000        3.389128  2.950611e+06                                        
+Pyrex          Iteration    10000000        5.552060  1.801133e+06                                        
+LMDB     Random Deletes    10000000       43.937780  2.275946e+05                                        
+Plyvel     Random Deletes    10000000       16.061538  6.226054e+05                                        
+Pyrex     Random Deletes    10000000       **10.735954**  9.314496e+05                                        
+LMDB       Random Reads    10000000       11.376478  8.790067e+05                                        
+Plyvel       Random Reads    10000000       25.495042  3.922331e+05                                        
+Pyrex       Random Reads    10000000       40.788660  2.451662e+05                                        
+LMDB      Random Writes    10000000       28.317087  3.531437e+05                                        
+Plyvel      Random Writes    10000000      284.804538  3.511180e+04                                        
+Pyrex      Random Writes    10000000       88.417446  1.130999e+05                                        
+LMDB   Sequential Reads    10000000        5.933674  1.685297e+06                                        
+Plyvel   Sequential Reads    10000000       10.587208  9.445361e+05                                        
+Pyrex   Sequential Reads    10000000       15.478162  6.460715e+05                                        
+LMDB  Sequential Writes    10000000        7.753336  1.289767e+06                                        
+Plyvel  Sequential Writes    10000000       22.164930  4.511632e+05                                        
+Pyrex  Sequential Writes    10000000       25.223178  3.964608e+05
+
+
