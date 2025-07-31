@@ -588,12 +588,18 @@ PYBIND11_MODULE(_pyrex, m) {
         This class interacts exclusively with the 'default' column family.
         For multi-column-family support, use `PyRocksDBExtended`.
     )doc")
-        .def(py::init<const std::string&, PyOptions*>(), py::arg("path"), py::arg("options") = nullptr, R"doc(
+        .def(py::init<const std::string&, PyOptions*, bool>(), 
+            py::arg("path"), 
+            py::arg("options") = nullptr,
+            py::arg("read_only") = false,
+            R"doc(
             Opens a RocksDB database at the specified path.
 
             Args:
                 path (str): The file system path to the database.
                 options (PyOptions, optional): Custom options for configuration.
+                read_only (bool, optional): If True, opens the database in read-only mode.
+                                            Defaults to False.
         )doc", py::call_guard<py::gil_scoped_release>())
         .def("put", &PyRocksDB::put, py::arg("key"), py::arg("value"), "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
         .def("get", &PyRocksDB::get, py::arg("key"), "Retrieves the value for a key.")
@@ -610,12 +616,18 @@ PYBIND11_MODULE(_pyrex, m) {
     py::class_<PyRocksDBExtended, PyRocksDB, std::shared_ptr<PyRocksDBExtended>>(m, "PyRocksDBExtended", R"doc(
         An advanced Python wrapper for RocksDB with full Column Family support.
     )doc")
-        .def(py::init<const std::string&, PyOptions*>(), py::arg("path"), py::arg("options") = nullptr, R"doc(
+        .def(py::init<const std::string&, PyOptions*, bool>(), 
+            py::arg("path"), 
+            py::arg("options") = nullptr, 
+            py::arg("read_only") = false, 
+            R"doc(
             Opens or creates a RocksDB database with Column Family support.
 
             Args:
                 path (str): The file system path to the database.
                 options (PyOptions, optional): Custom options for configuration.
+                read_only (bool, optional): If True, opens the database in read-only mode.
+                                            Defaults to False.
         )doc", py::call_guard<py::gil_scoped_release>())
         .def("put_cf", &PyRocksDBExtended::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), "Inserts a key-value pair into a specific column family.", py::call_guard<py::gil_scoped_release>())
         .def("get_cf", &PyRocksDBExtended::get_cf, py::arg("cf_handle"), py::arg("key"), "Retrieves the value for a key from a specific column family.")

@@ -3,6 +3,8 @@ import unittest
 import os
 import shutil
 
+WRITE_ERROR_READONLY_MSG = 'Cannot perform put/write/delete operation: Database opened in read-only mode.'
+
 class TestPyrex(unittest.TestCase):
     DB_BASE_PATH = "/tmp/test_pyrex_db"
 
@@ -27,16 +29,17 @@ class TestPyrex(unittest.TestCase):
 
     def tearDown(self):
         # Close any additional DB instances opened in a test
+        # These are usually direct instances that weren't wrapped in 'with'
         for extra_db in self._additional_dbs:
             if hasattr(extra_db, 'close') and callable(extra_db.close):
                 extra_db.close()
         self._additional_dbs = []
 
         if hasattr(self, 'db') and self.db is not None:
-            # If the DB was opened via context manager, it should already be closed.
-            # However, if it was opened directly (e.g., test_15), ensure it's closed.
-            if not self.db.is_closed_.load(): # Access the internal state
-                 self.db.close()
+            # If self.db was opened directly (e.g., test_15), ensure it's closed.
+            # If it was opened via a context manager, it's already closed by __exit__.
+            # The 'del self.db' will trigger the C++ destructor, which calls close() if not already closed.
+            self.db.close() # Explicitly call close() for directly managed 'self.db'
             del self.db
             self.db = None
         if os.path.exists(self.db_path):
@@ -424,17 +427,11 @@ class TestPyrex(unittest.TestCase):
 
         # Open, put, get, and ensure auto-close
         with pyrex.PyRocksDB(self.db_path) as db:
-            self.assertFalse(db.is_closed_.load()) # Should be open
+            # We can't directly check db.is_closed_.load() because it's not exposed
+            # but the context manager ensures it's open within the block.
             db.put(key, value)
             retrieved = db.get(key)
             self.assertEqual(retrieved, value)
-
-        # After exiting the 'with' block, the DB should be closed
-        # We can't directly assert on db.is_closed_ here because 'db' might be out of scope
-        # or the Python object might have been garbage collected.
-        # Instead, we rely on the next test or teardown to confirm cleanup.
-        # A more robust check would be to try to open it again and verify success/failure
-        # if the lock was released.
 
         # Verify the data persists by reopening
         with pyrex.PyRocksDB(self.db_path) as db_reopen:
@@ -450,7 +447,7 @@ class TestPyrex(unittest.TestCase):
         value = b"cm_cf_value"
 
         with pyrex.PyRocksDBExtended(self.db_path) as db:
-            self.assertFalse(db.is_closed_.load())
+            # We can't directly check db.is_closed_.load() because it's not exposed
             cf_handle = db.create_column_family(cf_name)
             db.put_cf(cf_handle, key, value)
             retrieved = db.get_cf(cf_handle, key)
@@ -462,6 +459,7 @@ class TestPyrex(unittest.TestCase):
             self.assertIn(cf_name, db_reopen.list_column_families())
             reopened_cf_handle = db_reopen.get_column_family(cf_name)
             self.assertIsNotNone(reopened_cf_handle)
+            self.assertEqual(reopened_cf_handle.name, cf_name)
             retrieved_after_reopen = db_reopen.get_cf(reopened_cf_handle, key)
             self.assertEqual(retrieved_after_reopen, value)
 
@@ -478,8 +476,10 @@ class TestPyrex(unittest.TestCase):
 
         # Now, open the same DB in read-only mode
         with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
-            self.assertTrue(db_ro.is_read_only_.load()) # Verify it's in read-only state
-            self.assertFalse(db_ro.is_closed_.load()) # Should be open
+            # We can't directly check db_ro.is_read_only_.load() as it's not exposed.
+            # The test implicitly verifies this by attempting writes later.
+            # The database should be open for reading.
+            pass
 
             # Test successful read
             retrieved = db_ro.get(key_rw)
@@ -492,6 +492,8 @@ class TestPyrex(unittest.TestCase):
             it.seek_to_first()
             self.assertTrue(it.valid())
             self.assertEqual(it.key(), b"another_key") # Keys are sorted alphabetically
+            it.check_status()
+
 
     def test_19_read_only_prevent_put(self):
         """
@@ -505,7 +507,7 @@ class TestPyrex(unittest.TestCase):
         with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
             with self.assertRaises(pyrex.RocksDBException) as cm:
                 db_ro.put(b"new_key", b"new_value")
-            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+            self.assertIn(WRITE_ERROR_READONLY_MSG , str(cm.exception))
 
             # Verify original key is still readable
             self.assertEqual(db_ro.get(b"initial_key"), b"initial_value")
@@ -525,7 +527,7 @@ class TestPyrex(unittest.TestCase):
         with pyrex.PyRocksDB(self.db_path, read_only=True) as db_ro:
             with self.assertRaises(pyrex.RocksDBException) as cm:
                 db_ro.delete(key_to_delete)
-            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+            self.assertIn(WRITE_ERROR_READONLY_MSG, str(cm.exception))
 
             # Verify the key was NOT deleted
             self.assertEqual(db_ro.get(key_to_delete), b"value_to_delete")
@@ -546,7 +548,7 @@ class TestPyrex(unittest.TestCase):
 
             with self.assertRaises(pyrex.RocksDBException) as cm:
                 db_ro.write(batch)
-            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+            self.assertIn(WRITE_ERROR_READONLY_MSG, str(cm.exception))
 
             # Verify no changes were applied
             self.assertEqual(db_ro.get(b"batch_original"), b"original_value")
@@ -562,10 +564,10 @@ class TestPyrex(unittest.TestCase):
 
         # Open in read-only mode and attempt to create CF
         with pyrex.PyRocksDBExtended(self.db_path, read_only=True) as db_ro:
-            self.assertTrue(db_ro.is_read_only_.load())
+            # We can't directly check db_ro.is_read_only_.load() as it's not exposed.
             with self.assertRaises(pyrex.RocksDBException) as cm:
                 db_ro.create_column_family("new_read_only_cf")
-            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+            self.assertIn( WRITE_ERROR_READONLY_MSG , str(cm.exception))
             self.assertNotIn("new_read_only_cf", db_ro.list_column_families())
 
     def test_23_read_only_prevent_drop_cf(self):
@@ -581,15 +583,16 @@ class TestPyrex(unittest.TestCase):
 
         # Open in read-only mode and attempt to drop CF
         with pyrex.PyRocksDBExtended(self.db_path, read_only=True) as db_ro:
-            self.assertTrue(db_ro.is_read_only_.load())
+            # We can't directly check db_ro.is_read_only_.load() as it's not exposed.
             cf_handle_ro = db_ro.get_column_family(cf_to_drop_name)
             self.assertIsNotNone(cf_handle_ro) # Should get the handle
+            self.assertTrue(cf_handle_ro.is_valid()) # The handle should still be valid from RocksDB's perspective
 
             with self.assertRaises(pyrex.RocksDBException) as cm:
                 db_ro.drop_column_family(cf_handle_ro)
-            self.assertIn("Cannot perform write operation: Database opened in read-only mode.", str(cm.exception))
+            self.assertIn(WRITE_ERROR_READONLY_MSG, str(cm.exception))
 
-            # Verify CF is still listed and accessible
+            # Verify CF is still listed and accessible (since drop failed)
             self.assertIn(cf_to_drop_name, db_ro.list_column_families())
             self.assertEqual(db_ro.get_cf(cf_handle_ro, b"key"), b"value")
 
