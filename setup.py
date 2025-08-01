@@ -14,18 +14,22 @@ from setuptools.command.build_ext import build_ext as _build_ext
 
 PROJECT_DIR = Path(__file__).parent.resolve()
 
-# The default version of RocksDB to build if the env var is not set.
-
 # --- Versioning Logic ---
 # Read the base package version from an environment variable.
 BASE_VERSION = os.environ.get("PYREX_VERSION")
 if not BASE_VERSION:
-    raise RuntimeError("PYREX_VERSION environment variable must be set (e.g., '0.1.2').")
+    raise RuntimeError("PYREX_VERSION environment variable must be set ('xx.yy.zz').")
+
+if sys.platform=='win32':
+    # This is executed for the VSPKG build on windows.
+    # It is required because the VSPKG does not support all versions of rocksdb.
+    if 'ROCKSDB_VERSION_VSPKG' in os.environ:
+        os.environ['ROCKSDB_VERSION'] = os.environ['ROCKSDB_VERSION_VSPKG']
 
 # Read the RocksDB version from an environment variable.
 rocksdb_version = os.environ.get("ROCKSDB_VERSION")
 if not rocksdb_version:
-    raise RuntimeError("ROCKSDB_VERSION environment variable must be set (e.g., '10.2.1').")
+    raise RuntimeError("ROCKSDB_VERSION environment variable must be set ('xx.yy.zz').")
 
 # The version of RocksDB that will be built.
 # It can be overridden by the ROCKSDB_VERSION environment variable.
@@ -56,16 +60,19 @@ class build_ext(_build_ext):
         self._ensure_cmake_is_available()
 
         # 1. Download and build RocksDB for the specified version.
-        rocksdb_install_path = self._get_and_build_rocksdb()
+        if sys.platform != 'win32': # MacOS and Linux
+            rocksdb_install_path = self._get_and_build_rocksdb()
+        else:
+            # using vspkg to manage the rocksdb dependency.
+            # assuming that VSPKG_ROOT is set by the build env.
+            vcpkg_root = os.environ.get('VCPKG_ROOT')
+            if not vcpkg_root:
+                raise RuntimeError("VCPKG_ROOT environment variable must be set on Windows.")
+            rocksdb_install_path = Path(vcpkg_root) / 'installed' / 'x64-windows'
 
-
-        # 2. 
         pyrex_ext = self._get_pyrex_extension()
-        if not pyrex_ext:
-            raise RuntimeError("Could not find the 'pyrex._pyrex' extension.")
         self._configure_pyrex_extension(pyrex_ext, rocksdb_install_path)
-
-        self.extensions = [pyrex_ext]
+        self.extensions = [pyrex_ext] 
         # 3. Call the parent run() to build the pyrex extension.
         super().run()
 
@@ -110,7 +117,6 @@ class build_ext(_build_ext):
         with io.BytesIO(download_content) as buffer:
             with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
                 top_level_dir = Path(tar.getmembers()[0].name).parts[0]
-                # ** FIX: Add filter='data' to address the DeprecationWarning **
                 tar.extractall(path=build_dir, filter='data')
 
         source_dir = build_dir / top_level_dir
@@ -138,13 +144,14 @@ class build_ext(_build_ext):
 
         if int(rocksdb_version.split('.')[0]) >= 7:
             ## Fix for version 7:
-            # This version contains some stress testing tools that are not necessary. 
+            # This version contains some stress testing tools that are not essential. 
+            # They also break the build. They have a problem with the gflags API used
+            # in this build.
+            # 
             # We skip them by adding the following flags:
             cmake_args.extend(
                     ['-DWITH_TOOLS=OFF','-DWITH_TESTS=OFF']
             )
-
-
         
         print(f"--- Configuring RocksDB v{rocksdb_version} ---")
         subprocess.check_call(['cmake', '..'] + cmake_args, cwd=cmake_build_dir)
@@ -166,10 +173,16 @@ class build_ext(_build_ext):
         ext.library_dirs.append(str(lib_dir))
 
 
+        # libs_only_win = ['shlwapi','rpcrt4','zlibstatic']
+        libs_only_win = ['shlwapi','rpcrt4','zlib']
+        libs_only_linux = ['z']
+        libs_both = ['rocksdb','snappy','lz4','bz2','zstd']
+        # libs_both = ['rocksdb','lz4','bz2','zstd']
         if sys.platform == "win32":
-            ext.libraries.extend(['rocksdb', 'shlwapi', 'rpcrt4', 'zlibstatic', 'snappy', 'lz4', 'bz2','zstd'])
+            _win_ext_libs = libs_both + libs_only_win
+            ext.libraries.extend(libs_both + libs_only_win)
         else:
-            ext.libraries.extend(['rocksdb', 'snappy', 'lz4', 'z', 'bz2','zstd'])
+            ext.libraries.extend(libs_both + libs_only_linux)
         
         print(f"--- Configured pyrex extension with RocksDB paths ---")
 
