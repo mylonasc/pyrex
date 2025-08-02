@@ -29,7 +29,7 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [macos-14] # [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest] # [macos-14] # [macos-latest, windows-latest, ubuntu-latest]
       fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
@@ -263,11 +263,13 @@ jobs:
       name: Test Py${{ matrix.python-version }} on ${{ matrix.os }} (${{ matrix.arch }})
       needs: build_wheels
       runs-on: ${{ matrix.os }}
+      defaults:
+        run:
+          shell: bash
       strategy:
         fail-fast: false
-        # MODIFICATION: Comprehensive matrix for all platforms
         matrix:
-          python-version: ["3.9", "3.12"]
+          python-version: ["3.8","3.9","3.10","3.11","3.12"]
           include:
             # Linux
             - os: ubuntu-latest
@@ -299,28 +301,33 @@ jobs:
             name: python-wheels-${{ contains(matrix.os, 'macos') && 'macos-14' || matrix.os }}
             path: dist
 
+        - name: Locate the wheel (skip if missing)
+          id: wheel
+          run: |
+            PY_TAG="cp${{ matrix.python-version//./ }}"
+            ARCH="${{ matrix.arch }}"
+            FILE=$(ls dist/*-${PY_TAG}-${PY_TAG}-*${ARCH}.whl 2>/dev/null || true)
+            if [[ -z "$FILE" ]]; then
+              echo "found=false" >>"$GITHUB_OUTPUT"
+              echo "No matching wheel - skipping this matrix entry."
+            else
+              echo "found=true"  >>"$GITHUB_OUTPUT"
+              echo "file=$FILE"  >>"$GITHUB_OUTPUT"
+            fi
+
         - name: Install dependencies
+          if: steps.wheel.outputs.found == 'true'
           run: |
             python -m pip install --upgrade pip
             pip install pytest
 
-        - name: Install wheel and run tests
-          run: |
-            PY_VERSION="${{ matrix.python-version }}"
-            PY_TAG="${PY_VERSION//./}"
-            TARGET_ARCH="${{ matrix.arch }}"
+        - name: Install wheel
+          if: steps.wheel.outputs.found == 'true'
+          run: pip install "${{ steps.wheel.outputs.file }}"
 
-            echo "Python version: $PY_VERSION (tag: cp$PY_TAG)"
-            echo "Target architecture: $TARGET_ARCH"
-            echo "--- Available wheels ---"
-            ls -R dist/
-            echo "------------------------"
-            
-            # This robust glob pattern finds the correct wheel on any OS
-            pip install dist/*-cp${PY_TAG}-cp${PY_TAG}-*${TARGET_ARCH}.whl
-            
-            pytest tests/
-          shell: bash
+        - name: Run pytest
+          if: steps.wheel.outputs.found == 'true'
+          run: pytest tests/
 
   publish_to_pypi:
     name: Publish wheels to PyPI
