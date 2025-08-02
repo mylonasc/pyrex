@@ -307,57 +307,6 @@ jobs:
           pytest tests/
         shell: bash
 
-  test_wheels:
-    name: Test wheels on ${{ matrix.python-version }} on ${{ matrix.os }}
-    needs: build_wheels # 👈 Run after building is complete
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest] # Test on all target OSes
-        python-version: ["3.12"] #["3.8", "3.9", "3.10", "3.11", "3.12"] # Test against multiple Python versions
-      fail-fast: false
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Download wheel artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: python-wheels-${{ matrix.os }} # Download the artifact for the correct OS
-          path: dist
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest
-
-      - name: Install wheel and run tests
-        # This solution requires the bash shell
-        shell: bash
-        run: |
-          # Store the version from the matrix in a shell variable
-          PY_VERSION="${{ matrix.python-version }}"
-
-          # Use bash parameter expansion to remove the dot (e.g., "3.11" becomes "311")
-          VERSION_TAG="${PY_VERSION//./}"
-          
-          echo "Python version: $PY_VERSION"
-          echo "Derived wheel tag: cp$VERSION_TAG"
-          echo "Looking for wheel file in dist/ with pattern: *-cp${VERSION_TAG}-*.whl"
-          ls -R dist/
-
-          # Install the wheel using the new shell variable
-          pip install --force-reinstall dist/*-cp$VERSION_TAG-*.whl
-          
-          # Run the tests
-          pytest tests/
-
   publish_to_pypi:
     name: Publish wheels to PyPI
     needs: build_wheels
