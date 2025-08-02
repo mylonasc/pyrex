@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - release 
+      - fixing-actions 
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
