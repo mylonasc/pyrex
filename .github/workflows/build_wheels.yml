@@ -304,8 +304,15 @@ jobs:
         - name: Locate the wheel (skip if missing)
           id: wheel
           run: |
-            PY_TAG="cp${{ matrix.python-version//./ }}"
+
+            # PY_VERSION="${{ matrix.python-version }}"
+            # PY_TAG="cp${PY_VERSION//./}"
+            
+            PY_VERSION="${{ matrix.python-version }}"   # 3.11, 3.8 …
+            PY_TAG="cp${PY_VERSION//./}"                # Bash: 3.11 → cp311
             ARCH="${{ matrix.arch }}"
+
+            
             FILE=$(ls dist/*-${PY_TAG}-${PY_TAG}-*${ARCH}.whl 2>/dev/null || true)
             if [[ -z "$FILE" ]]; then
               echo "found=false" >>"$GITHUB_OUTPUT"
