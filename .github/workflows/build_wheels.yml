@@ -183,17 +183,7 @@ jobs:
         # C. Define the mapping for your private GitHub feed
         $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
         $githubSourceMapping.SetAttribute("key", "github")
-        # $patterns = @(
-        #  "rocksdb_x64-windows",
-        #  "zlib_x64-windows",
-        #  "lz4_x64-windows",
-        #  "snappy_x64-windows",
-        #  "vcpkg-cmake_x64-windows",
-        #  "vcpkg-cmake-config_x64-windows",
-        #  "zstd_x64-windows",
-        #  "bzip2_x64-windows",
-        #   "tbb_x64-windows"
-        # )
+
         $patterns = @(
           "rocksdb_*-windows",
           "zlib_*-windows",
@@ -206,7 +196,6 @@ jobs:
           "tbb_*-windows"
         )
         
-
         foreach ($pattern in $patterns) {
           $packageNode = $githubSourceMapping.AppendChild($config.CreateElement("package"))
           $packageNode.SetAttribute("pattern", $pattern)
@@ -269,7 +258,7 @@ jobs:
       strategy:
         fail-fast: false
         matrix:
-          python-version: ["3.8","3.9","3.10","3.11","3.12"]
+          python-version: ["3.8","3.9","3.12"] #["3.8","3.9","3.10","3.11","3.12"]
           include:
             # Linux
             - os: ubuntu-latest
