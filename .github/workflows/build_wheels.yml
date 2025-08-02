@@ -29,7 +29,7 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
       fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
