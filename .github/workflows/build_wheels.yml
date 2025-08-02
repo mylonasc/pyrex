@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - fixing-actions 
+      - release 
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
@@ -12,7 +12,7 @@ on:
     
   pull_request:
     branches:
-      - fixing-actions
+      - main
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
@@ -309,7 +309,7 @@ jobs:
 
   publish_to_pypi:
     name: Publish wheels to PyPI
-    needs: build_wheels
+    needs: test_wheels
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
 
