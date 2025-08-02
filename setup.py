@@ -117,7 +117,7 @@ class build_ext(_build_ext):
         with io.BytesIO(download_content) as buffer:
             with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
                 top_level_dir = Path(tar.getmembers()[0].name).parts[0]
-                
+                print("--- version: " , sys.version_info)
                 if sys.version_info >= (3, 12):
                     tar.extractall(path=build_dir, filter='data')
                 else:
@@ -125,11 +125,6 @@ class build_ext(_build_ext):
                     # This is acceptable as we are downloading from the official/trusted repo.
                     tar.extractall(path=build_dir)
                     
-        with io.BytesIO(download_content) as buffer:
-            with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
-                top_level_dir = Path(tar.getmembers()[0].name).parts[0]
-                tar.extractall(path=build_dir, filter='data')
-
         source_dir = build_dir / top_level_dir
 
         # 2. Configure and Build with CMake
