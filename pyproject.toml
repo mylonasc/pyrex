@@ -60,8 +60,8 @@ package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
-# build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
-build = "cp312-*"
+build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+# build = "cp312-*"
 
 environment-pass = [
     "ROCKSDB_VERSION",
