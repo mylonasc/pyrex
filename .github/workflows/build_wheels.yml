@@ -29,7 +29,7 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest] # [macos-latest, windows-latest, ubuntu-latest]
       fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
@@ -74,7 +74,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.x' # cibuildwheel will manage specific Python versions
-        architecture: 'x64' # Ensure 64-bit Python is set up
+        # architecture: 'x64' # Ensure 64-bit Python is set up
 
 
     - name: Install build dependencies
