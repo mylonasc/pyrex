@@ -73,19 +73,11 @@ container-engine= "docker; create-args: --network=host"
 
 # Linux specific configurations
 [tool.cibuildwheel.linux]
-before-build = """
-  if command -v apk > /dev/null; then
-    apk update
-    apk add cmake gflags-dev snappy-dev lz4-dev zlib-dev bzip2-dev zstd-dev
-  elif command -v apt-get > /dev/null; then
-    apt-get update
-    apt-get install -y cmake build-essential libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev libzstd-dev
-  elif command -v yum > /dev/null; then
-    yum install -y gflags-devel cmake snappy-devel lz4-devel zlib-devel bzip2-devel libzstd-devel
-  else
-    echo "No supported package manager found."
-    exit 1
-  fi
+
+before-all = """
+(yum install -y gflags-devel cmake snappy-devel lz4-devel zlib-devel bzip2-devel libzstd-devel) || \
+(apt-get update && apt-get install -y cmake build-essential libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev libzstd-dev) || \
+(apk add --no-cache gflags-dev cmake snappy-dev lz4-dev zlib-dev bzip2-dev zstd-dev)
 """
 
 # macOS specific configurations
@@ -93,7 +85,7 @@ before-build = """
 environment = { MACOSX_DEPLOYMENT_TARGET = "14.0", LDFLAGS = "-L/opt/homebrew/lib -L/usr/local/lib $LDFLAGS", CPPFLAGS = "-I/opt/homebrew/include -I/usr/local/include $CPPFLAGS" }
 
 before-build = """
-  brew install cmake snappy lz4 zstd
+  brew install cmake snappy lz4 zstd zlib bzip2 
 """
 
 # Windows specific configurations
