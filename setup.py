@@ -174,9 +174,9 @@ class build_ext(_build_ext):
 
 
         # libs_only_win = ['shlwapi','rpcrt4','zlibstatic']
-        libs_only_win = ['shlwapi','rpcrt4','zlib']
-        libs_only_linux = ['z']
-        libs_both = ['rocksdb','snappy','lz4','bz2','zstd']
+        libs_only_win = ['shlwapi','rpcrt4']
+        libs_only_linux = ['z','zlib','snappy','lz4','bz2','zstd']
+        libs_both = ['rocksdb']
         # libs_both = ['rocksdb','lz4','bz2','zstd']
         if sys.platform == "win32":
             _win_ext_libs = libs_both + libs_only_win
