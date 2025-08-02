@@ -60,9 +60,8 @@ package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
-build = "cp312-*" # "cp38-* cp39-* cp310-* cp311-* cp312-*"
-# build = "cp312-*"
-skip = ["*-musllinux_*"]
+# build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+build = "cp312-*"
 
 environment-pass = [
     "ROCKSDB_VERSION",
@@ -82,13 +81,14 @@ before-build = """
 
 # macOS specific configurations
 [tool.cibuildwheel.macos]
-environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" } # Lower for better compatibility
+environment = { MACOSX_DEPLOYMENT_TARGET = "14.0", LDFLAGS = "-L/opt/homebrew/lib -L/usr/local/lib $LDFLAGS", CPPFLAGS = "-I/opt/homebrew/include -I/usr/local/include $CPPFLAGS" }
+
 before-build = """
   brew install cmake snappy lz4 zstd
 """
 
 # Windows specific configurations
 [tool.cibuildwheel.windows]
-build = "cp39-win_amd64"
 archs = ["AMD64"]
-environment = { INCLUDE = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\include;${INCLUDE}", LIB = "D:\\a\\pyrex\\pyrex\\vcpkg\\installed\\x64-windows\\lib;${LIB}" }
+environment = { CMAKE_TOOLCHAIN_FILE = "{{project}}/vcpkg/scripts/buildsystems/vcpkg.cmake" }
+
