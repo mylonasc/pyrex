@@ -58,6 +58,9 @@ dev = [
 packages = ["pyrex"] # Explicitly list your package
 package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
 
+[tool.setuptools.package-data]
+pyrex = ["*.pyi", "py.typed"]
+
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"

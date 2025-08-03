@@ -90,17 +90,29 @@ public:
     void put(const py::bytes& key, const py::bytes& value) { wb_.Put(static_cast<std::string>(key), static_cast<std::string>(value)); }
     void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        wb_.Put(cf.cf_handle_, static_cast<std::string>(key), static_cast<std::string>(value));
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        wb_.Put(cf.cf_handle_, key_slice, value_slice);
     }
-    void del(const py::bytes& key) { wb_.Delete(static_cast<std::string>(key)); }
+    void del(const py::bytes& key) { 
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        wb_.Delete(key_slice); 
+    }
     void del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        wb_.Delete(cf.cf_handle_, static_cast<std::string>(key));
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        wb_.Delete(cf.cf_handle_, key_slice);
     }
-    void merge(const py::bytes& key, const py::bytes& value) { wb_.Merge(static_cast<std::string>(key), static_cast<std::string>(value)); }
+    void merge(const py::bytes& key, const py::bytes& value) { 
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        wb_.Merge(key_slice, value_slice); 
+    }
     void merge_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        wb_.Merge(cf.cf_handle_, static_cast<std::string>(key), static_cast<std::string>(value));
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        wb_.Merge(cf.cf_handle_, key_slice, value_slice);
     }
     void clear() { wb_.Clear(); }
 };
@@ -130,6 +142,7 @@ public:
 class PyRocksDB : public std::enable_shared_from_this<PyRocksDB> {
 protected:
     rocksdb::DB* db_ = nullptr;
+    rocksdb::ColumnFamilyHandle* default_cf_handle_ = nullptr;
     PyOptions opened_options_;
     std::string path_;
     std::map<std::string, std::shared_ptr<PyColumnFamilyHandle>> cf_handles_;
@@ -167,7 +180,7 @@ public:
     // Public constructor for the simple interface
     PyRocksDB(const std::string& path, PyOptions* py_options,  bool read_only = false) {
         this->path_ = path;
-	this->is_read_only_.store(read_only);
+        this->is_read_only_.store(read_only);
         rocksdb::Options options;
         if (py_options) {
             options = py_options->options_;
@@ -178,7 +191,7 @@ public:
         }
 
         rocksdb::Status s;
-        if (read_only) { // <--- NEW LOGIC FOR READ-ONLY
+        if (read_only) { 
             s = rocksdb::DB::OpenForReadOnly(options, path, &this->db_);
         } else {
             s = rocksdb::DB::Open(options, path, &this->db_);
@@ -186,7 +199,9 @@ public:
         if (!s.ok()) {
             throw RocksDBException("Failed to open RocksDB at " + path + ": " + s.ToString());
         }
-        this->cf_handles_[rocksdb::kDefaultColumnFamilyName] = std::make_shared<PyColumnFamilyHandle>(this->db_->DefaultColumnFamily(), rocksdb::kDefaultColumnFamilyName);
+        this->default_cf_handle_ = this->db_->DefaultColumnFamily();
+        this->cf_handles_[rocksdb::kDefaultColumnFamilyName] = std::make_shared<PyColumnFamilyHandle>(this->default_cf_handle_, rocksdb::kDefaultColumnFamilyName);
+        // this->cf_handles_[rocksdb::kDefaultColumnFamilyName] = std::make_shared<PyColumnFamilyHandle>(this->db_->DefaultColumnFamily(), rocksdb::kDefaultColumnFamilyName);
     }
 
     virtual ~PyRocksDB() {
@@ -215,15 +230,24 @@ public:
 
     void put(const py::bytes& key, const py::bytes& value) {
         check_db_open();
-	check_read_only(); 
-        rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), get_default_cf_handle(), static_cast<std::string>(key), static_cast<std::string>(value));
+        check_read_only(); 
+        
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), default_cf_handle_, key_slice, value_slice);
         if (!s.ok()) throw RocksDBException("Put failed: " + s.ToString());
-    }
+    }    
+
 
     py::object get(const py::bytes& key) {
         check_db_open();
         std::string value_str;
-        rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), get_default_cf_handle(), static_cast<std::string>(key), &value_str);
+        rocksdb::Status s;
+        {
+            py::gil_scoped_release release;
+            rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+            s = db_->Get(rocksdb::ReadOptions(), default_cf_handle_, key_slice, &value_str);
+        }
         if (s.ok()) return py::bytes(value_str);
         if (s.IsNotFound()) return py::none();
         throw RocksDBException("Get failed: " + s.ToString());
@@ -232,7 +256,8 @@ public:
     void del(const py::bytes& key) {
         check_db_open();
         check_read_only();
-        rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), get_default_cf_handle(), static_cast<std::string>(key));
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), default_cf_handle_, key_slice);
         if (!s.ok()) throw RocksDBException("Delete failed: " + s.ToString());
     }
 
@@ -245,7 +270,7 @@ public:
 
     std::shared_ptr<PyRocksDBIterator> new_iterator() {
         check_db_open();
-        rocksdb::Iterator* raw_iter = db_->NewIterator(rocksdb::ReadOptions(), get_default_cf_handle());
+        rocksdb::Iterator* raw_iter = db_->NewIterator(rocksdb::ReadOptions(), default_cf_handle_);
         {
             std::lock_guard<std::mutex> lock(active_iterators_mutex_);
             active_rocksdb_iterators_.insert(raw_iter);
@@ -299,29 +324,44 @@ public:
         } else {
             s_open = rocksdb::DB::Open(options, path, cf_descriptors, &handles, &this->db_);
         }
-
+        
         if (!s_open.ok()) {
             throw RocksDBException("Failed to open RocksDB at " + path + ": " + s.ToString());
         }
 
         for (size_t i = 0; i < handles.size(); ++i) {
-            this->cf_handles_[cf_descriptors[i].name] = std::make_shared<PyColumnFamilyHandle>(handles[i], cf_descriptors[i].name);
+            const std::string& cf_name = cf_descriptors[i].name;
+            this->cf_handles_[cf_name] = std::make_shared<PyColumnFamilyHandle>(handles[i], cf_name);
+            
+            // Find and assign the default handle
+            if (cf_name == rocksdb::kDefaultColumnFamilyName) {
+                this->default_cf_handle_ = handles[i];
+            }
+        }
+        
+        // It's good practice to ensure the default handle was found
+        if (!this->default_cf_handle_) {
+            // This case should ideally not be reached if RocksDB is working correctly
+            throw RocksDBException("Default column family not found after opening.");
         }
     }
 
     void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
         check_db_open();
-	check_read_only();
+        check_read_only();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), cf.cf_handle_, static_cast<std::string>(key), static_cast<std::string>(value));
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), cf.cf_handle_, key_slice, value_slice);
         if (!s.ok()) throw RocksDBException("put_cf failed: " + s.ToString());
     }
 
     py::object get_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
         check_db_open();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
         std::string value_str;
-        rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), cf.cf_handle_, static_cast<std::string>(key), &value_str);
+        rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), cf.cf_handle_, key_slice, &value_str);
         if (s.ok()) return py::bytes(value_str);
         if (s.IsNotFound()) return py::none();
         throw RocksDBException("get_cf failed: " + s.ToString());
@@ -331,7 +371,8 @@ public:
         check_db_open();
         check_read_only();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), cf.cf_handle_, static_cast<std::string>(key));
+        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), cf.cf_handle_, key_slice);
         if (!s.ok()) throw RocksDBException("del_cf failed: " + s.ToString());
     }
 
@@ -412,24 +453,24 @@ PyRocksDBIterator::PyRocksDBIterator(rocksdb::Iterator* it, std::shared_ptr<PyRo
 }
 
 PyRocksDBIterator::~PyRocksDBIterator() {
-    // If the parent DB is still open, we are responsible for cleanup.
-    if (parent_db_ptr_ && !parent_db_ptr_->is_closed_.load()) {
-        // Unregister from the parent first while holding the lock
-        {
-            std::lock_guard<std::mutex> lock(parent_db_ptr_->active_iterators_mutex_);
-            if (it_raw_ptr_) {
-                parent_db_ptr_->active_rocksdb_iterators_.erase(it_raw_ptr_);
-            }
-        }
-        // Now delete the iterator
-        if (it_raw_ptr_) {
+
+    // If the parent DB is still open, attempt to clean up our iterator.
+    if (parent_db_ptr_) {
+        // Use a lock to ensure the DB state doesn't change during our cleanup
+        std::lock_guard<std::mutex> lock(parent_db_ptr_->active_iterators_mutex_);
+        
+        // Only delete if the parent DB hasn't already done so.
+        // We can check this by seeing if our raw pointer is still in the set.
+        if (it_raw_ptr_ && parent_db_ptr_->active_rocksdb_iterators_.count(it_raw_ptr_)) {
+            parent_db_ptr_->active_rocksdb_iterators_.erase(it_raw_ptr_);
             delete it_raw_ptr_;
         }
     }
+    it_raw_ptr_ = nullptr; // Invalidate the pointer regardless.
+
     // If the parent DB is closed, it has already handled deleting the raw iterator pointer.
     // We must do nothing to avoid a double-free.
     
-    it_raw_ptr_ = nullptr; // Invalidate the pointer regardless.
 }
 
 void PyRocksDBIterator::check_parent_db_is_open() const {
