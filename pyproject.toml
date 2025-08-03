@@ -65,7 +65,9 @@ pyrex = ["*.pyi", "py.typed"]
 
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
-build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+# build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+skip=['*musllinux*']
+build = "cp312-*"
 
 build-verbosity = 3
 
