@@ -2,7 +2,6 @@ on:
   push:
     branches:
       - release
-      - implement-stubs
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
@@ -13,7 +12,7 @@ on:
     
   pull_request:
     branches:
-      - main
+      - release
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
@@ -30,14 +29,14 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [ubuntu-latest,macos-latest] #, windows-latest, ubuntu-latest]
+        os: [ubuntu-latest,macos-latest, windows-latest]
       fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       ROCKSDB_VERSION: "9.11.2"
       ROCKSDB_VERSION_VCPKG: "9.10.0"
-      PYREX_VERSION: "0.1.3"
+      PYREX_VERSION: "0.1.4"
       # the cibuildwheels stores the different compiled RocksDB here. Key is defined within setup.py.
       HOST_CACHE_DIR: "/tmp/cibw_cache" 
       MACOS_HOST_CACHE_DIR: "/Users/runner/cibw-build-cache"
@@ -279,8 +278,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest] #, windows-latest, macos-latest] # Test on all three OSes
-        python-version: ["3.12"] # Or other versions you want to test
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.8","3.9","3.10","3.11","3.12"] # Or other versions you want to test
       fail-fast: false
       
     steps:
