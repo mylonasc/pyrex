@@ -8,7 +8,8 @@ import urllib.request
 from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext as _build_ext
-
+import platform
+import hashlib
 
 # --- Project Configuration ---
 
@@ -44,6 +45,26 @@ if LOCAL_VERSION_NAMING == 'false':
     final_version = BASE_VERSION
 else:
     final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
+
+def _detect_libc():
+    """
+    Detects the C library on Linux. Returns 'gnu' for glibc or 'musl' for musl-libc.
+    Returns None for non-Linux platforms.
+    """
+    import ctypes
+    if not sys.platform.startswith('linux'):
+        return 'none'
+    
+    try:
+        # ctypes.CDLL(None) gives a handle to the main program, which is linked to libc.
+        libc = ctypes.CDLL(None)
+        # Check for the existence of a glibc-specific function.
+        libc.gnu_get_libc_version
+        return 'gnu'
+    except AttributeError:
+        # If the function doesn't exist, we assume it's musl.
+        return 'musl'
+
 
 # --- Custom Build Logic ---
 class CMakeRocksDBExtension(Extension):
@@ -96,18 +117,79 @@ class build_ext(_build_ext):
         Implements a simple caching mechanism to avoid rebuilding.
         """
 
-        build_dir = Path(self.build_temp)
+        def _get_cmake_args():
+            """Returns all cmake flags apart from DCMAKE_INSTALL_PREFIX=...
+            The cmake params are used to build a cache key and avoid
+            re-builds or rocksdb.
+            """
+            # C++ flags (rocksdb version 6.x)
+            cxx_flags = "-std=c++17 -include cstdint -include system_error"
+
+            ## The following flags were found to work with rocksdb 6:
+            cmake_args = [
+                '-DCMAKE_BUILD_TYPE=Release',
+                '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
+                f'-DCMAKE_CXX_FLAGS={cxx_flags}',
+                '-DROCKSDB_BUILD_SHARED=OFF',
+                '-DFAIL_ON_WARNINGS=OFF',
+                '-DWITH_TESTS=OFF',
+                '-DWITH_SNAPPY=ON', '-DWITH_LZ4=ON', '-DWITH_ZLIB=ON', 
+                '-DWITH_BZ2=ON', '-DWITH_ZSTD=ON',
+            ]
+            
+            # liburing-enabled builds are linux only
+            if sys.platform.startswith('linux'):
+                cmake_args.append('-DWITH_LIBURING=ON')
+            
+            if int(rocksdb_version.split('.')[0]) >= 7:
+                ## Fix for version 7 and later (these do not exist 
+                # in earlier versions)
+                cmake_args.extend(
+                        ['-DWITH_TOOLS=OFF','-DWITH_TESTS=OFF']
+                )
+            return cmake_args
+        
+        # Creating a hash key for identifying the 
+        # rocksdb build uniquely (and avoid re-building
+        # it when its available)
+        cmake_args = _get_cmake_args()
+        libc_type = _detect_libc()        
+        config_str = "".join([
+            rocksdb_version,
+            platform.machine(),
+            platform.system(),
+            libc_type,
+            *sorted(cmake_args)
+        ])
+        
+        config_hash = hashlib.sha256(config_str.encode('utf-8')).hexdigest()[:16]
+        
+        if 'HOST_CACHE_DIR' in os.environ:
+            cache_root =  Path('/host' + os.environ.get('HOST_CACHE_DIR'))
+        else:
+            print("Did not find the cache root of the host!")
+            cache_root = '/tmp' 
+        
+                
+        build_dir = self.build_temp
+        
         # Create a version-specific installation directory for caching.
-        install_dir = build_dir / f"rocksdb_install_{rocksdb_version}"
+        install_dir = cache_root / f"rocksdb_install-{rocksdb_version}-{config_hash}"
 
         # If the library for this version already exists, use the cache.
         if (install_dir / "lib" / "librocksdb.a").exists() or \
-           (install_dir / "lib64" / "librocksdb.a").exists():
+            (install_dir / "lib64" / "librocksdb.a").exists():
             print(f"--- Using cached RocksDB v{rocksdb_version} from {install_dir} ---")
             return install_dir
-
+        
+        print(f"📦 --- No cache found. Starting new RocksDB v{rocksdb_version} build ---")
+    
+        # Temporary directory for the source download and build
+        build_dir = Path(self.build_temp)
         build_dir.mkdir(parents=True, exist_ok=True)
+        install_dir.mkdir(parents=True, exist_ok=True)
 
+        ## Building rocksdb:
         # 1. Download and Extract RocksDB Source
         url = f"https://github.com/facebook/rocksdb/archive/refs/tags/v{rocksdb_version}.tar.gz"
         print(f"--- Downloading RocksDB v{rocksdb_version} from {url} ---")
@@ -124,44 +206,16 @@ class build_ext(_build_ext):
         # 2. Configure and Build with CMake
         cmake_build_dir = source_dir / "build"
         cmake_build_dir.mkdir(exist_ok=True)
-
-
-        # C++ flags (rocksdb version 6.x)
-        cxx_flags = "-std=c++17 -include cstdint -include system_error"
-
-
-        ## The following flags were found to work with rocksdb 6:
-        cmake_args = [
-            f'-DCMAKE_INSTALL_PREFIX={install_dir.resolve()}',
-            '-DCMAKE_BUILD_TYPE=Release',
-            '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
-            f'-DCMAKE_CXX_FLAGS={cxx_flags}',
-            '-DROCKSDB_BUILD_SHARED=OFF',
-            '-DFAIL_ON_WARNINGS=OFF',
-            '-DWITH_TESTS=OFF',
-            '-DWITH_SNAPPY=ON', '-DWITH_LZ4=ON', '-DWITH_ZLIB=ON', 
-            '-DWITH_BZ2=ON', '-DWITH_ZSTD=ON',
-        ]
         
-        # liburing-enabled builds are only supported in linux at the moment
-        # It's not an essential library but may have performance advantages 
-        # in certain settings. 
-        if sys.platform.startswith('linux'):
-            cmake_args.append('-DWITH_LIBURING=ON')
+        # add the INSTALL_PREFIX argument in cmake args.
+        cmake_args = [f'-DCMAKE_INSTALL_PREFIX={install_dir.resolve()}'] + cmake_args
 
-        if int(rocksdb_version.split('.')[0]) >= 7:
-            ## Fix for version 7:
-            # This version contains some stress testing tools that are not essential. 
-            # They also break the build. They have a problem with the gflags API used
-            # in this build.
-            # 
-            # We skip them by adding the following flags:
-            cmake_args.extend(
-                    ['-DWITH_TOOLS=OFF','-DWITH_TESTS=OFF']
-            )
         
         print(f"--- Configuring RocksDB v{rocksdb_version} ---")
         subprocess.check_call(['cmake', '..'] + cmake_args, cwd=cmake_build_dir)
+        
+        
+        
         
         print(f"--- Building and installing RocksDB v{rocksdb_version} ---")
         subprocess.check_call(['cmake', '--build', '.', '--target', 'install'], cwd=cmake_build_dir)
@@ -186,7 +240,7 @@ class build_ext(_build_ext):
         if sys.platform.startswith('linux'):
             # may have perf. benefits. It is required
             # when -DWITH_LIBURING=ON. 
-            libs_only_linux_macos += 'liburing'
+            libs_only_linux_macos += ['uring']
             
         libs_both = ['rocksdb']
         

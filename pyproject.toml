@@ -7,7 +7,7 @@
 
 [build-system]
 # Add cmake to your build requirements
-requires = ["setuptools>=61.0", "wheel", "pybind11[global]>=2.10", "cmake>=3.18","tomli"]
+requires = ["setuptools>=61.0", "wheel", "pybind11[global]>=2.10", "cmake>=3.18"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -66,21 +66,32 @@ pyrex = ["*.pyi", "py.typed"]
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+
+build-verbosity = 3
+
 # build = "cp312-*"
 
 environment-pass = [
     "ROCKSDB_VERSION",
     "PYREX_VERSION",
+    "HOST_CACHE_DIR",
     "VCPKG_ROOT"
 ]
 
+# container-engine= "docker; create-args: --network=host -v'/home/charilaos/Workspace/pyrex/cibw_cache/pyrex_builds:/tmp/cache/pyrex_builds'"
 container-engine= "docker; create-args: --network=host"
 
 # Linux specific configurations
 [tool.cibuildwheel.linux]
+
 build=["cp312-manylinux_*"]
 environment = { CFLAGS = "-O3 -march=native -flto", CXXFLAGS = "-O3 -march=native -flto" ,CC = "clang", CXX = "clang++"}
 before-all = """
+
+echo "|-------------------------------------------|"
+echo Caching build artifacts at ${HOST_CACHE_DIR}
+export HOST_CACHE_DIR="/host${HOST_CACHE_DIR}"
+echo "|-------------------------------------------|"
 # RHEL / CentOS / Fedora
 (yum  install -y  gflags-devel clang cmake \
                  snappy-devel lz4-devel zlib-devel \
@@ -109,4 +120,3 @@ before-build = """
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 environment = { CMAKE_TOOLCHAIN_FILE = "{{project}}/vcpkg/scripts/buildsystems/vcpkg.cmake" }
-
