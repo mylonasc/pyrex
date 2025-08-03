@@ -101,6 +101,7 @@ before-all = """
 
 # macOS specific configurations
 [tool.cibuildwheel.macos]
+skip=['cp38-*']
 environment = { MACOSX_DEPLOYMENT_TARGET = "14.0", LDFLAGS = "-L/opt/homebrew/lib -L/usr/local/lib $LDFLAGS", CPPFLAGS = "-I/opt/homebrew/include -I/usr/local/include $CPPFLAGS" }
 
 before-build = """
