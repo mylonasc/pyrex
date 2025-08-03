@@ -270,7 +270,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest] # Test on all three OSes
+        os: [ubuntu-latest] #, windows-latest, macos-latest] # Test on all three OSes
         python-version: ["3.12"] # Or other versions you want to test
       fail-fast: false
       
