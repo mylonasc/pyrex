@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - release 
+      - release
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
@@ -12,7 +12,7 @@ on:
     
   pull_request:
     branches:
-      - main
+      - release
     paths-ignore: # Only trigger if these paths are NOT changed
       - '**.md' # Ignore Markdown files (like README.md)
       - 'docs/**' # Ignore changes in the docs folder
@@ -29,14 +29,17 @@ jobs:
       packages: write # Crucial for pushing to GitHub Packages
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [ubuntu-latest,macos-latest, windows-latest]
       fail-fast: false # Ensures all jobs run even if one fails
     env:
       # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       ROCKSDB_VERSION: "9.11.2"
       ROCKSDB_VERSION_VCPKG: "9.10.0"
-      PYREX_VERSION: "0.1.3"
+      PYREX_VERSION: "0.1.4"
+      # the cibuildwheels stores the different compiled RocksDB here. Key is defined within setup.py.
+      HOST_CACHE_DIR: "/tmp/cibw_cache" 
+      MACOS_HOST_CACHE_DIR: "/Users/runner/cibw-build-cache"
       # --- Global CIBW environment variables (reintroduced) ---
       # These flags are intended to be set as environment variables, not in pyproject.toml.
       CIBW_FORCE_INSTALL: "1"
@@ -59,6 +62,7 @@ jobs:
         key: ${{ runner.os }}-vcpkg-tool-${{ hashFiles('vcpkg/.git/HEAD') }} # Key changes if vcpkg repo updates
         restore-keys: |
           ${{ runner.os }}-vcpkg-tool-
+
     # Cache vcpkg's installed binary packages (pre-built RocksDB)
     - name: Cache vcpkg installed packages
       id: cache-vcpkg-installed
@@ -68,13 +72,30 @@ jobs:
         key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg/vcpkg.exe') }}-${{ hashFiles('vcpkg/ports/rocksdb/portfile.cmake') }} # Key for installed packages
         restore-keys: |
           ${{ runner.os }}-vcpkg-installed-
-    # --- End Vcpkg Caching ---
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.x' # cibuildwheel will manage specific Python versions
         architecture: 'x64' # Ensure 64-bit Python is set up
+
+    - name: Cache cibuildwheel artifacts (Linux)
+      if: runner.os == 'Linux'
+      id: cache-cibw
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.HOST_CACHE_DIR }}
+        # The key should combine OS, Python version, and a hash of the build dependencies.
+        key: ${{ runner.os }}-${{ runner.arch }}-cibw-cache-RocksDB-${{ env.ROCKSDB_VERSION }}
+
+    - name: Cache cibuildwheel artifacts (MacOS)
+      if: runner.os == 'macOS'
+      id: cache-cibw-macos
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.MACOS_HOST_CACHE_DIR }}
+        # The key should combine OS, Python version, and a hash of the build dependencies.
+        key: ${{ runner.os }}-${{ runner.arch }}-cibw-cache-RocksDB-${{ env.ROCKSDB_VERSION }}
 
 
     - name: Install build dependencies
@@ -183,17 +204,7 @@ jobs:
         # C. Define the mapping for your private GitHub feed
         $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
         $githubSourceMapping.SetAttribute("key", "github")
-        # $patterns = @(
-        #  "rocksdb_x64-windows",
-        #  "zlib_x64-windows",
-        #  "lz4_x64-windows",
-        #  "snappy_x64-windows",
-        #  "vcpkg-cmake_x64-windows",
-        #  "vcpkg-cmake-config_x64-windows",
-        #  "zstd_x64-windows",
-        #  "bzip2_x64-windows",
-        #   "tbb_x64-windows"
-        # )
+        
         $patterns = @(
           "rocksdb_*-windows",
           "zlib_*-windows",
@@ -229,14 +240,14 @@ jobs:
         $vcpkgJsonContent = @"
         {
           "dependencies": [
-             {
+            {
               "name": "rocksdb",
               "version>=": "$rocksdbVersion",
               "features": [ "bzip2", "lz4", "snappy", "zlib", "zstd", "tbb" ]
-             }
+            }
           ],
           "builtin-baseline" : "bca384363976f9b70771a3cae03adf548ac8929d"
-         }
+        }
         "@
         $vcpkgJsonContent | Out-File -FilePath vcpkg.json -Encoding utf8
         # 6. Install RocksDB using vcpkg
@@ -263,14 +274,14 @@ jobs:
 
   test_wheels:
     name: Test wheels on ${{ matrix.python-version }} on ${{ matrix.os }}
-    needs: build_wheels # 👈 Run after building is complete
+    needs: build_wheels
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest] # Test on all target OSes
-        python-version: ["3.12"] # Test against multiple Python versions
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.8","3.9","3.10","3.11","3.12"] # Or other versions you want to test
       fail-fast: false
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -290,19 +301,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest
+
       - name: Install wheel and run tests
         run: |
-          # Store the version from the matrix in a shell variable
+          # Set the platform-specific wheel tag based on the runner's OS
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            PLATFORM_TAG="*manylinux*"
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            PLATFORM_TAG="*win_amd64*"
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            PLATFORM_TAG="*macosx*"
+          fi
+
           PY_VERSION="${{ matrix.python-version }}"
-          # Use bash parameter expansion to remove the dot (e.g., "3.11" becomes "311")
           VERSION_TAG="${PY_VERSION//./}"
-          
+
           echo "Python version: $PY_VERSION"
-          echo "Derived wheel tag: cp$VERSION_TAG"
-          echo "Looking for wheel file in dist/ with pattern: *-cp${VERSION_TAG}-*.whl"
+          echo "Platform: ${{ runner.os }}"
+          echo "Looking for wheel file with pattern: *-cp${VERSION_TAG}-${PLATFORM_TAG}.whl"
+          
           ls -R dist/
-          # Install the wheel using the new shell variable
-          pip install --force-reinstall dist/*-cp$VERSION_TAG-*.whl
+
+          # Install the correct wheel using the platform-specific tag
+          pip install --force-reinstall dist/*-cp${VERSION_TAG}-${PLATFORM_TAG}.whl
+          
           # Run the tests
           pytest tests/
         shell: bash
