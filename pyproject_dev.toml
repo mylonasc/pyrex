@@ -1,0 +1,112 @@
+#
+# NOTE:
+# -----  
+# Version is defined from logic implemented inside setuptools.
+# You need to define environment variables PYREX_VERSION and 
+# ROCKSDB_VERSION before building. 
+
+[build-system]
+# Add cmake to your build requirements
+requires = ["setuptools>=61.0", "wheel", "pybind11[global]>=2.10", "cmake>=3.18","tomli"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrex-rocksdb"
+
+# version is defined in the setup.py script
+dynamic = ["version"]
+
+authors = [
+  { name="Charilaos Mylonas", email="mylonas.charilaos@gmail.com" },
+]
+description = "A fast RocksDB wrapper for Python using pybind11."
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["rocksdb", "database", "key-value", "pybind11"]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+]
+
+[project.urls]
+Homepage = "https://github.com/mylonasc/pyrex"
+Repository = "https://github.com/mylonasc/pyrex"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "cibuildwheel",
+    "pybind11-stubgen~=2.5.4",
+    "mypy~=1.10",
+    "twine"
+]
+
+# Crucial for src layout
+[tool.setuptools]
+packages = ["pyrex"] # Explicitly list your package
+package-dir = {"" = "src"} # Tell setuptools to look in 'src' for packages
+
+[tool.setuptools.package-data]
+pyrex = ["*.pyi", "py.typed"]
+
+[tool.cibuildwheel]
+# Global build filter and skip patterns.
+build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+# build = "cp312-*"
+
+environment-pass = [
+    "ROCKSDB_VERSION",
+    "PYREX_VERSION",
+    "VCPKG_ROOT"
+]
+
+container-engine= "docker; create-args: --network=host"
+
+# Linux specific configurations
+[tool.cibuildwheel.linux]
+build=["cp312-manylinux_*"]
+environment = { CFLAGS = "-O3 -march=native -flto", CXXFLAGS = "-O3 -march=native -flto" ,CC = "clang", CXX = "clang++"}
+before-all = """
+# RHEL / CentOS / Fedora
+(yum  install -y  gflags-devel clang cmake \
+                 snappy-devel lz4-devel zlib-devel \
+                 bzip2-devel libzstd-devel \
+                 liburing-devel) || \
+# Debian / Ubuntu
+(apt-get update && \
+ apt-get install -y clang cmake build-essential \
+                    libsnappy-dev liblz4-dev zlib1g-dev \
+                    libbz2-dev libzstd-dev liburing-dev) || \
+# Alpine
+(apk add --no-cache clang gflags-dev cmake \
+                    snappy-dev lz4-dev zlib-dev \
+                    bzip2-dev zstd-dev liburing-dev)
+"""
+
+# macOS specific configurations
+[tool.cibuildwheel.macos]
+environment = { MACOSX_DEPLOYMENT_TARGET = "14.0", LDFLAGS = "-L/opt/homebrew/lib -L/usr/local/lib $LDFLAGS", CPPFLAGS = "-I/opt/homebrew/include -I/usr/local/include $CPPFLAGS" }
+
+before-build = """
+  brew install cmake snappy lz4 zstd zlib bzip2 
+"""
+
+# Windows specific configurations
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+environment = { CMAKE_TOOLCHAIN_FILE = "{{project}}/vcpkg/scripts/buildsystems/vcpkg.cmake" }
+
