@@ -168,7 +168,7 @@ class build_ext(_build_ext):
             cache_root =  Path('/host' + os.environ.get('HOST_CACHE_DIR'))
         else:
             print("Did not find the cache root of the host!")
-            cache_root = '/tmp' 
+            cache_root = Path('/host/tmp')
         
                 
         build_dir = self.build_temp
