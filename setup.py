@@ -138,9 +138,16 @@ class build_ext(_build_ext):
             f'-DCMAKE_CXX_FLAGS={cxx_flags}',
             '-DROCKSDB_BUILD_SHARED=OFF',
             '-DFAIL_ON_WARNINGS=OFF',
+            '-DWITH_TESTS=OFF',
             '-DWITH_SNAPPY=ON', '-DWITH_LZ4=ON', '-DWITH_ZLIB=ON', 
             '-DWITH_BZ2=ON', '-DWITH_ZSTD=ON',
         ]
+        
+        # liburing-enabled builds are only supported in linux at the moment
+        # It's not an essential library but may have performance advantages 
+        # in certain settings. 
+        if sys.platform.startswith('linux'):
+            cmake_args.append('-DWITH_LIBURING=ON')
 
         if int(rocksdb_version.split('.')[0]) >= 7:
             ## Fix for version 7:
@@ -175,7 +182,12 @@ class build_ext(_build_ext):
 
         # libs_only_win = ['shlwapi','rpcrt4','zlibstatic']
         libs_only_win = ['shlwapi','rpcrt4','zlib']
-        libs_only_linux = ['z', 'snappy','lz4','bz2','zstd']
+        libs_only_linux_macos = ['z', 'snappy','lz4','bz2','zstd']
+        if sys.platform.startswith('linux'):
+            # may have perf. benefits. It is required
+            # when -DWITH_LIBURING=ON. 
+            libs_only_linux_macos += 'liburing'
+            
         libs_both = ['rocksdb']
         
         # libs_both = ['rocksdb','lz4','bz2','zstd']
@@ -183,7 +195,7 @@ class build_ext(_build_ext):
             _win_ext_libs = libs_both + libs_only_win
             ext.libraries.extend(libs_both + libs_only_win)
         else:
-            ext.libraries.extend(libs_both + libs_only_linux)
+            ext.libraries.extend(libs_both + libs_only_linux_macos)
         
         print(f"--- Configured pyrex extension with RocksDB paths ---")
 
