@@ -164,13 +164,18 @@ class build_ext(_build_ext):
         
         config_hash = hashlib.sha256(config_str.encode('utf-8')).hexdigest()[:16]
         
+        # Cache path management for linux:
         if 'HOST_CACHE_DIR' in os.environ:
             cache_root =  Path('/host' + os.environ.get('HOST_CACHE_DIR'))
         else:
             print("Did not find the cache root of the host!")
             cache_root = Path('/host/tmp')
         
-                
+        # Cache path management for MacOS:
+        if sys.platform == 'darwin': # MacOS (does not run in container)
+            cache_root = Path(os.environ.get('MACOS_HOST_CACHE_DIR',"/Users/runner/cibw-build-cache"))
+            
+
         build_dir = self.build_temp
         
         # Create a version-specific installation directory for caching.

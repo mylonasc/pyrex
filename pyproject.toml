@@ -71,10 +71,12 @@ build = "cp312-*"
 
 build-verbosity = 3
 
+
 environment-pass = [
     "ROCKSDB_VERSION",
     "PYREX_VERSION",
-    "HOST_CACHE_DIR",
+    "HOST_CACHE_DIR", 
+    "MACOS_HOST_CACHE_DIR",
     "VCPKG_ROOT"
 ]
 
@@ -85,10 +87,6 @@ container-engine= "docker; create-args: --network=host"
 environment = { CFLAGS = "-O3 -march=native -flto", CXXFLAGS = "-O3 -march=native -flto" ,CC = "clang", CXX = "clang++"}
 before-all = """
 
-echo "|-------------------------------------------|"
-echo Caching build artifacts at ${HOST_CACHE_DIR}
-export HOST_CACHE_DIR="/host${HOST_CACHE_DIR}"
-echo "|-------------------------------------------|"
 # RHEL / CentOS / Fedora
 (yum  install -y  gflags-devel clang cmake \
                  snappy-devel lz4-devel zlib-devel \
