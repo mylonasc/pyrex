@@ -201,10 +201,15 @@ class build_ext(_build_ext):
         with urllib.request.urlopen(url) as response:
             download_content = response.read()
 
+        # Assuming 'download_content' and 'build_dir' are defined
         with io.BytesIO(download_content) as buffer:
             with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
                 top_level_dir = Path(tar.getmembers()[0].name).parts[0]
-                tar.extractall(path=build_dir, filter='data')
+                # Conditionally use the 'filter' argument based on Python version
+                if sys.version_info >= (3, 12):
+                    tar.extractall(path=build_dir, filter='data')
+                else:
+                    tar.extractall(path=build_dir)
 
         source_dir = build_dir / top_level_dir
 
