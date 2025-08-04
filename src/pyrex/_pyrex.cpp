@@ -1,5 +1,11 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/vector.h>
+#include <nanobind/stl/map.h>
+#include <nanobind/stl/set.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/shared_ptr.h>
+#include <nanobind/stl/atomic.h>
+#include <nanobind/exception.h>
 
 #include <memory>
 #include <vector>
@@ -19,7 +25,7 @@
 #include "rocksdb/write_batch.h"
 #include "rocksdb/iterator.h"
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
 // --- Custom Exception ---
 class RocksDBException : public std::runtime_error {
@@ -118,31 +124,33 @@ class PyWriteBatch {
 public:
     rocksdb::WriteBatch wb_;
     PyWriteBatch() = default;
-    void put(const py::bytes& key, const py::bytes& value) { wb_.Put(static_cast<std::string>(key), static_cast<std::string>(value)); }
-    void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
+    void put(const nb::bytes& key, const nb::bytes& value) { 
+        wb_.Put(rocksdb::Slice(key.c_str(), key.size()), rocksdb::Slice(value.c_str(), value.size())); 
+    }
+    void put_cf(PyColumnFamilyHandle& cf, const nb::bytes& key, const nb::bytes& value) {
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
-        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
+        rocksdb::Slice value_slice(value.c_str(), value.size());
         wb_.Put(cf.cf_handle_, key_slice, value_slice);
     }
-    void del(const py::bytes& key) { 
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+    void del(const nb::bytes& key) { 
+        rocksdb::Slice key_slice(key.c_str(), key.size());
         wb_.Delete(key_slice); 
     }
-    void del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
+    void del_cf(PyColumnFamilyHandle& cf, const nb::bytes& key) {
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
         wb_.Delete(cf.cf_handle_, key_slice);
     }
-    void merge(const py::bytes& key, const py::bytes& value) { 
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
-        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+    void merge(const nb::bytes& key, const nb::bytes& value) { 
+        rocksdb::Slice key_slice(key.c_str(), key.size());
+        rocksdb::Slice value_slice(value.c_str(), value.size());
         wb_.Merge(key_slice, value_slice); 
     }
-    void merge_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
+    void merge_cf(PyColumnFamilyHandle& cf, const nb::bytes& key, const nb::bytes& value) {
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
-        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
+        rocksdb::Slice value_slice(value.c_str(), value.size());
         wb_.Merge(cf.cf_handle_, key_slice, value_slice);
     }
     void clear() { wb_.Clear(); }
@@ -161,11 +169,11 @@ public:
     bool valid();
     void seek_to_first();
     void seek_to_last();
-    void seek(const py::bytes& key);
+    void seek(const nb::bytes& key);
     void next();
     void prev();
-    py::object key();
-    py::object value();
+    nb::object key();
+    nb::object value();
     void check_status();
 };
 
@@ -269,19 +277,19 @@ public:
         }
     }
 
-    void put(const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
+    void put(const nb::bytes& key, const nb::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
         check_db_open();
         check_read_only(); 
         
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
-        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
+        rocksdb::Slice value_slice(value.c_str(), value.size());
         
         const auto& opts = write_options ? write_options->options_ : default_write_options_->options_;
         rocksdb::Status s = db_->Put(opts, default_cf_handle_, key_slice, value_slice);
         if (!s.ok()) throw RocksDBException("Put failed: " + s.ToString());
     }    
 
-    py::object get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr) {
+    nb::object get(const nb::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr) {
         check_db_open();
         std::string value_str;
         rocksdb::Status s;
@@ -289,19 +297,19 @@ public:
         const auto& opts = read_options ? read_options->options_ : default_read_options_->options_;
 
         {
-            py::gil_scoped_release release;
-            rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+            nb::gil_scoped_release release;
+            rocksdb::Slice key_slice(key.c_str(), key.size());
             s = db_->Get(opts, default_cf_handle_, key_slice, &value_str);
         }
-        if (s.ok()) return py::bytes(value_str);
-        if (s.IsNotFound()) return py::none();
+        if (s.ok()) return nb::bytes(value_str);
+        if (s.IsNotFound()) return nb::none();
         throw RocksDBException("Get failed: " + s.ToString());
     }
 
-    void del(const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
+    void del(const nb::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
         check_db_open();
         check_read_only();
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
         const auto& opts = write_options ? write_options->options_ : default_write_options_->options_;
         rocksdb::Status s = db_->Delete(opts, default_cf_handle_, key_slice);
         if (!s.ok()) throw RocksDBException("Delete failed: " + s.ToString());
@@ -387,7 +395,7 @@ public:
         }
         
         if (!s_open.ok()) {
-            throw RocksDBException("Failed to open RocksDB at " + path + ": " + s.ToString());
+            throw RocksDBException("Failed to open RocksDB at " + path + ": " + s_open.ToString());
         }
 
         for (size_t i = 0; i < handles.size(); ++i) {
@@ -404,34 +412,34 @@ public:
         }
     }
 
-    void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
+    void put_cf(PyColumnFamilyHandle& cf, const nb::bytes& key, const nb::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
         check_db_open();
         check_read_only();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
-        rocksdb::Slice value_slice(static_cast<std::string_view>(value));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
+        rocksdb::Slice value_slice(value.c_str(), value.size());
         const auto& opts = write_options ? write_options->options_ : default_write_options_->options_;
         rocksdb::Status s = db_->Put(opts, cf.cf_handle_, key_slice, value_slice);
         if (!s.ok()) throw RocksDBException("put_cf failed: " + s.ToString());
     }
 
-    py::object get_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr) {
+    nb::object get_cf(PyColumnFamilyHandle& cf, const nb::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr) {
         check_db_open();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
         std::string value_str;
         const auto& opts = read_options ? read_options->options_ : default_read_options_->options_;
         rocksdb::Status s = db_->Get(opts, cf.cf_handle_, key_slice, &value_str);
-        if (s.ok()) return py::bytes(value_str);
-        if (s.IsNotFound()) return py::none();
+        if (s.ok()) return nb::bytes(value_str);
+        if (s.IsNotFound()) return nb::none();
         throw RocksDBException("get_cf failed: " + s.ToString());
     }
 
-    void del_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
+    void del_cf(PyColumnFamilyHandle& cf, const nb::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr) {
         check_db_open();
         check_read_only();
         if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
-        rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+        rocksdb::Slice key_slice(key.c_str(), key.size());
         const auto& opts = write_options ? write_options->options_ : default_write_options_->options_;
         rocksdb::Status s = db_->Delete(opts, cf.cf_handle_, key_slice);
         if (!s.ok()) throw RocksDBException("del_cf failed: " + s.ToString());
@@ -534,24 +542,26 @@ void PyRocksDBIterator::check_parent_db_is_open() const {
 bool PyRocksDBIterator::valid() { check_parent_db_is_open(); return it_raw_ptr_->Valid(); }
 void PyRocksDBIterator::seek_to_first() { check_parent_db_is_open(); it_raw_ptr_->SeekToFirst(); }
 void PyRocksDBIterator::seek_to_last() { check_parent_db_is_open(); it_raw_ptr_->SeekToLast(); }
-void PyRocksDBIterator::seek(const py::bytes& key) { check_parent_db_is_open(); it_raw_ptr_->Seek(static_cast<std::string>(key)); }
+void PyRocksDBIterator::seek(const nb::bytes& key) { check_parent_db_is_open(); it_raw_ptr_->Seek(rocksdb::Slice(key.c_str(), key.size())); }
 void PyRocksDBIterator::next() { check_parent_db_is_open(); it_raw_ptr_->Next(); }
 void PyRocksDBIterator::prev() { check_parent_db_is_open(); it_raw_ptr_->Prev(); }
 
-py::object PyRocksDBIterator::key() {
+nb::object PyRocksDBIterator::key() {
     check_parent_db_is_open();
     if (it_raw_ptr_ && it_raw_ptr_->Valid()) {
-        return py::bytes(it_raw_ptr_->key().ToString());
+        rocksdb::Slice key_slice = it_raw_ptr_->key();
+        return nb::bytes(key_slice.data(), key_slice.size());
     }
-    return py::none();
+    return nb::none();
 }
 
-py::object PyRocksDBIterator::value() {
+nb::object PyRocksDBIterator::value() {
     check_parent_db_is_open();
     if (it_raw_ptr_ && it_raw_ptr_->Valid()) {
-        return py::bytes(it_raw_ptr_->value().ToString());
+        rocksdb::Slice value_slice = it_raw_ptr_->value();
+        return nb::bytes(value_slice.data(), value_slice.size());
     }
-    return py::none();
+    return nb::none();
 }
 
 void PyRocksDBIterator::check_status() {
@@ -562,8 +572,8 @@ void PyRocksDBIterator::check_status() {
     }
 }
 
-// --- PYBIND11 MODULE DEFINITION ---
-PYBIND11_MODULE(_pyrex, m) {
+// --- nanobind MODULE DEFINITION ---
+NB_MODULE(_pyrex, m) {
     m.doc() = R"doc(
         A robust, high-performance Python wrapper for the RocksDB key-value store.
 
@@ -574,9 +584,8 @@ PYBIND11_MODULE(_pyrex, m) {
            adds full support for creating, managing, and using multiple Column Families.
     )doc";
 
-    // 1. Create the Python exception type and give it a docstring.
-    static py::exception<RocksDBException> rocksdb_exception(m, "RocksDBException", PyExc_RuntimeError);
-    rocksdb_exception.doc() = R"doc(
+    nb::exception<RocksDBException>(m, "RocksDBException", PyExc_RuntimeError)
+        .doc() = R"doc(
         Custom exception raised for RocksDB-specific operational errors.
 
         This exception is raised when a RocksDB operation fails for reasons
@@ -584,21 +593,7 @@ PYBIND11_MODULE(_pyrex, m) {
         is attempted on a closed database.
     )doc";
 
-    // 2. Register a translator that maps the C++ exception to the Python one.
-    py::register_exception_translator([](std::exception_ptr p) {
-        try {
-            if (p) {
-                std::rethrow_exception(p);
-            }
-        } catch (const RocksDBException &e) {
-            // Use PyErr_SetString to set the Python error object correctly.
-            // 'rocksdb_exception' is a static variable and accessible without capture.
-            PyErr_SetString(rocksdb_exception.ptr(), e.what());
-        }
-    });
-
-
-    py::enum_<rocksdb::CompressionType>(m, "CompressionType", R"doc(
+    nb::enum_<rocksdb::CompressionType>(m, "CompressionType", R"doc(
         Enum for different compression types supported by RocksDB.
     )doc")
         .value("kNoCompression", rocksdb::kNoCompression, "No compression.")
@@ -609,96 +604,96 @@ PYBIND11_MODULE(_pyrex, m) {
         .value("kXpressCompression", rocksdb::kXpressCompression, "Xpress compression.")
         .value("kZSTD", rocksdb::kZSTD, "Zstandard compression.");
         
-    py::class_<PyReadOptions, std::shared_ptr<PyReadOptions>>(m, "ReadOptions", R"doc(
+    nb::class_<PyReadOptions, std::shared_ptr<PyReadOptions>>(m, "ReadOptions", R"doc(
         Configuration options for read operations (Get, Iterator).
     )doc")
-        .def(py::init<>(), "Constructs a new ReadOptions object with default settings.")
-        .def_property("fill_cache", &PyReadOptions::get_fill_cache, &PyReadOptions::set_fill_cache, "If True, reads will fill the block cache. Defaults to True.")
-        .def_property("verify_checksums", &PyReadOptions::get_verify_checksums, &PyReadOptions::set_verify_checksums, "If True, all data read from underlying storage will be verified against its checksums. Defaults to True.");
+        .def(nb::init<>(), "Constructs a new ReadOptions object with default settings.")
+        .def_prop_rw("fill_cache", &PyReadOptions::get_fill_cache, &PyReadOptions::set_fill_cache, "If True, reads will fill the block cache. Defaults to True.")
+        .def_prop_rw("verify_checksums", &PyReadOptions::get_verify_checksums, &PyReadOptions::set_verify_checksums, "If True, all data read from underlying storage will be verified against its checksums. Defaults to True.");
 
-    py::class_<PyWriteOptions, std::shared_ptr<PyWriteOptions>>(m, "WriteOptions", R"doc(
+    nb::class_<PyWriteOptions, std::shared_ptr<PyWriteOptions>>(m, "WriteOptions", R"doc(
         Configuration options for write operations (Put, Delete, Write).
     )doc")
-        .def(py::init<>(), "Constructs a new WriteOptions object with default settings.")
-        .def_property("sync", &PyWriteOptions::get_sync, &PyWriteOptions::set_sync, "If True, the write will be flushed from the OS buffer cache before the write is considered complete. Defaults to False.")
-        .def_property("disable_wal", &PyWriteOptions::get_disable_wal, &PyWriteOptions::set_disable_wal, "If True, writes will not be written to the Write Ahead Log. Defaults to False.");
+        .def(nb::init<>(), "Constructs a new WriteOptions object with default settings.")
+        .def_prop_rw("sync", &PyWriteOptions::get_sync, &PyWriteOptions::set_sync, "If True, the write will be flushed from the OS buffer cache before the write is considered complete. Defaults to False.")
+        .def_prop_rw("disable_wal", &PyWriteOptions::get_disable_wal, &PyWriteOptions::set_disable_wal, "If True, writes will not be written to the Write Ahead Log. Defaults to False.");
 
-    py::class_<PyOptions>(m, "PyOptions", R"doc(
+    nb::class_<PyOptions>(m, "PyOptions", R"doc(
         Configuration options for opening and managing a RocksDB database.
 
         This class wraps `rocksdb::Options` and `rocksdb::ColumnFamilyOptions`
         to provide a convenient way to configure database behavior from Python.
     )doc")
-        .def(py::init<>(), "Constructs a new PyOptions object with default settings.")
-        .def_property("create_if_missing", &PyOptions::get_create_if_missing, &PyOptions::set_create_if_missing, "If True, the database will be created if it is missing. Defaults to True.")
-        .def_property("error_if_exists", &PyOptions::get_error_if_exists, &PyOptions::set_error_if_exists, "If True, an error is raised if the database already exists. Defaults to False.")
-        .def_property("max_open_files", &PyOptions::get_max_open_files, &PyOptions::set_max_open_files, "Number of open files that can be used by the DB. Defaults to -1 (unlimited).")
-        .def_property("write_buffer_size", &PyOptions::get_write_buffer_size, &PyOptions::set_write_buffer_size, "Amount of data to build up in a memory buffer (MemTable) before flushing. Defaults to 64MB.")
-        .def_property("compression", &PyOptions::get_compression, &PyOptions::set_compression, "The compression type to use for sst files. Defaults to Snappy.")
-        .def_property("max_background_jobs", &PyOptions::get_max_background_jobs, &PyOptions::set_max_background_jobs, "Maximum number of concurrent background jobs (compactions and flushes).")
-        .def("increase_parallelism", &PyOptions::increase_parallelism, py::arg("total_threads"), R"doc(
+        .def(nb::init<>(), "Constructs a new PyOptions object with default settings.")
+        .def_prop_rw("create_if_missing", &PyOptions::get_create_if_missing, &PyOptions::set_create_if_missing, "If True, the database will be created if it is missing. Defaults to True.")
+        .def_prop_rw("error_if_exists", &PyOptions::get_error_if_exists, &PyOptions::set_error_if_exists, "If True, an error is raised if the database already exists. Defaults to False.")
+        .def_prop_rw("max_open_files", &PyOptions::get_max_open_files, &PyOptions::set_max_open_files, "Number of open files that can be used by the DB. Defaults to -1 (unlimited).")
+        .def_prop_rw("write_buffer_size", &PyOptions::get_write_buffer_size, &PyOptions::set_write_buffer_size, "Amount of data to build up in a memory buffer (MemTable) before flushing. Defaults to 64MB.")
+        .def_prop_rw("compression", &PyOptions::get_compression, &PyOptions::set_compression, "The compression type to use for sst files. Defaults to Snappy.")
+        .def_prop_rw("max_background_jobs", &PyOptions::get_max_background_jobs, &PyOptions::set_max_background_jobs, "Maximum number of concurrent background jobs (compactions and flushes).")
+        .def("increase_parallelism", &PyOptions::increase_parallelism, nb::arg("total_threads"), R"doc(
             Increases RocksDB's parallelism by tuning background threads.
 
             Args:
                 total_threads (int): The total number of background threads to use.
-        )doc", py::call_guard<py::gil_scoped_release>())
+        )doc", nb::call_guard<nb::gil_scoped_release>())
         .def("optimize_for_small_db", &PyOptions::optimize_for_small_db, R"doc(
             Optimizes RocksDB for small databases by reducing memory and CPU consumption.
-        )doc", py::call_guard<py::gil_scoped_release>())
-        .def("use_block_based_bloom_filter", &PyOptions::use_block_based_bloom_filter, py::arg("bits_per_key") = 10.0, R"doc(
+        )doc", nb::call_guard<nb::gil_scoped_release>())
+        .def("use_block_based_bloom_filter", &PyOptions::use_block_based_bloom_filter, nb::arg("bits_per_key") = 10.0, R"doc(
             Enables a Bloom filter for block-based tables to speed up 'Get' operations.
 
             Args:
                 bits_per_key (float): The number of bits per key for the Bloom filter.
                     Higher values reduce false positives but increase memory usage.
-        )doc", py::call_guard<py::gil_scoped_release>())
-        .def_property("cf_write_buffer_size", &PyOptions::get_cf_write_buffer_size, &PyOptions::set_cf_write_buffer_size, "Default write_buffer_size for newly created Column Families.")
-        .def_property("cf_compression", &PyOptions::get_cf_compression, &PyOptions::set_cf_compression, "Default compression type for newly created Column Families.");
+        )doc", nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_rw("cf_write_buffer_size", &PyOptions::get_cf_write_buffer_size, &PyOptions::set_cf_write_buffer_size, "Default write_buffer_size for newly created Column Families.")
+        .def_prop_rw("cf_compression", &PyOptions::get_cf_compression, &PyOptions::set_cf_compression, "Default compression type for newly created Column Families.");
 
-    py::class_<PyColumnFamilyHandle, std::shared_ptr<PyColumnFamilyHandle>>(m, "ColumnFamilyHandle", R"doc(
+    nb::class_<PyColumnFamilyHandle, std::shared_ptr<PyColumnFamilyHandle>>(m, "ColumnFamilyHandle", R"doc(
         Represents a handle to a RocksDB Column Family.
 
         This object is used to perform operations on a specific data partition
         within a `PyRocksDBExtended` instance.
     )doc")
-        .def_property_readonly("name", &PyColumnFamilyHandle::get_name, "The name of this column family.")
+        .def_prop_ro("name", &PyColumnFamilyHandle::get_name, "The name of this column family.")
         .def("is_valid", &PyColumnFamilyHandle::is_valid, "Checks if the handle is still valid (i.e., has not been dropped).");
 
-    py::class_<PyWriteBatch>(m, "PyWriteBatch", R"doc(
+    nb::class_<PyWriteBatch>(m, "PyWriteBatch", R"doc(
         A batch of write operations (Put, Delete) that can be applied atomically.
     )doc")
-        .def(py::init<>(), "Constructs an empty write batch.")
-        .def("put", &PyWriteBatch::put, py::arg("key"), py::arg("value"), "Adds a key-value pair to the batch for the default column family.")
-        .def("put_cf", &PyWriteBatch::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), "Adds a key-value pair to the batch for a specific column family.")
-        .def("delete", &PyWriteBatch::del, py::arg("key"), "Adds a key deletion to the batch for the default column family.")
-        .def("delete_cf", &PyWriteBatch::del_cf, py::arg("cf_handle"), py::arg("key"), "Adds a key deletion to the batch for a specific column family.")
-        .def("merge", &PyWriteBatch::merge, py::arg("key"), py::arg("value"), "Adds a merge operation to the batch for the default column family.")
-        .def("merge_cf", &PyWriteBatch::merge_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), "Adds a merge operation to the batch for a specific column family.")
+        .def(nb::init<>(), "Constructs an empty write batch.")
+        .def("put", &PyWriteBatch::put, nb::arg("key"), nb::arg("value"), "Adds a key-value pair to the batch for the default column family.")
+        .def("put_cf", &PyWriteBatch::put_cf, nb::arg("cf_handle"), nb::arg("key"), nb::arg("value"), "Adds a key-value pair to the batch for a specific column family.")
+        .def("delete", &PyWriteBatch::del, nb::arg("key"), "Adds a key deletion to the batch for the default column family.")
+        .def("delete_cf", &PyWriteBatch::del_cf, nb::arg("cf_handle"), nb::arg("key"), "Adds a key deletion to the batch for a specific column family.")
+        .def("merge", &PyWriteBatch::merge, nb::arg("key"), nb::arg("value"), "Adds a merge operation to the batch for the default column family.")
+        .def("merge_cf", &PyWriteBatch::merge_cf, nb::arg("cf_handle"), nb::arg("key"), nb::arg("value"), "Adds a merge operation to the batch for a specific column family.")
         .def("clear", &PyWriteBatch::clear, "Clears all operations from the batch.");
 
-    py::class_<PyRocksDBIterator, std::shared_ptr<PyRocksDBIterator>>(m, "PyRocksDBIterator", R"doc(
+    nb::class_<PyRocksDBIterator, std::shared_ptr<PyRocksDBIterator>>(m, "PyRocksDBIterator", R"doc(
         An iterator for traversing key-value pairs in a RocksDB database.
     )doc")
-        .def("valid", &PyRocksDBIterator::valid, "Returns True if the iterator is currently positioned at a valid entry.", py::call_guard<py::gil_scoped_release>())
-        .def("seek_to_first", &PyRocksDBIterator::seek_to_first, "Positions the iterator at the first key.", py::call_guard<py::gil_scoped_release>())
-        .def("seek_to_last", &PyRocksDBIterator::seek_to_last, "Positions the iterator at the last key.", py::call_guard<py::gil_scoped_release>())
-        .def("seek", &PyRocksDBIterator::seek, py::arg("key"), "Positions the iterator at the first key >= the given key.", py::call_guard<py::gil_scoped_release>())
-        .def("next", &PyRocksDBIterator::next, "Moves the iterator to the next entry.", py::call_guard<py::gil_scoped_release>())
-        .def("prev", &PyRocksDBIterator::prev, "Moves the iterator to the previous entry.", py::call_guard<py::gil_scoped_release>())
+        .def("valid", &PyRocksDBIterator::valid, "Returns True if the iterator is currently positioned at a valid entry.", nb::call_guard<nb::gil_scoped_release>())
+        .def("seek_to_first", &PyRocksDBIterator::seek_to_first, "Positions the iterator at the first key.", nb::call_guard<nb::gil_scoped_release>())
+        .def("seek_to_last", &PyRocksDBIterator::seek_to_last, "Positions the iterator at the last key.", nb::call_guard<nb::gil_scoped_release>())
+        .def("seek", &PyRocksDBIterator::seek, nb::arg("key"), "Positions the iterator at the first key >= the given key.", nb::call_guard<nb::gil_scoped_release>())
+        .def("next", &PyRocksDBIterator::next, "Moves the iterator to the next entry.", nb::call_guard<nb::gil_scoped_release>())
+        .def("prev", &PyRocksDBIterator::prev, "Moves the iterator to the previous entry.", nb::call_guard<nb::gil_scoped_release>())
         .def("key", &PyRocksDBIterator::key, "Returns the current key as bytes, or None if invalid.")
         .def("value", &PyRocksDBIterator::value, "Returns the current value as bytes, or None if invalid.")
-        .def("check_status", &PyRocksDBIterator::check_status, "Raises RocksDBException if an error occurred during iteration.", py::call_guard<py::gil_scoped_release>());
+        .def("check_status", &PyRocksDBIterator::check_status, "Raises RocksDBException if an error occurred during iteration.", nb::call_guard<nb::gil_scoped_release>());
 
-    py::class_<PyRocksDB, std::shared_ptr<PyRocksDB>>(m, "PyRocksDB", R"doc(
+    nb::class_<PyRocksDB, std::shared_ptr<PyRocksDB>>(m, "PyRocksDB", R"doc(
         A Python wrapper for RocksDB providing simple key-value storage.
 
         This class interacts exclusively with the 'default' column family.
         For multi-column-family support, use `PyRocksDBExtended`.
     )doc")
-        .def(py::init<const std::string&, PyOptions*, bool>(), 
-            py::arg("path"), 
-            py::arg("options") = nullptr,
-            py::arg("read_only") = false,
+        .def(nb::init<const std::string&, PyOptions*, bool>(), 
+            nb::arg("path"), 
+            nb::arg("options") = nullptr,
+            nb::arg("read_only") = false,
             R"doc(
             Opens a RocksDB database at the specified path.
 
@@ -707,28 +702,28 @@ PYBIND11_MODULE(_pyrex, m) {
                 options (PyOptions, optional): Custom options for configuration.
                 read_only (bool, optional): If True, opens the database in read-only mode.
                                             Defaults to False.
-        )doc", py::call_guard<py::gil_scoped_release>())
-        .def("put", &PyRocksDB::put, py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
-        .def("get", &PyRocksDB::get, py::arg("key"), py::arg("read_options") = nullptr, "Retrieves the value for a key.")
-        .def("delete", &PyRocksDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
-        .def("write", &PyRocksDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
-        .def("new_iterator", &PyRocksDB::new_iterator, py::arg("read_options") = nullptr, "Creates a new iterator.", py::keep_alive<0, 1>())
+        )doc", nb::call_guard<nb::gil_scoped_release>())
+        .def("put", &PyRocksDB::put, nb::arg("key"), nb::arg("value"), nb::arg("write_options") = nullptr, "Inserts a key-value pair.", nb::call_guard<nb::gil_scoped_release>())
+        .def("get", &PyRocksDB::get, nb::arg("key"), nb::arg("read_options") = nullptr, "Retrieves the value for a key.")
+        .def("delete", &PyRocksDB::del, nb::arg("key"), nb::arg("write_options") = nullptr, "Deletes a key.", nb::call_guard<nb::gil_scoped_release>())
+        .def("write", &PyRocksDB::write, nb::arg("write_batch"), nb::arg("write_options") = nullptr, "Applies a batch of operations atomically.", nb::call_guard<nb::gil_scoped_release>())
+        .def("new_iterator", &PyRocksDB::new_iterator, nb::arg("read_options") = nullptr, "Creates a new iterator.", nb::keep_alive<0, 1>())
         .def("get_options", &PyRocksDB::get_options, "Returns the options the database was opened with.")
-        .def_property("default_read_options", &PyRocksDB::get_default_read_options, &PyRocksDB::set_default_read_options, "The default ReadOptions used for get and iterator operations.")
-        .def_property("default_write_options", &PyRocksDB::get_default_write_options, &PyRocksDB::set_default_write_options, "The default WriteOptions used for put, delete, and write operations.")
-        .def("close", &PyRocksDB::close, "Closes the database, releasing resources and the lock.", py::call_guard<py::gil_scoped_release>())
+        .def_prop_rw("default_read_options", &PyRocksDB::get_default_read_options, &PyRocksDB::set_default_read_options, "The default ReadOptions used for get and iterator operations.")
+        .def_prop_rw("default_write_options", &PyRocksDB::get_default_write_options, &PyRocksDB::set_default_write_options, "The default WriteOptions used for put, delete, and write operations.")
+        .def("close", &PyRocksDB::close, "Closes the database, releasing resources and the lock.", nb::call_guard<nb::gil_scoped_release>())
         .def("__enter__", [](PyRocksDB &db) -> PyRocksDB& { return db; })
-        .def("__exit__", [](PyRocksDB &db, py::object /* type */, py::object /* value */, py::object /* traceback */) {
+        .def("__exit__", [](PyRocksDB &db, nb::object /* type */, nb::object /* value */, nb::object /* traceback */) {
             db.close();
         });
 
-    py::class_<PyRocksDBExtended, PyRocksDB, std::shared_ptr<PyRocksDBExtended>>(m, "PyRocksDBExtended", R"doc(
+    nb::class_<PyRocksDBExtended, PyRocksDB, std::shared_ptr<PyRocksDBExtended>>(m, "PyRocksDBExtended", R"doc(
         An advanced Python wrapper for RocksDB with full Column Family support.
     )doc")
-        .def(py::init<const std::string&, PyOptions*, bool>(), 
-            py::arg("path"), 
-            py::arg("options") = nullptr, 
-            py::arg("read_only") = false, 
+        .def(nb::init<const std::string&, PyOptions*, bool>(), 
+            nb::arg("path"), 
+            nb::arg("options") = nullptr, 
+            nb::arg("read_only") = false, 
             R"doc(
             Opens or creates a RocksDB database with Column Family support.
 
@@ -737,16 +732,15 @@ PYBIND11_MODULE(_pyrex, m) {
                 options (PyOptions, optional): Custom options for configuration.
                 read_only (bool, optional): If True, opens the database in read-only mode.
                                             Defaults to False.
-        )doc", py::call_guard<py::gil_scoped_release>())
+        )doc", nb::call_guard<nb::gil_scoped_release>())
 
-        .def("put_cf", &PyRocksDBExtended::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair into a specific column family.", py::call_guard<py::gil_scoped_release>())
-        .def("get_cf", &PyRocksDBExtended::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr, "Retrieves the value for a key from a specific column family.")
-        .def("delete_cf", &PyRocksDBExtended::del_cf, py::arg("cf_handle"), py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key from a specific column family.", py::call_guard<py::gil_scoped_release>())
+        .def("put_cf", &PyRocksDBExtended::put_cf, nb::arg("cf_handle"), nb::arg("key"), nb::arg("value"), nb::arg("write_options") = nullptr, "Inserts a key-value pair into a specific column family.", nb::call_guard<nb::gil_scoped_release>())
+        .def("get_cf", &PyRocksDBExtended::get_cf, nb::arg("cf_handle"), nb::arg("key"), nb::arg("read_options") = nullptr, "Retrieves the value for a key from a specific column family.")
+        .def("delete_cf", &PyRocksDBExtended::del_cf, nb::arg("cf_handle"), nb::arg("key"), nb::arg("write_options") = nullptr, "Deletes a key from a specific column family.", nb::call_guard<nb::gil_scoped_release>())
         .def("list_column_families", &PyRocksDBExtended::list_column_families, "Lists the names of all existing column families.")
-        .def("create_column_family", &PyRocksDBExtended::create_column_family, py::arg("name"), py::arg("cf_options") = nullptr, "Creates a new column family.", py::call_guard<py::gil_scoped_release>())
-        .def("drop_column_family", &PyRocksDBExtended::drop_column_family, py::arg("cf_handle"), "Drops a column family.", py::call_guard<py::gil_scoped_release>())
-        .def("new_cf_iterator", &PyRocksDBExtended::new_cf_iterator, py::arg("cf_handle"), py::arg("read_options") = nullptr, "Creates a new iterator for a specific column family.", py::keep_alive<0, 1>())
-        .def("get_column_family", &PyRocksDBExtended::get_column_family, py::arg("name"), "Retrieves a ColumnFamilyHandle by its name.")
-        .def_property_readonly("default_cf", &PyRocksDBExtended::get_default_cf, "Returns the handle for the default column family.");
+        .def("create_column_family", &PyRocksDBExtended::create_column_family, nb::arg("name"), nb::arg("cf_options") = nullptr, "Creates a new column family.", nb::call_guard<nb::gil_scoped_release>())
+        .def("drop_column_family", &PyRocksDBExtended::drop_column_family, nb::arg("cf_handle"), "Drops a column family.", nb::call_guard<nb::gil_scoped_release>())
+        .def("new_cf_iterator", &PyRocksDBExtended::new_cf_iterator, nb::arg("cf_handle"), nb::arg("read_options") = nullptr, "Creates a new iterator for a specific column family.", nb::keep_alive<0, 1>())
+        .def("get_column_family", &PyRocksDBExtended::get_column_family, nb::arg("name"), "Retrieves a ColumnFamilyHandle by its name.")
+        .def_prop_ro("default_cf", &PyRocksDBExtended::get_default_cf, "Returns the handle for the default column family.");
 }
-
