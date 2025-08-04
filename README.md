@@ -11,6 +11,8 @@
 # pyrex-rocksdb
 A python wrapper for the original (C++) version of RocksDB.
 
+Currently MacOS and Linux wheels are available.
+
 ## Installation
 
 For linux systems, wheels are provided and can be installed from pypi using:
