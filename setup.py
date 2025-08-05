@@ -3,6 +3,7 @@ import os
 import io
 import sys
 import subprocess
+import nanobind
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -45,6 +46,9 @@ if LOCAL_VERSION_NAMING == 'false':
     final_version = BASE_VERSION
 else:
     final_version = f"{BASE_VERSION}+rocksdb{sanitized_rocksdb_version}"
+
+
+
 
 def _detect_libc():
     """
@@ -148,6 +152,8 @@ class build_ext(_build_ext):
                         ['-DWITH_TOOLS=OFF','-DWITH_TESTS=OFF']
                 )
             return cmake_args
+
+        
         
         # Creating a hash key for identifying the 
         # rocksdb build uniquely (and avoid re-building
@@ -234,15 +240,17 @@ class build_ext(_build_ext):
 
     def _configure_pyrex_extension(self, ext, rocksdb_install_path):
         """Updates the pyrex extension with the correct paths and libraries."""
+        print("Importing nanobind now....")
+        import nanobind
         ext.include_dirs.append(str(rocksdb_install_path / "include"))
-        
-
-        """Updates a Python extension with the necessary RocksDB paths and libraries."""
-        ext.include_dirs.append(str(rocksdb_install_path / "include"))
+        ext.include_dirs.append(nanobind.include_dir())
+        # According to the instructions inside the nb_combined.cpp file there is 
+        # an additional include needed (from the ext folder within the nanobind dir)
+        lib_robin_map = (Path(nanobind.source_dir()) / '..' / 'ext' / 'robin_map' / 'include').resolve()
+        ext.include_dirs.append(lib_robin_map)
 
         lib_dir = rocksdb_install_path / ("lib64" if (rocksdb_install_path / "lib64").exists() else "lib")
         ext.library_dirs.append(str(lib_dir))
-
 
         # libs_only_win = ['shlwapi','rpcrt4','zlibstatic']
         libs_only_win = ['shlwapi','rpcrt4','zlib']
@@ -267,10 +275,13 @@ class build_ext(_build_ext):
 
 pyrex_module = Extension(
     name='pyrex._pyrex',
-    sources=['src/pyrex/_pyrex.cpp'],
+    sources=[
+        'src/pyrex/_pyrex.cpp',
+        os.path.join(nanobind.source_dir(),'nb_combined.cpp')
+    ],
     language='c++',
     include_dirs=[], 
-    library_dirs=[],
+    #library_dirs=[],
     libraries=[],
     extra_compile_args=['-std=c++17'] if sys.platform != 'win32' else ['/std:c++17'],
 )

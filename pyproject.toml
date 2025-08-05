@@ -6,8 +6,9 @@
 # ROCKSDB_VERSION before building. 
 
 [build-system]
-# Add cmake to your build requirements
-requires = ["setuptools>=61.0", "wheel", "pybind11[global]>=2.10", "cmake>=3.18"]
+requires = ["setuptools>=61.0","wheel","nanobind>=1.0.0","cmake>=3.18"]
+# Change the build-backend to use scikit-build-core
+
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -55,6 +56,11 @@ dev = [
     "twine"
 ]
 
+# Add this new table to configure scikit-build-core
+[tool.scikit-build]
+cmake.version = ">=3.18"
+wheel.packages = ["src/pyrex"] # Tell it where your Python package source is
+
 # Crucial for src layout
 [tool.setuptools]
 packages = ["pyrex"] # Explicitly list your package
@@ -66,13 +72,11 @@ pyrex = ["*.pyi", "py.typed"]
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
-build-verbosity = 3
+# build = "cp312-*"
 
 environment-pass = [
     "ROCKSDB_VERSION",
     "PYREX_VERSION",
-    "HOST_CACHE_DIR", 
-    "MACOS_HOST_CACHE_DIR",
     "VCPKG_ROOT"
 ]
 
@@ -80,9 +84,9 @@ container-engine= "docker; create-args: --network=host"
 
 # Linux specific configurations
 [tool.cibuildwheel.linux]
+build=["cp312-manylinux_*"]
 environment = { CFLAGS = "-O3 -march=native -flto", CXXFLAGS = "-O3 -march=native -flto" ,CC = "clang", CXX = "clang++"}
 before-all = """
-
 # RHEL / CentOS / Fedora
 (yum  install -y  gflags-devel clang cmake \
                  snappy-devel lz4-devel zlib-devel \
@@ -101,7 +105,6 @@ before-all = """
 
 # macOS specific configurations
 [tool.cibuildwheel.macos]
-skip=['cp38-*']
 environment = { MACOSX_DEPLOYMENT_TARGET = "14.0", LDFLAGS = "-L/opt/homebrew/lib -L/usr/local/lib $LDFLAGS", CPPFLAGS = "-I/opt/homebrew/include -I/usr/local/include $CPPFLAGS" }
 
 before-build = """
@@ -112,3 +115,4 @@ before-build = """
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 environment = { CMAKE_TOOLCHAIN_FILE = "{{project}}/vcpkg/scripts/buildsystems/vcpkg.cmake" }
+
