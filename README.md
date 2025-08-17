@@ -75,15 +75,8 @@ for more examples check the relevant folder and the documentation.
 
 <details>
   <summary>Note on CICD</summary>
-The wheels provided are not completely platform-independent at the moment. 
-I heavily rely on github actions to develop since I don't own mac or windows machines.
-The CICD workflow for package builds is under development A windows/macos/linux build was successful, but further development is needed.
+The windows wheels are failing at the moment.
+The CICD workflow for package builds works and passes all tests only for MacOS and Linux. 
 </details>
-
-## Benchmarks
-
-`Pyrex` was benchmarked against [plyvel](https://github.com/wbolster/plyvel) and [lmdb](https://github.com/jnwatson/py-lmdb/) (which is based on a B+tree -- based architecture and relies on OS's block cache). 
-
-Initial benchmarks are promissing and to be reported soon.
 
 
