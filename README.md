@@ -71,8 +71,6 @@ print(f"Retrieved: {retrieved_value.decode()}") # Output: Retrieved: my_value
 
 for more examples check the relevant folder and the documentation.
 
-## Installation
-
 <details>
   <summary>Note on CICD</summary>
 The windows wheels are failing at the moment.
