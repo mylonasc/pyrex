@@ -17,6 +17,7 @@ echo "cache dir: $HOST_CACHE_DIR"
 mkdir -p $HOST_CACHE_DIR
 
 cibuildwheel \
+    --jobs ${PYREX_JOBS:-1}
 	--platform linux \
 	--config-file $TOML_FILE \
 	--output-dir "wheelhouse-RocksDB${ROCKSDB_VERSION}"
