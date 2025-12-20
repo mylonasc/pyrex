@@ -123,7 +123,7 @@ class build_ext(_build_ext):
             re-builds or rocksdb.
             """
             # C++ flags (rocksdb version 6.x)
-            cxx_flags = "-std=c++17 -include cstdint -include system_error"
+            cxx_flags = "-std=c++20 -include cstdint -include system_error"
 
             ## The following flags were found to work with rocksdb 6:
             cmake_args = [
@@ -272,7 +272,7 @@ pyrex_module = Extension(
     include_dirs=[], 
     library_dirs=[],
     libraries=[],
-    extra_compile_args=['-std=c++17'] if sys.platform != 'win32' else ['/std:c++17'],
+    extra_compile_args=['-std=c++20'] if sys.platform != 'win32' else ['/std:c++20'],
 )
 
 # --- Main Setup Call ---
