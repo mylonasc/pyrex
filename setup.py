@@ -117,41 +117,47 @@ class build_ext(_build_ext):
         Implements a simple caching mechanism to avoid rebuilding.
         """
 
+
         def _get_cmake_args():
-            """Returns all cmake flags apart from DCMAKE_INSTALL_PREFIX=...
-            The cmake params are used to build a cache key and avoid
-            re-builds or rocksdb.
+            """Returns all cmake flags apart from -DCMAKE_INSTALL_PREFIX=...
+            The cmake params are used to build a cache key and avoid re-builds of rocksdb.
             """
-            # C++ flags (rocksdb version 6.x)
+            # C++ flags (rocksdb version 6.x and later)
             cxx_flags = "-std=c++20 -include cstdint -include system_error"
 
-            ## The following flags were found to work with rocksdb 6:
             cmake_args = [
-                '-DCMAKE_BUILD_TYPE=Release',
-                '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
-                f'-DCMAKE_CXX_FLAGS={cxx_flags}',
-                '-DROCKSDB_BUILD_SHARED=OFF',
-                '-DFAIL_ON_WARNINGS=OFF',
-                '-DWITH_TESTS=OFF',
-                '-DWITH_SNAPPY=ON', '-DWITH_LZ4=ON', '-DWITH_ZLIB=ON', 
-                '-DWITH_BZ2=ON', '-DWITH_ZSTD=ON',
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+                f"-DCMAKE_CXX_FLAGS={cxx_flags}",
+                "-DROCKSDB_BUILD_SHARED=OFF",
+                "-DFAIL_ON_WARNINGS=OFF",
+                "-DWITH_TESTS=OFF",
+
+                "-DWITH_SNAPPY=ON",
+                "-DWITH_LZ4=ON",
+                "-DWITH_ZLIB=ON",
+                "-DWITH_BZ2=ON",
+                "-DWITH_ZSTD=ON",
             ]
-            
+
             # liburing-enabled builds are linux only
-            if sys.platform.startswith('linux'):
-                cmake_args.append('-DWITH_LIBURING=ON')
-            
-            if int(rocksdb_version.split('.')[0]) >= 7:
-                ## Fix for version 7 and later (these do not exist 
-                # in earlier versions)
-                cmake_args.extend(
-                        ['-DWITH_TOOLS=OFF','-DWITH_TESTS=OFF']
-                )
+            if sys.platform.startswith("linux"):
+                cmake_args.append("-DWITH_LIBURING=ON")
+
+            # Disable building RocksDB tools / benches that pull in gflags, etc.
+            major = int(rocksdb_version.split(".", 1)[0])
+            if major >= 7:
+                cmake_args.extend([
+                    "-DWITH_TOOLS=OFF",
+                    "-DWITH_CORE_TOOLS=OFF",
+                    "-DWITH_BENCHMARK_TOOLS=OFF",
+                    # optional extra safety:
+                    # "-DWITH_GFLAGS=OFF",
+                ])
+
             return cmake_args
         
-        # Creating a hash key for identifying the 
-        # rocksdb build uniquely (and avoid re-building
-        # it when its available)
+
         cmake_args = _get_cmake_args()
         libc_type = _detect_libc()        
         config_str = "".join([

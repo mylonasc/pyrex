@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release
+      - arm-build
     paths-ignore:
       - '**.md'
       - 'docs/**'
