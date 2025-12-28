@@ -1,287 +1,287 @@
+name: Build, Test & Publish Wheels
+
 on:
   push:
     branches:
       - release
-    paths-ignore: # Only trigger if these paths are NOT changed
-      - '**.md' # Ignore Markdown files (like README.md)
-      - 'docs/**' # Ignore changes in the docs folder
-      - 'LICENSE' # Ignore license file changes
-      - '.github/workflows/README.md' # Specific workflow README
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/workflows/README.md'
     tags:
       - 'v*'
-    
   pull_request:
     branches:
       - release
-    paths-ignore: # Only trigger if these paths are NOT changed
-      - '**.md' # Ignore Markdown files (like README.md)
-      - 'docs/**' # Ignore changes in the docs folder
-      - 'LICENSE' # Ignore license file changes
-  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+  workflow_dispatch:
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 120 # Set a higher timeout for the job (e.g., 120 minutes)
+    name: Build wheels (${{ matrix.id }})
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 120
     permissions:
       contents: read
-      packages: write # Crucial for pushing to GitHub Packages
+      packages: write
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-      fail-fast: false # Ensures all jobs run even if one fails
+        include:
+          - id: linux-x86_64
+            runs_on: ubuntu-latest
+            cibw_archs_linux: x86_64
+            artifact_name: wheels-linux-x86_64
+
+          - id: linux-aarch64
+            runs_on: ubuntu-24.04-arm
+            cibw_archs_linux: aarch64
+            artifact_name: wheels-linux-aarch64
+
+          - id: macos-arm64
+            runs_on: macos-14
+            artifact: wheels-macos-arm64
+            artifact_name: wheels-macos14-aarch64
+
+
     env:
-      # Define VCPKG_ROOT for Windows (used in Windows-specific steps)
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      ROCKSDB_VERSION: "9.11.2"
-      ROCKSDB_VERSION_VCPKG: "9.10.0"
-      PYREX_VERSION: "0.1.4"
-      # the cibuildwheels stores the different compiled RocksDB here. Key is defined within setup.py.
-      HOST_CACHE_DIR: "/tmp/cibw_cache" 
-      MACOS_HOST_CACHE_DIR: "/Users/runner/cibw-build-cache"
-      # --- Global CIBW environment variables (reintroduced) ---
-      # These flags are intended to be set as environment variables, not in pyproject.toml.
+      ROCKSDB_VERSION: "10.7.5"
+      PYREX_VERSION: "0.2.0a"
+
+      # Your existing global cibuildwheel knobs
       CIBW_FORCE_INSTALL: "1"
       CIBW_DEBUG: "1"
       CIBW_PRERELEASE_PYTHONS: "True"
 
+      # Build selection (from ARM workflow; keep if you want same set on x86)
+      CIBW_SKIP: "pp*"
+      CIBW_BUILD: "cp38-* cp39-* cp310-* cp311-* cp312-*"
+
+      # Host cache from your original workflow
+      HOST_CACHE_DIR: "/tmp/cibw_cache"
+
+      # ARM portable baseline flags (used only in ARM build step)
+      PORTABLE_FLAGS: "-O3 -march=armv8-a -mtune=generic -flto"
+
+      # Pin images for ARM (used only in ARM build step)
+      CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
+      CIBW_MUSLLINUX_AARCH64_IMAGE: "musllinux_1_2"
+
+      # macos settings
+      MACOS_HOST_CACHE_DIR: "/Users/runner/cibw-build-cache"
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    # --- Start Vcpkg Caching ---
-    # Cache the vcpkg tool itself (cloned repository)
-    - name: Cache vcpkg tool
-      id: cache-vcpkg-tool
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}/vcpkg
-        key: ${{ runner.os }}-vcpkg-tool-${{ hashFiles('vcpkg/.git/HEAD') }} # Key changes if vcpkg repo updates
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-tool-
+      # FIX: do NOT force x64; let runner arch decide (works on ARM + x86)
+      - name: Set up Python (host)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
 
-    # Cache vcpkg's installed binary packages (pre-built RocksDB)
-    - name: Cache vcpkg installed packages
-      id: cache-vcpkg-installed
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}/vcpkg/installed
-        key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg/vcpkg.exe') }}-${{ hashFiles('vcpkg/ports/rocksdb/portfile.cmake') }} # Key for installed packages
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-installed-
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x' # cibuildwheel will manage specific Python versions
-        architecture: 'x64' # Ensure 64-bit Python is set up
+        # --- macOS Specific Steps ---
+      - name: Install RocksDB (macOS speciffic)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install rocksdb
+      - name: Get Homebrew prefix (macOS)
+        if: runner.os == 'macOS'
+        # Set BREW_PREFIX as an environment variable that cibuildwheel will pick up
+        run: echo "BREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
+        shell: bash
 
-    - name: Cache cibuildwheel artifacts (Linux)
-      if: runner.os == 'Linux'
-      id: cache-cibw
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.HOST_CACHE_DIR }}
-        # The key should combine OS, Python version, and a hash of the build dependencies.
-        key: ${{ runner.os }}-${{ runner.arch }}-cibw-cache-RocksDB-${{ env.ROCKSDB_VERSION }}
+      - name: Cache cibuildwheel artifacts (Linux host cache)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.HOST_CACHE_DIR }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cibw-cache-RocksDB-${{ env.ROCKSDB_VERSION }}
 
-    - name: Cache cibuildwheel artifacts (MacOS)
-      if: runner.os == 'macOS'
-      id: cache-cibw-macos
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.MACOS_HOST_CACHE_DIR }}
-        # The key should combine OS, Python version, and a hash of the build dependencies.
-        key: ${{ runner.os }}-${{ runner.arch }}-cibw-cache-RocksDB-${{ env.ROCKSDB_VERSION }}
+      - name: Cache cibuildwheel artifacts (MacOS)
+        if: runner.os == 'macOS'
+        id: cache-cibw-macos
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MACOS_HOST_CACHE_DIR }}
+          # The key should combine OS, Python version, and a hash of the build dependencies.
+          key: ${{ runner.os }}-${{ runner.arch }}-cibw-cache-RocksDB-${{ env.ROCKSDB_VERSION }}
+
+      # ARM-only: RocksDB build cache (your .tar.gz store)
+      - name: Cache RocksDB builds (ARM)
+        if: matrix.cibw_archs_linux == 'aarch64'
+        uses: actions/cache@v4
+        with:
+          path: .cibw-rocksdb-cache
+          key: >-
+            rocksdb-${{ runner.os }}-linux-arch=${{ matrix.cibw_archs_linux }}-v=${{ env.ROCKSDB_VERSION }}
+            -manylinux=${{ env.CIBW_MANYLINUX_AARCH64_IMAGE }}-musllinux=${{ env.CIBW_MUSLLINUX_AARCH64_IMAGE }}
+            -flags=${{ env.PORTABLE_FLAGS }}
+          restore-keys: |
+            rocksdb-${{ runner.os }}-linux-arch=${{ matrix.cibw_archs_linux }}-v=${{ env.ROCKSDB_VERSION }}-
+
+      # -----------------------
+      # Build wheels (non-ARM)
+      # -----------------------
+      - name: Build wheels (non-ARM)
+        if: matrix.cibw_archs_linux != 'aarch64'
+        env:
+          CIBW_ARCHS_LINUX: ${{ matrix.cibw_archs_linux }}
+          CIBW_ENVIRONMENT: >-
+            PYREX_VERSION='${{ env.PYREX_VERSION }}'
+            ROCKSDB_VERSION='${{ env.ROCKSDB_VERSION }}'
+        run: cibuildwheel --output-dir wheelhouse
 
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install cibuildwheel
-    # --- macOS Specific Steps ---
-    - name: Install RocksDB (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew update
-        brew install rocksdb
-    - name: Get Homebrew prefix (macOS)
-      if: runner.os == 'macOS'
-      # Set BREW_PREFIX as an environment variable that cibuildwheel will pick up
-      run: echo "BREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
-      shell: bash
 
-    - name: Debug RocksDB Paths (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        echo "Homebrew prefix: ${{ env.BREW_PREFIX }}"
-        echo "--- Listing contents of ${{ env.BREW_PREFIX }}/include/ ---"
-        ls -R "${{ env.BREW_PREFIX }}/include/" | grep -E "rocksdb|db.h" || true
-        echo "--- Listing contents of ${{ env.BREW_PREFIX }}/lib/ ---"
-        ls -R "${{ env.BREW_PREFIX }}/lib/" | grep -E "rocksdb|librocksdb" || true
-      shell: bash
+      # -----------------------
+      # Build wheels (ARM)
+      # -----------------------
+      - name: Build wheels (ARM aarch64)
+        if: matrix.cibw_archs_linux == 'aarch64'
+        env:
+          CIBW_ARCHS_LINUX: "aarch64"
 
-    # --- Windows Specific Steps (Vcpkg and RocksDB Installation) ---
-    - name: Export GitHub Actions cache environment variables (for Windows)
-      uses: actions/github-script@v7
-      if: runner.os == 'Windows'
-      with:
-        script: |
-          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-    - name: Install RocksDB (Windows via vcpkg)
-      if: runner.os == 'Windows'
-      run: |
-        # 1. Bootstrap vcpkg
-        git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_ROOT }}"
-        
-        # 2. Run the bootstrap script using the PowerShell call operator '&'
-        & "${{ env.VCPKG_ROOT }}\bootstrap-vcpkg.bat" -disableMetrics
-        
-        # 2. Get the path to the nuget.exe that vcpkg uses internally.
-        # This command outputs the path directly to stdout.
-        $NuGetExePath = & "${{ env.VCPKG_ROOT }}\vcpkg.exe" fetch nuget
-        
-        # Trim any whitespace, newlines, or quotation marks from the output.
-        $NuGetExePath = $NuGetExePath.Trim()
-        $NuGetExePath = $NuGetExePath.Trim('"')
-        # Verify that the nuget.exe path was successfully retrieved.
-        if (-not (Test-Path $NuGetExePath)) {
-            Write-Error "Error: Vcpkg's nuget.exe not found at $NuGetExePath. Fetch command might have failed."
-            exit 1
-        }
-        Write-Host "Vcpkg's nuget.exe path: $NuGetExePath"
-        # 3. Define variables for NuGet feed configuration.
-        $Owner = "${{ github.repository_owner }}"
-        $FeedUrl = "https://nuget.pkg.github.com/$Owner/index.json"
-        $Username = "$Owner"
-        $Password = "${{ github.token }}"
-        
-        # 4. Add the 'github' source using vcpkg's nuget.exe.
-        # This command modifies the default NuGet.Config for this user/environment,
-        # which vcpkg's internal nuget.exe is likely to use.
-        & "$NuGetExePath" sources add `
-            -Name github `
-            -Source "$FeedUrl" `
-            -UserName "$Username" `
-            -Password "$Password" `
-            -ProtocolVersion 3 `
-            -StorePasswordInClearText # Required for the GitHub token to work as a password.
-    
-        # 5. Determine the standard NuGet.Config location and add package source mapping.
-        $NuGetConfigDir = Join-Path -Path $env:APPDATA -ChildPath "NuGet"
-        $NuGetConfigFile = Join-Path -Path $NuGetConfigDir -ChildPath "NuGet.Config"
-        New-Item -ItemType Directory -Path $NuGetConfigDir -Force | Out-Null
-        Write-Host "Modifying NuGet.Config at: $NuGetConfigFile"
+          # Use docker and mount cache directory into container
+          CIBW_CONTAINER_ENGINE: "docker; create-args: --network=host -v ${{ github.workspace }}/.cibw-rocksdb-cache:/cibw-cache"
 
-        [xml]$config = Get-Content -Path $NuGetConfigFile -Encoding UTF8
-        $packageSourceMapping = $config.configuration.packageSourceMapping
-        if (-not $packageSourceMapping) {
-          $packageSourceMapping = $config.configuration.AppendChild($config.CreateElement("packageSourceMapping"))
-        }
+          # Make sure these are present in the container env
+          CIBW_ENVIRONMENT: >-
+            PYREX_VERSION='${{ env.PYREX_VERSION }}'
+            ROCKSDB_VERSION='${{ env.ROCKSDB_VERSION }}'
+            PORTABLE_FLAGS='${{ env.PORTABLE_FLAGS }}'
+            MAX_JOBS="$(nproc)"
+            CMAKE_BUILD_PARALLEL_LEVEL="$(nproc)"
+            CFLAGS="${{ env.PORTABLE_FLAGS }}"
+            CXXFLAGS="${{ env.PORTABLE_FLAGS }}"
+            LDFLAGS="-flto"
+            CC=clang
+            CXX=clang++
+            CMAKE_PREFIX_PATH="/opt/rocksdb"
+            CPPFLAGS="-I/opt/rocksdb/include $CPPFLAGS"
+            LDFLAGS="-L/opt/rocksdb/lib $LDFLAGS"
+            LD_LIBRARY_PATH="/opt/rocksdb/lib:$LD_LIBRARY_PATH"
+            PKG_CONFIG_PATH="/opt/rocksdb/lib/pkgconfig:$PKG_CONFIG_PATH"
+          CIBW_BEFORE_ALL_LINUX: |
+            set -euxo pipefail
+            ARCH="aarch64"
+            PREFIX="/opt/rocksdb"
+            FLAGS="${PORTABLE_FLAGS}"
+            # Separate caches for glibc (manylinux) vs musl (musllinux)
+            if [ -f /etc/alpine-release ]; then
+              LIBC="musl"
+              IMAGE_TAG="${CIBW_MUSLLINUX_AARCH64_IMAGE:-musllinux_unknown}"
+            else
+              LIBC="glibc"
+              IMAGE_TAG="${CIBW_MANYLINUX_AARCH64_IMAGE:-manylinux_unknown}"
+            fi
+            SAFE_FLAGS="$(echo "${FLAGS}" | tr ' /' '__')"
 
-        # Clear any existing mappings to ensure a clean state
-        $packageSourceMapping.RemoveAll()
 
-        # A. Add the default nuget.org source if it doesn't exist
-        $nugetSource = $config.configuration.packageSources.SelectSingleNode("add[@key='nuget.org']")
-        if (-not $nugetSource) {
-            $nugetSource = $config.CreateElement("add")
-            $nugetSource.SetAttribute("key", "nuget.org")
-            $nugetSource.SetAttribute("value", "https://api.nuget.org/v3/index.json")
-            $config.configuration.packageSources.AppendChild($nugetSource)
-        }
+            # Install deps (to make downstream code consistent, because clang is forced it is installed here - otherwise there is a failure)
+            if [ "${LIBC}" = "musl" ]; then
+              apk add --no-cache \
+                bash build-base clang clang-dev cmake git ninja \
+                gflags-dev snappy-dev lz4-dev zlib-dev bzip2-dev zstd-dev \
+                liburing-dev linux-headers wget tar
+            elif command -v apt-get >/dev/null 2>&1; then
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                clang cmake build-essential ninja-build wget tar \
+                libgflags-dev libsnappy-dev liblz4-dev zlib1g-dev \
+                libbz2-dev libzstd-dev liburing-dev
+            else
+              (command -v dnf >/dev/null 2>&1 && dnf install -y \
+                 clang gcc-c++ make cmake ninja-build wget tar \
+                 gflags-devel snappy-devel lz4-devel zlib-devel bzip2-devel \
+                 libzstd-devel liburing-devel) || \
+              (yum install -y epel-release && yum install -y \
+                 clang gcc-c++ make cmake ninja-build wget tar \
+                 gflags-devel snappy-devel lz4-devel zlib-devel bzip2-devel \
+                 libzstd-devel liburing-devel)
+            fi
 
-        # B. Define a mapping for the public nuget.org feed to be the default
-        $publicSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
-        $publicSourceMapping.SetAttribute("key", "nuget.org")
-        $catchAllPattern = $publicSourceMapping.AppendChild($config.CreateElement("package"))
-        $catchAllPattern.SetAttribute("pattern", "*") # This is the crucial part
+            CACHE_TARBALL="/cibw-cache/rocksdb-v${ROCKSDB_VERSION}-${ARCH}-${LIBC}-${IMAGE_TAG}-flags-${SAFE_FLAGS}.tar.gz"
+            if [ -f "${CACHE_TARBALL}" ]; then
+              echo "✅ Restoring cached RocksDB from ${CACHE_TARBALL}"
+              mkdir -p "${PREFIX}"
+              tar -xzf "${CACHE_TARBALL}" -C /
+              ldconfig || true
+              exit 0
+            fi
 
-        # C. Define the mapping for your private GitHub feed
-        $githubSourceMapping = $packageSourceMapping.AppendChild($config.CreateElement("packageSource"))
-        $githubSourceMapping.SetAttribute("key", "github")
-        
-        $patterns = @(
-          "rocksdb_*-windows",
-          "zlib_*-windows",
-          "lz4_*-windows",
-          "snappy_*-windows",
-          "vcpkg-cmake_*-windows",
-          "vcpkg-cmake-config_*-windows",
-          "zstd_*-windows",
-          "bzip2_*-windows",
-          "tbb_*-windows"
-        )
-        
+            echo "ℹ️ No cache found. Building RocksDB and caching..."
 
-        foreach ($pattern in $patterns) {
-          $packageNode = $githubSourceMapping.AppendChild($config.CreateElement("package"))
-          $packageNode.SetAttribute("pattern", $pattern)
-        }
-        $config.Save($NuGetConfigFile)
-    
-        Write-Host "--- Raw content of NuGet.Config (after vcpkg's nuget.exe config) ---"
-        Get-Content -Path $NuGetConfigFile -Raw
-        Write-Host "----------------------------------"
+            WORKDIR="$(mktemp -d)"
+            cd "${WORKDIR}"
+            wget -q "https://github.com/facebook/rocksdb/archive/refs/tags/v${ROCKSDB_VERSION}.tar.gz"
+            tar -xzf "v${ROCKSDB_VERSION}.tar.gz"
+            cd "rocksdb-${ROCKSDB_VERSION}"
+            export CC=clang
+            export CXX=clang++
+            cmake . -G Ninja \
+              -DCMAKE_C_COMPILER=clang \
+              -DCMAKE_CXX_COMPILER=clang++ \
+              -DPORTABLE=1 \
+              -DWITH_SNAPPY=1 \
+              -DWITH_LZ4=1 \
+              -DWITH_ZLIB=1 \
+              -DWITH_ZSTD=1 \
+              -DWITH_TOOLS=OFF \
+              -DWITH_TESTS=OFF \
+              -DWITH_BENCHMARK_TOOLS=OFF \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+              -DCMAKE_C_FLAGS="${FLAGS}" \
+              -DCMAKE_CXX_FLAGS="${FLAGS} -Wno-error=unused-command-line-argument -Wno-error=nontrivial-memcall" \
+              -DCMAKE_EXE_LINKER_FLAGS="-flto" \
+              -DCMAKE_SHARED_LINKER_FLAGS="-flto"
+            ninja -j"$(nproc)"
+            ninja install
+            ldconfig || true
+            echo "📦 Saving RocksDB cache to ${CACHE_TARBALL}"
+            tar -czf "${CACHE_TARBALL}" -C / "opt/rocksdb"
+        run: cibuildwheel --output-dir wheelhouse
 
-        # 6. Create a vcpkg.json manifest file for declarative dependency management.
-        # This is the recommended way to pin versions and specify features.
-        $rocksdbVersion = "${{ env.ROCKSDB_VERSION_VCPKG }}"
-        if ([string]::IsNullOrEmpty($rocksdbVersion)) {
-              Write-Error "Error: ROCKSDB_VERSION_VCPKG environment variable is not set."
-              exit 1
-        }
-        Write-Host "Using RocksDB version: $rocksdbVersion"
+      - name: Build wheels
+        if: runner.os == 'macOS'
+        run: cibuildwheel --output-dir wheelhouse
 
-        $vcpkgJsonContent = @"
-        {
-          "dependencies": [
-            {
-              "name": "rocksdb",
-              "version>=": "$rocksdbVersion",
-              "features": [ "bzip2", "lz4", "snappy", "zlib", "zstd", "tbb" ]
-            }
-          ],
-          "builtin-baseline" : "bca384363976f9b70771a3cae03adf548ac8929d"
-        }
-        "@
-        $vcpkgJsonContent | Out-File -FilePath vcpkg.json -Encoding utf8
-        # 6. Install RocksDB using vcpkg
-        & "${{ env.VCPKG_ROOT }}\vcpkg.exe" install --triplet x64-windows --debug
-        
-
-      shell: pwsh
-      env:
-        VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-        VCPKG_BINARY_SOURCES: "clear;nuget,github,readwrite"
-        VCPKG_DEBUG: 1
-
-    # --- Build Wheels Step ---
-    - name: Build wheels
-      run: cibuildwheel --output-dir wheelhouse
-
-    - name: Upload wheels as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: python-wheels-${{ matrix.os }}
-        path: ./wheelhouse/*.whl
-        
-  # New job to call the reusable workflow
+      - name: Upload wheels as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ./wheelhouse/*.whl
 
   test_wheels:
-    name: Test wheels on ${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Test wheels (${{ matrix.id }}, py${{ matrix.python-version }})
     needs: build_wheels
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runs_on }}
     strategy:
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.9","3.10","3.11","3.12"] # Or other versions you want to test
       fail-fast: false
-      
+      matrix:
+        id: [linux-x86_64, linux-aarch64]
+        python-version: ["3.9","3.10","3.11","3.12"]
+        include:
+          - id: linux-x86_64
+            runs_on: ubuntu-latest
+            artifact_name: wheels-linux-x86_64
+          - id: linux-aarch64
+            runs_on: ubuntu-24.04-arm
+            artifact_name: wheels-linux-aarch64
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -294,50 +294,48 @@ jobs:
       - name: Download wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          name: python-wheels-${{ matrix.os }} # Download the artifact for the correct OS
+          name: ${{ matrix.artifact_name }}
           path: dist
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest
-
       - name: Install wheel and run tests
+        shell: bash
         run: |
-          # Set the platform-specific wheel tag based on the runner's OS
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
-            PLATFORM_TAG="*manylinux*"
-          elif [[ "${{ runner.os }}" == "Windows" ]]; then
-            PLATFORM_TAG="*win_amd64*"
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            PLATFORM_TAG="*macosx*"
-          fi
+          set -euxo pipefail
 
           PY_VERSION="${{ matrix.python-version }}"
           VERSION_TAG="${PY_VERSION//./}"
 
           echo "Python version: $PY_VERSION"
-          echo "Platform: ${{ runner.os }}"
-          echo "Looking for wheel file with pattern: *-cp${VERSION_TAG}-${PLATFORM_TAG}.whl"
-          
+          echo "Runner arch: ${{ runner.arch }}"
           ls -R dist/
 
-          # Install the correct wheel using the platform-specific tag
-          pip install --force-reinstall dist/*-cp${VERSION_TAG}-${PLATFORM_TAG}.whl
-          
-          # Run the tests
+          # Ubuntu == glibc, so choose manylinux (NOT musllinux)
+          WHEEL="$(ls dist/*-cp${VERSION_TAG}-cp${VERSION_TAG}-manylinux_*.whl | head -n 1 || true)"
+
+          if [ -z "${WHEEL}" ]; then
+            echo "No manylinux wheel found for cp${VERSION_TAG}."
+            echo "Available wheels:"
+            ls -1 dist/
+            exit 1
+          fi
+
+          echo "Installing wheel: ${WHEEL}"
+          pip install --force-reinstall "${WHEEL}"
+
           pytest tests/
-        shell: bash
 
   publish_to_pypi:
     name: Publish wheels to PyPI
     needs: test_wheels
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-
     permissions:
       contents: read
-      id-token: write  # Required for PyPI Trusted Publisher
+      id-token: write
 
     steps:
       - name: Download all wheel artifacts
@@ -354,9 +352,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install twine
+
       - name: Verify wheels
         run: |
           ls -R dist/
+
       - name: Publish to PyPI
         run: |
           twine upload --non-interactive dist/**/*.whl
+
