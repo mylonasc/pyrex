@@ -51,6 +51,7 @@ jobs:
     env:
       ROCKSDB_VERSION: "10.7.5"
       PYREX_VERSION: "0.2.0a"
+      CIBW_ARCHS_MACOS: "arm64"
 
       # Your existing global cibuildwheel knobs
       CIBW_FORCE_INSTALL: "1"
@@ -136,7 +137,7 @@ jobs:
       # Build wheels (non-ARM)
       # -----------------------
       - name: Build wheels (non-ARM)
-        if: matrix.cibw_archs_linux != 'aarch64'
+        if: runner.os != 'macOS' && matrix.cibw_archs_linux != 'aarch64'
         env:
           CIBW_ARCHS_LINUX: ${{ matrix.cibw_archs_linux }}
           CIBW_ENVIRONMENT: >-
