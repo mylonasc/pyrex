@@ -59,8 +59,9 @@ jobs:
       CIBW_PRERELEASE_PYTHONS: "True"
 
       # Build selection (from ARM workflow; keep if you want same set on x86)
-      CIBW_SKIP: "pp*"
-      CIBW_BUILD: "cp38-* cp39-* cp310-* cp311-* cp312-*"
+      CIBW_SKIP: "pp* cp38-macosx_*"
+
+      CIBW_BUILD: "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 
       # Host cache from your original workflow
       HOST_CACHE_DIR: "/tmp/cibw_cache"
@@ -151,7 +152,7 @@ jobs:
       # Build wheels (ARM)
       # -----------------------
       - name: Build wheels (ARM aarch64)
-        if: matrix.cibw_archs_linux == 'aarch64'
+        if: matrix.cibw_archs_linux == 'aarch64' && runner.os != 'macOS' 
         env:
           CIBW_ARCHS_LINUX: "aarch64"
 
