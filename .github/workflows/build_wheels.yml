@@ -73,6 +73,11 @@ jobs:
 
       # macos settings
       MACOS_HOST_CACHE_DIR: "/Users/runner/cibw-build-cache"
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      CIBW_ENVIRONMENT_MACOS: >-
+        MACOSX_DEPLOYMENT_TARGET='14.0'
+        PYREX_VERSION='0.3.0a'
+        ROCKSDB_VERSION='10.7.5'
 
     steps:
       - name: Checkout code
@@ -96,7 +101,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install rocksdb
+          brew install cmake snappy lz4 zstd zlib bzip2
       - name: Get Homebrew prefix (macOS)
         if: runner.os == 'macOS'
         # Set BREW_PREFIX as an environment variable that cibuildwheel will pick up

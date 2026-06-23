@@ -252,6 +252,9 @@ class build_ext(_build_ext):
         """Updates the pyrex extension with the correct paths and libraries."""
         ext.include_dirs.append(str(rocksdb_install_path / "include"))
 
+        lib_dir = rocksdb_install_path / ("lib64" if (rocksdb_install_path / "lib64").exists() else "lib")
+        ext.library_dirs.append(str(lib_dir))
+
         dependency_prefixes = [p for p in os.environ.get("CMAKE_PREFIX_PATH", "").split(os.pathsep) if p]
         if os.environ.get("BREW_PREFIX"):
             dependency_prefixes.append(os.environ["BREW_PREFIX"])
@@ -266,9 +269,6 @@ class build_ext(_build_ext):
                 ext.include_dirs.append(str(include_dir))
             if lib_dir.exists():
                 ext.library_dirs.append(str(lib_dir))
-
-        lib_dir = rocksdb_install_path / ("lib64" if (rocksdb_install_path / "lib64").exists() else "lib")
-        ext.library_dirs.append(str(lib_dir))
 
 
         # libs_only_win = ['shlwapi','rpcrt4','zlibstatic']
