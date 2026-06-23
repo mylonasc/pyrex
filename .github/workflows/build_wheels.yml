@@ -50,7 +50,7 @@ jobs:
 
     env:
       ROCKSDB_VERSION: "10.7.5"
-      PYREX_VERSION: "0.3.0a"
+      PYREX_VERSION: "0.3.0"
 
       # Your existing global cibuildwheel knobs
       CIBW_FORCE_INSTALL: "1"
@@ -76,7 +76,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       CIBW_ENVIRONMENT_MACOS: >-
         MACOSX_DEPLOYMENT_TARGET='14.0'
-        PYREX_VERSION='0.3.0a'
+        PYREX_VERSION='0.3.0'
         ROCKSDB_VERSION='10.7.5'
 
     steps:

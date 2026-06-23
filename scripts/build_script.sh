@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/runpath_guard.sh"
 # vim pyproject.toml
 # export ROCKSDB_VERSION='10.4.2'
 export ROCKSDB_VERSION='9.11.2'
-export PYREX_VERSION='0.3.0a'
+export PYREX_VERSION='0.3.0'
 export HOST_CACHE_DIR="$HOME/.cache/cibuildwheel/pyrex_builds"
 
 export LOCAL_VERSION_NAMING='false' # This needs to be false for pypi deployments.
