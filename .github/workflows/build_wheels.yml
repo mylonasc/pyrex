@@ -58,7 +58,7 @@ jobs:
       CIBW_PRERELEASE_PYTHONS: "True"
 
       # Build selection (from ARM workflow; keep if you want same set on x86)
-      CIBW_SKIP: "pp*"
+      CIBW_SKIP: ""
       CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
 
       # Host cache from your original workflow

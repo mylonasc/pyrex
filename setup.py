@@ -148,8 +148,11 @@ class build_ext(_build_ext):
                 else:
                     cmake_args.append("-DWITH_LIBURING=OFF")
 
-            if os.environ.get("CMAKE_PREFIX_PATH"):
-                cmake_args.append(f"-DCMAKE_PREFIX_PATH={os.environ['CMAKE_PREFIX_PATH']}")
+            cmake_prefixes = [p for p in os.environ.get("CMAKE_PREFIX_PATH", "").split(os.pathsep) if p]
+            if os.environ.get("BREW_PREFIX"):
+                cmake_prefixes.append(os.environ["BREW_PREFIX"])
+            if cmake_prefixes:
+                cmake_args.append(f"-DCMAKE_PREFIX_PATH={os.pathsep.join(cmake_prefixes)}")
 
             # Disable building RocksDB tools / benches that pull in gflags, etc.
             major = int(rocksdb_version.split(".", 1)[0])
@@ -249,7 +252,11 @@ class build_ext(_build_ext):
         """Updates the pyrex extension with the correct paths and libraries."""
         ext.include_dirs.append(str(rocksdb_install_path / "include"))
 
-        for prefix in os.environ.get("CMAKE_PREFIX_PATH", "").split(os.pathsep):
+        dependency_prefixes = [p for p in os.environ.get("CMAKE_PREFIX_PATH", "").split(os.pathsep) if p]
+        if os.environ.get("BREW_PREFIX"):
+            dependency_prefixes.append(os.environ["BREW_PREFIX"])
+
+        for prefix in dependency_prefixes:
             if not prefix:
                 continue
             prefix_path = Path(prefix)
