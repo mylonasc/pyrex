@@ -2,6 +2,17 @@ import pyrex
 import unittest
 import os
 import shutil
+import io
+
+try:
+    import pyarrow as pa
+except ImportError:
+    pa = None
+
+try:
+    import polars as pl
+except ImportError:
+    pl = None
 
 WRITE_ERROR_READONLY_MSG = 'Cannot perform put/write/delete operation: Database opened in read-only mode.'
 
@@ -608,6 +619,80 @@ class TestPyrex(unittest.TestCase):
             # OpenForReadOnly does not create if missing, so this should fail
             self.db = pyrex.PyRocksDB(self.db_path, read_only=True)
         self.assertIn("No such file or directory", str(cm.exception) or "DB not found")
+
+    def test_25_write_columnar_batch_list_bytes(self):
+        """
+        Test native columnar batch writes with list[bytes] fallback.
+        """
+        self.db = pyrex.PyRocksDB(self.db_path)
+        self.db.write_columnar_batch([b"ck1", b"ck2", b"ck3"], [b"cv1", b"cv2", b"cv3"])
+
+        self.assertEqual(self.db.get(b"ck1"), b"cv1")
+        self.assertEqual(self.db.get(b"ck2"), b"cv2")
+        self.assertEqual(self.db.get(b"ck3"), b"cv3")
+
+    @unittest.skipIf(pa is None, "pyarrow is not installed")
+    def test_26_write_columnar_batch_arrow_binary(self):
+        """
+        Test native columnar batch writes with Arrow binary arrays.
+        """
+        self.db = pyrex.PyRocksDB(self.db_path)
+        keys = pa.array([b"ak1", b"ak2", b"ak3"], type=pa.binary())
+        values = pa.array([b"av1", b"av2", b"av3"], type=pa.binary())
+
+        self.db.write_columnar_batch(keys, values)
+
+        self.assertEqual(self.db.get(b"ak1"), b"av1")
+        self.assertEqual(self.db.get(b"ak2"), b"av2")
+        self.assertEqual(self.db.get(b"ak3"), b"av3")
+
+    def test_27_write_columnar_batch_length_validation(self):
+        """
+        Test length validation happens before writing any rows.
+        """
+        self.db = pyrex.PyRocksDB(self.db_path)
+
+        with self.assertRaises(ValueError):
+            self.db.write_columnar_batch([b"ck1", b"ck2"], [b"cv1"])
+
+        self.assertIsNone(self.db.get(b"ck1"))
+        self.assertIsNone(self.db.get(b"ck2"))
+
+    @unittest.skipIf(pa is None or pl is None, "pyarrow and polars are required")
+    def test_28_write_columnar_batch_serialized_polars_columns(self):
+        """
+        Test storing serialized Polars columns with native Arrow batch ingestion.
+        """
+        self.db = pyrex.PyRocksDB(self.db_path)
+        df = pl.DataFrame({
+            "id": [1, 2, 3],
+            "name": ["alice", "bob", "carol"],
+            "score": [10.5, 20.25, 30.75],
+        })
+
+        def serialize_column(name):
+            array = df[name].to_arrow()
+            sink = io.BytesIO()
+            batch = pa.RecordBatch.from_arrays([array], names=[name])
+            with pa.ipc.new_stream(sink, batch.schema) as writer:
+                writer.write_batch(batch)
+            return sink.getvalue()
+
+        def deserialize_column(payload):
+            with pa.ipc.open_stream(io.BytesIO(payload)) as reader:
+                batch = reader.read_next_batch()
+            return batch.column(0)
+
+        column_names = df.columns
+        keys = pa.array([f"column:{name}".encode() for name in column_names], type=pa.binary())
+        values = pa.array([serialize_column(name) for name in column_names], type=pa.binary())
+
+        self.db.write_columnar_batch(keys, values)
+
+        for name in column_names:
+            retrieved = self.db.get(f"column:{name}".encode())
+            restored = deserialize_column(retrieved)
+            self.assertEqual(restored.to_pylist(), df[name].to_arrow().to_pylist())
 
 
 if __name__ == '__main__':

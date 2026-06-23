@@ -50,7 +50,7 @@ jobs:
 
     env:
       ROCKSDB_VERSION: "10.7.5"
-      PYREX_VERSION: "0.2.0a"
+      PYREX_VERSION: "0.3.0a"
 
       # Your existing global cibuildwheel knobs
       CIBW_FORCE_INSTALL: "1"
@@ -360,4 +360,3 @@ jobs:
       - name: Publish to PyPI
         run: |
           twine upload --non-interactive dist/**/*.whl
-

@@ -10,6 +10,7 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext as _build_ext
 import platform
 import hashlib
+import pybind11
 
 # --- Project Configuration ---
 
@@ -142,7 +143,13 @@ class build_ext(_build_ext):
 
             # liburing-enabled builds are linux only
             if sys.platform.startswith("linux"):
-                cmake_args.append("-DWITH_LIBURING=ON")
+                if Path("/usr/include/liburing.h").exists() or Path("/usr/include/uring.h").exists():
+                    cmake_args.append("-DWITH_LIBURING=ON")
+                else:
+                    cmake_args.append("-DWITH_LIBURING=OFF")
+
+            if os.environ.get("CMAKE_PREFIX_PATH"):
+                cmake_args.append(f"-DCMAKE_PREFIX_PATH={os.environ['CMAKE_PREFIX_PATH']}")
 
             # Disable building RocksDB tools / benches that pull in gflags, etc.
             major = int(rocksdb_version.split(".", 1)[0])
@@ -151,8 +158,7 @@ class build_ext(_build_ext):
                     "-DWITH_TOOLS=OFF",
                     "-DWITH_CORE_TOOLS=OFF",
                     "-DWITH_BENCHMARK_TOOLS=OFF",
-                    # optional extra safety:
-                    # "-DWITH_GFLAGS=OFF",
+                    "-DWITH_GFLAGS=OFF",
                 ])
 
             return cmake_args
@@ -172,10 +178,11 @@ class build_ext(_build_ext):
         
         # Cache path management for linux:
         if 'HOST_CACHE_DIR' in os.environ:
-            cache_root =  Path('/host' + os.environ.get('HOST_CACHE_DIR'))
+            host_cache_root = Path('/host' + os.environ.get('HOST_CACHE_DIR'))
+            cache_root = host_cache_root if host_cache_root.parent.exists() else Path(os.environ.get('HOST_CACHE_DIR'))
         else:
             print("Did not find the cache root of the host!")
-            cache_root = Path('/host/tmp')
+            cache_root = Path('/host/tmp') if Path('/host').exists() else Path('/tmp')
         
         # Cache path management for MacOS:
         if sys.platform == 'darwin': # MacOS (does not run in container)
@@ -241,10 +248,17 @@ class build_ext(_build_ext):
     def _configure_pyrex_extension(self, ext, rocksdb_install_path):
         """Updates the pyrex extension with the correct paths and libraries."""
         ext.include_dirs.append(str(rocksdb_install_path / "include"))
-        
 
-        """Updates a Python extension with the necessary RocksDB paths and libraries."""
-        ext.include_dirs.append(str(rocksdb_install_path / "include"))
+        for prefix in os.environ.get("CMAKE_PREFIX_PATH", "").split(os.pathsep):
+            if not prefix:
+                continue
+            prefix_path = Path(prefix)
+            include_dir = prefix_path / "include"
+            lib_dir = prefix_path / "lib"
+            if include_dir.exists():
+                ext.include_dirs.append(str(include_dir))
+            if lib_dir.exists():
+                ext.library_dirs.append(str(lib_dir))
 
         lib_dir = rocksdb_install_path / ("lib64" if (rocksdb_install_path / "lib64").exists() else "lib")
         ext.library_dirs.append(str(lib_dir))
@@ -273,13 +287,24 @@ class build_ext(_build_ext):
 
 pyrex_module = Extension(
     name='pyrex._pyrex',
-    sources=['src/pyrex/_pyrex.cpp'],
+    sources=[
+        'src/pyrex/_pyrex.cpp',
+        'src/pyrex/bindings.cpp',
+        'src/pyrex/columnar_batch.cpp',
+        'src/pyrex/column_family.cpp',
+        'src/pyrex/db.cpp',
+        'src/pyrex/iterator.cpp',
+        'src/pyrex/options.cpp',
+        'src/pyrex/write_batch.cpp',
+    ],
     language='c++',
     include_dirs=[], 
     library_dirs=[],
     libraries=[],
     extra_compile_args=['-std=c++20'] if sys.platform != 'win32' else ['/std:c++20'],
 )
+
+pyrex_module.include_dirs.append(pybind11.get_include())
 
 # --- Main Setup Call ---
 
