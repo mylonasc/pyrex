@@ -11,15 +11,10 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -44,14 +39,8 @@ jobs:
       env:
         SPHINXOPTS: "-W --keep-going" # Add -W to treat warnings as errors, --keep-going to continue on errors
 
-    - name: Configure GitHub Pages
-      uses: actions/configure-pages@v5
-
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
+    - name: Deploy to gh-pages
+      uses: peaceiris/actions-gh-pages@v4
       with:
-        path: 'docs/build/html' # Path to your built HTML documentation
-
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/build/html
