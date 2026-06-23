@@ -71,10 +71,27 @@ print(f"Retrieved: {retrieved_value.decode()}") # Output: Retrieved: my_value
 
 for more examples check the relevant folder and the documentation.
 
+### Native columnar batch writes
+
+For Arrow-compatible binary or string arrays, `write_columnar_batch` moves the
+per-row batch construction loop into C++:
+
+```python
+import pyarrow as pa
+import pyrex
+
+keys = pa.array([b"k1", b"k2", b"k3"], type=pa.binary())
+values = pa.array([b"v1", b"v2", b"v3"], type=pa.binary())
+
+with pyrex.PyRocksDB("example_columnar_db") as db:
+    db.write_columnar_batch(keys, values)
+```
+
+Polars users can pass `series.to_arrow()`; Polars is not a required dependency.
+
 <details>
   <summary>Note on CICD</summary>
 The windows wheels are failing at the moment.
 The CICD workflow for package builds works and passes all tests only for MacOS and Linux. 
 </details>
-
 

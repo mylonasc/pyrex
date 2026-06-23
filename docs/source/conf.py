@@ -9,7 +9,7 @@
 project = 'pyrex-rocksdb'
 copyright = '2025, Charilaos Mylonas'
 author = 'Charilaos Mylonas'
-release = '0.1.1'
+release = '0.3.0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
