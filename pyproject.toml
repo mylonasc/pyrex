@@ -65,7 +65,7 @@ pyrex = ["*.pyi", "py.typed"]
 
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
-build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+build = "cp39-* cp310-* cp311-* cp312-*"
 build-verbosity = 3
 
 environment-pass = [
@@ -101,7 +101,7 @@ before-all = """
 
 # macOS specific configurations
 [tool.cibuildwheel.macos]
-skip=['cp38-*']
+skip=[]
 environment = { MACOSX_DEPLOYMENT_TARGET = "14.0", LDFLAGS = "-L/opt/homebrew/lib -L/usr/local/lib $LDFLAGS", CPPFLAGS = "-I/opt/homebrew/include -I/usr/local/include $CPPFLAGS" }
 
 before-build = """

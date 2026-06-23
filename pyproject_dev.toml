@@ -65,7 +65,7 @@ pyrex = ["*.pyi", "py.typed"]
 
 [tool.cibuildwheel]
 # Global build filter and skip patterns.
-build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+build = "cp39-* cp310-* cp311-* cp312-*"
 # build = "cp312-*"
 
 environment-pass = [
@@ -109,4 +109,3 @@ before-build = """
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 environment = { CMAKE_TOOLCHAIN_FILE = "{{project}}/vcpkg/scripts/buildsystems/vcpkg.cmake" }
-
