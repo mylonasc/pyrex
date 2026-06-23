@@ -6,17 +6,17 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pyrex-rocksdb documentation &mdash; pyrex-rocksdb 0.1.1 documentation</title>
+  <title>pyrex-rocksdb documentation &mdash; pyrex-rocksdb 0.3.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=a58bc63e"></script>
-      <script src="_static/doctools.js?v=9bcbadda"></script>
-      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/documentation_options.js?v=e259d695"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
       <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/js/theme.js"></script>
@@ -47,9 +47,9 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api.html#class-docs">Class Docs</a></li>
 </ul>
 
         </div>
@@ -78,9 +78,10 @@
              
   <section id="pyrex-rocksdb-documentation">
 <h1>pyrex-rocksdb documentation<a class="headerlink" href="#pyrex-rocksdb-documentation" title="Link to this heading"></a></h1>
-<p>Add your content using <code class="docutils literal notranslate"><span class="pre">reStructuredText</span></code> syntax. See the
-<a class="reference external" href="https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html">reStructuredText</a>
-documentation for details.</p>
+<p><code class="docutils literal notranslate"><span class="pre">pyrex-rocksdb</span></code> is a Python wrapper around RocksDB built with pybind11.
+It provides direct key-value operations, atomic write batches, iterators,
+column-family support, and native columnar batch ingestion for Arrow-compatible
+binary/string arrays.</p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
@@ -88,17 +89,31 @@ documentation for details.</p>
 <li class="toctree-l2"><a class="reference internal" href="examples.html#basic-put-and-get">Basic Put and Get</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples.html#configuring-options">Configuring Options</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples.html#atomic-write-batch">Atomic Write Batch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples.html#columnar-batch-ingestion">Columnar Batch Ingestion</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples.html#iterating-data">Iterating Data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples.html#error-handling">Error Handling</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#why-use-it">Why Use It</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#supported-inputs">Supported Inputs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#nulls-and-validation">Nulls and Validation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#pyarrow-example">PyArrow Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#polars-example">Polars Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#serialized-column-example">Serialized Column Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#write-options">Write Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="columnar_ingestion.html#benchmark">Benchmark</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api.html#class-docs">Class Docs</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api.html#pyrex.PyRocksDB"><code class="docutils literal notranslate"><span class="pre">PyRocksDB</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#pyrex.PyOptions"><code class="docutils literal notranslate"><span class="pre">PyOptions</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#pyrex.PyWriteBatch"><code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api.html#pyrex.PyRocksDBIterator"><code class="docutils literal notranslate"><span class="pre">PyRocksDBIterator</span></code></a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api.html#pyrocksdb">PyRocksDB</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#pyrocksdbextended">PyRocksDBExtended</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#pywritebatch">PyWriteBatch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#pyrocksdbiterator">PyRocksDBIterator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#options">Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#compressiontype">CompressionType</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api.html#exceptions">Exceptions</a></li>
 </ul>
 </li>
 </ul>

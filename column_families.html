@@ -6,24 +6,24 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Column Family Usage Example &mdash; pyrex-rocksdb 0.1.1 documentation</title>
+  <title>Column Family Usage Example &mdash; pyrex-rocksdb 0.3.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=a58bc63e"></script>
-      <script src="_static/doctools.js?v=9bcbadda"></script>
-      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/documentation_options.js?v=e259d695"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
       <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="API Reference" href="api.html" />
-    <link rel="prev" title="Examples" href="examples.html" /> 
+    <link rel="prev" title="Columnar Batch Ingestion" href="columnar_ingestion.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -48,9 +48,9 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Column Family Usage Example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api.html#class-docs">Class Docs</a></li>
 </ul>
 
         </div>
@@ -87,7 +87,7 @@ partition your data within a single database instance. This can be useful for
 managing different types of data with different access patterns or configurations.</p>
 <p>First, ensure you have the <cite>pyrex</cite> module installed (your Python wrapper for RocksDB).</p>
 </div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">_pyrex</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 
@@ -105,7 +105,7 @@ managing different types of data with different access patterns or configuration
 <span class="c1">#    This class provides methods for managing column families.</span>
 <span class="c1">#    We use a &#39;with&#39; statement to ensure the database is properly closed.</span>
 <span class="k">try</span><span class="p">:</span>
-    <span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDBExtended</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">_pyrex</span><span class="o">.</span><span class="n">PyRocksDBExtended</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Opened database at </span><span class="si">{</span><span class="n">DB_PATH</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="c1"># The default column family is always present</span>
@@ -192,10 +192,10 @@ managing different types of data with different access patterns or configuration
         <span class="c1"># Attempting to use a dropped column family handle will raise an exception</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">products_cf</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;new_prod&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;TV&quot;</span><span class="p">)</span>
-        <span class="k">except</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">except</span> <span class="n">_pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Caught expected error when using dropped CF handle: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-<span class="k">except</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<span class="k">except</span> <span class="n">_pyrex</span><span class="o">.</span><span class="n">RocksDBException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An unexpected error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -212,7 +212,7 @@ managing different types of data with different access patterns or configuration
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="examples.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="columnar_ingestion.html" class="btn btn-neutral float-left" title="Columnar Batch Ingestion" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

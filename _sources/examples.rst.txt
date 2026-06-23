@@ -36,6 +36,23 @@ Perform multiple `put` and `delete` operations in a single, atomic transaction.
    :caption: write_batch.py
    :linenos:
 
+Columnar Batch Ingestion
+------------------------
+
+Write Arrow-compatible key/value arrays with one Python call per chunk.
+
+.. code-block:: python
+
+   import pyarrow as pa
+   import pyrex
+
+   keys = pa.array([b"k1", b"k2", b"k3"], type=pa.binary())
+   values = pa.array([b"v1", b"v2", b"v3"], type=pa.binary())
+
+   with pyrex.PyRocksDB("example_columnar_db") as db:
+       db.write_columnar_batch(keys, values)
+       assert db.get(b"k1") == b"v1"
+
 Iterating Data
 --------------
 
@@ -55,6 +72,5 @@ Catch RocksDB-specific exceptions for robust applications.
    :language: python
    :caption: error_handling.py
    :linenos:
-
 
 

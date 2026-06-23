@@ -1,0 +1,252 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Columnar Batch Ingestion &mdash; pyrex-rocksdb 0.3.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=e259d695"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Column Family Usage Example" href="column_families.html" />
+    <link rel="prev" title="Examples" href="examples.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Columnar Batch Ingestion</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#why-use-it">Why Use It</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-inputs">Supported Inputs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#nulls-and-validation">Nulls and Validation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pyarrow-example">PyArrow Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#polars-example">Polars Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#serialized-column-example">Serialized Column Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#write-options">Write Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#benchmark">Benchmark</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Columnar Batch Ingestion</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/columnar_ingestion.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="columnar-batch-ingestion">
+<h1>Columnar Batch Ingestion<a class="headerlink" href="#columnar-batch-ingestion" title="Link to this heading"></a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.write_columnar_batch</span></code> writes many key/value records through one
+native RocksDB <code class="docutils literal notranslate"><span class="pre">WriteBatch</span></code> call. It is intended for Arrow-compatible data
+pipelines where keys and values are already stored in contiguous binary or
+string buffers.</p>
+<section id="why-use-it">
+<h2>Why Use It<a class="headerlink" href="#why-use-it" title="Link to this heading"></a></h2>
+<p>The traditional Python write-batch API is atomic, but still calls from Python
+into C++ for every row:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">batch</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyWriteBatch</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+    <span class="n">batch</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+<span class="n">db</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">write_columnar_batch</span></code> moves that per-row loop into C++:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">db</span><span class="o">.</span><span class="n">write_columnar_batch</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This reduces Python loop overhead, Python-to-C++ call overhead, and Python
+<code class="docutils literal notranslate"><span class="pre">bytes</span></code> materialization when Arrow binary or string arrays are passed.</p>
+</section>
+<section id="supported-inputs">
+<h2>Supported Inputs<a class="headerlink" href="#supported-inputs" title="Link to this heading"></a></h2>
+<p>The method accepts:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pyarrow.Array</span></code> with type <code class="docutils literal notranslate"><span class="pre">binary</span></code> or <code class="docutils literal notranslate"><span class="pre">large_binary</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pyarrow.Array</span></code> with type <code class="docutils literal notranslate"><span class="pre">string</span></code> or <code class="docutils literal notranslate"><span class="pre">large_string</span></code></p></li>
+<li><p>Polars <code class="docutils literal notranslate"><span class="pre">Series</span></code> indirectly through <code class="docutils literal notranslate"><span class="pre">series.to_arrow()</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">list[bytes]</span></code> and <code class="docutils literal notranslate"><span class="pre">tuple[bytes]</span></code> as compatibility fallbacks</p></li>
+</ul>
+<p>Polars is not imported or required by <code class="docutils literal notranslate"><span class="pre">pyrex-rocksdb</span></code>. Convert Polars data to
+Arrow before calling the API.</p>
+</section>
+<section id="nulls-and-validation">
+<h2>Nulls and Validation<a class="headerlink" href="#nulls-and-validation" title="Link to this heading"></a></h2>
+<p>The first implementation supports only <code class="docutils literal notranslate"><span class="pre">on_null=&quot;error&quot;</span></code>. If any key or value
+is null, the method raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> before writing anything.</p>
+<p>Keys and values must have the same length. Mismatched lengths raise
+<code class="docutils literal notranslate"><span class="pre">ValueError</span></code> before writing anything.</p>
+</section>
+<section id="pyarrow-example">
+<h2>PyArrow Example<a class="headerlink" href="#pyarrow-example" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+
+<span class="n">keys</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="sa">b</span><span class="s2">&quot;k1&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;k2&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;k3&quot;</span><span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">binary</span><span class="p">())</span>
+<span class="n">values</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="sa">b</span><span class="s2">&quot;v1&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;v2&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;v3&quot;</span><span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">binary</span><span class="p">())</span>
+
+<span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="s2">&quot;example_rocksdb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+    <span class="n">db</span><span class="o">.</span><span class="n">write_columnar_batch</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;k2&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;v2&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="polars-example">
+<h2>Polars Example<a class="headerlink" href="#polars-example" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+    <span class="s2">&quot;key&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;k1&quot;</span><span class="p">,</span> <span class="s2">&quot;k2&quot;</span><span class="p">,</span> <span class="s2">&quot;k3&quot;</span><span class="p">],</span>
+    <span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="p">[</span><span class="sa">b</span><span class="s2">&quot;v1&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;v2&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;v3&quot;</span><span class="p">],</span>
+<span class="p">})</span>
+
+<span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="s2">&quot;example_rocksdb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+    <span class="n">db</span><span class="o">.</span><span class="n">write_columnar_batch</span><span class="p">(</span>
+        <span class="n">df</span><span class="p">[</span><span class="s2">&quot;key&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_arrow</span><span class="p">(),</span>
+        <span class="n">df</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_arrow</span><span class="p">(),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="serialized-column-example">
+<h2>Serialized Column Example<a class="headerlink" href="#serialized-column-example" title="Link to this heading"></a></h2>
+<p>Higher-level libraries can serialize whole columns or chunks and store those
+serialized payloads as values. The key/value primitive remains generic; it does
+not know about graph, table, or dataframe semantics.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">]})</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">serialize_column</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+    <span class="n">array</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">to_arrow</span><span class="p">()</span>
+    <span class="n">batch</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatch</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">([</span><span class="n">array</span><span class="p">],</span> <span class="n">names</span><span class="o">=</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+    <span class="n">sink</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">pa</span><span class="o">.</span><span class="n">ipc</span><span class="o">.</span><span class="n">new_stream</span><span class="p">(</span><span class="n">sink</span><span class="p">,</span> <span class="n">batch</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span> <span class="k">as</span> <span class="n">writer</span><span class="p">:</span>
+        <span class="n">writer</span><span class="o">.</span><span class="n">write_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sink</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+
+<span class="n">keys</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="sa">b</span><span class="s2">&quot;column:id&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;column:name&quot;</span><span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">binary</span><span class="p">())</span>
+<span class="n">values</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+    <span class="n">serialize_column</span><span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">),</span>
+    <span class="n">serialize_column</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">),</span>
+<span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">binary</span><span class="p">())</span>
+
+<span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="s2">&quot;columns_rocksdb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+    <span class="n">db</span><span class="o">.</span><span class="n">write_columnar_batch</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="write-options">
+<h2>Write Options<a class="headerlink" href="#write-options" title="Link to this heading"></a></h2>
+<p>The method accepts the existing <code class="docutils literal notranslate"><span class="pre">WriteOptions</span></code> object:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">opts</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">WriteOptions</span><span class="p">()</span>
+<span class="n">opts</span><span class="o">.</span><span class="n">disable_wal</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="n">db</span><span class="o">.</span><span class="n">write_columnar_batch</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">write_options</span><span class="o">=</span><span class="n">opts</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Disabling WAL can improve write throughput but reduces durability. If the
+process or machine crashes before data reaches stable storage, recent writes may
+be lost.</p>
+</section>
+<section id="benchmark">
+<h2>Benchmark<a class="headerlink" href="#benchmark" title="Link to this heading"></a></h2>
+<p>The repository includes a focused benchmark:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>benchmarks/bench_columnar_batch.py<span class="w"> </span>--rows<span class="w"> </span><span class="m">100000</span><span class="w"> </span>--repeat<span class="w"> </span><span class="m">3</span><span class="w"> </span>--disable-wal
+python<span class="w"> </span>benchmarks/bench_columnar_batch.py<span class="w"> </span>--rows<span class="w"> </span><span class="m">1000000</span><span class="w"> </span>--repeat<span class="w"> </span><span class="m">3</span><span class="w"> </span>--disable-wal
+</pre></div>
+</div>
+<p>On the development machine used for the initial implementation, the native
+Arrow binary path was about <code class="docutils literal notranslate"><span class="pre">1.7x</span></code> faster than a Python loop calling
+<code class="docutils literal notranslate"><span class="pre">PyWriteBatch.put</span></code> for each row.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="examples.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="column_families.html" class="btn btn-neutral float-right" title="Column Family Usage Example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
