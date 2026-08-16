@@ -360,4 +360,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: upload_dist
-          password: ${{ secrets.PYPI_API_TOKEN }}
