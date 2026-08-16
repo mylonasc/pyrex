@@ -141,7 +141,7 @@ jobs:
       # Build wheels (non-ARM)
       # -----------------------
       - name: Build wheels (non-ARM)
-        if: matrix.cibw_archs_linux != 'aarch64'
+        if: runner.os == 'Linux' && matrix.cibw_archs_linux != 'aarch64'
         env:
           CIBW_ARCHS_LINUX: ${{ matrix.cibw_archs_linux }}
           CIBW_ENVIRONMENT: >-
@@ -338,7 +338,7 @@ jobs:
     name: Publish wheels to PyPI
     needs: test_wheels
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
       id-token: write
@@ -349,20 +349,15 @@ jobs:
         with:
           path: dist
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install twine
+      - name: Prepare wheels for publish
         run: |
-          python -m pip install --upgrade pip
-          pip install twine
-
-      - name: Verify wheels
-        run: |
-          ls -R dist/
+          mkdir -p upload_dist
+          find dist -name '*.whl' -exec cp {} upload_dist/ \;
+          test -n "$(find upload_dist -name '*.whl' -print -quit)"
+          ls -lh upload_dist/
 
       - name: Publish to PyPI
-        run: |
-          twine upload --non-interactive dist/**/*.whl
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: upload_dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
