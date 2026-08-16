@@ -50,7 +50,7 @@ jobs:
 
     env:
       ROCKSDB_VERSION: "10.7.5"
-      PYREX_VERSION: "0.3.0"
+      PYREX_VERSION: "0.4.0"
 
       # Your existing global cibuildwheel knobs
       CIBW_FORCE_INSTALL: "1"
@@ -76,7 +76,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       CIBW_ENVIRONMENT_MACOS: >-
         MACOSX_DEPLOYMENT_TARGET='14.0'
-        PYREX_VERSION='0.3.0'
+        PYREX_VERSION='0.4.0'
         ROCKSDB_VERSION='10.7.5'
 
     steps:
@@ -218,7 +218,7 @@ jobs:
                  libzstd-devel liburing-devel)
             fi
 
-            CACHE_TARBALL="/cibw-cache/rocksdb-v${ROCKSDB_VERSION}-${ARCH}-${LIBC}-${IMAGE_TAG}-flags-${SAFE_FLAGS}.tar.gz"
+            CACHE_TARBALL="/cibw-cache/rocksdb-v${ROCKSDB_VERSION}-${ARCH}-${LIBC}-${IMAGE_TAG}-rtti-on-flags-${SAFE_FLAGS}.tar.gz"
             if [ -f "${CACHE_TARBALL}" ]; then
               echo "✅ Restoring cached RocksDB from ${CACHE_TARBALL}"
               mkdir -p "${PREFIX}"
@@ -247,6 +247,7 @@ jobs:
               -DWITH_TOOLS=OFF \
               -DWITH_TESTS=OFF \
               -DWITH_BENCHMARK_TOOLS=OFF \
+              -DUSE_RTTI=ON \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
               -DCMAKE_C_FLAGS="${FLAGS}" \
