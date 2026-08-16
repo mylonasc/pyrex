@@ -59,7 +59,7 @@ jobs:
 
       # Build selection (from ARM workflow; keep if you want same set on x86)
       CIBW_SKIP: ""
-      CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
+      CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 
       # Host cache from your original workflow
       HOST_CACHE_DIR: "/tmp/cibw_cache"
@@ -279,7 +279,7 @@ jobs:
       fail-fast: false
       matrix:
         id: [linux-x86_64, linux-aarch64]
-        python-version: ["3.9","3.10","3.11","3.12"]
+        python-version: ["3.9","3.10","3.11","3.12","3.13","3.14"]
         include:
           - id: linux-x86_64
             runs_on: ubuntu-latest

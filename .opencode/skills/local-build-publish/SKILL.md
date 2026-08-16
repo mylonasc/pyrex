@@ -91,6 +91,7 @@ TWINE_PASSWORD="$TEST_PYPI_TOKEN" ./scripts/build_script.sh --publish --testpypi
 - macOS builds need Homebrew dependencies from the CI config: `cmake`, `snappy`, `lz4`, `zstd`, `zlib`, and `bzip2`.
 - Windows builds depend on `VCPKG_ROOT` and `ROCKSDB_VERSION_VSPKG` handling in `setup.py`.
 - `twine check` should pass before upload.
+- Do not use `-march=native` for published Linux wheels; it can emit CPU instructions unsupported by GitHub test runners or user machines.
 
 ## Verification
 
