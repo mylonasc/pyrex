@@ -908,6 +908,58 @@ class TestPyrexTransactions(unittest.TestCase):
         with self.assertRaises(pyrex.RocksDBException):
             txn.put(b"k2", b"v2")
 
+    def test_13_get_for_update_reads_and_tracks_keys(self):
+        db = self.open_db()
+        db.put(b"existing", b"value")
+
+        txn = db.begin_transaction()
+        self.assertTrue(hasattr(txn, "get_for_update"))
+        self.assertEqual(txn.get_for_update(b"existing"), b"value")
+        self.assertIsNone(txn.get_for_update(b"missing"))
+        txn.put(b"local", b"txn_value")
+        self.assertEqual(txn.get_for_update(b"local"), b"txn_value")
+        txn.rollback()
+
+    def test_14_get_for_update_can_lock_without_reading_value(self):
+        txn_db_options = pyrex.TransactionDBOptions()
+        txn_db_options.default_lock_timeout = 20
+        db = self.open_db(txn_db_options)
+        db.put(b"locked", b"value")
+
+        txn_options = pyrex.TransactionOptions()
+        txn_options.lock_timeout = 20
+
+        txn1 = db.begin_transaction(None, txn_options)
+        self.assertIsNone(txn1.get_for_update(b"locked", read_value=False))
+        result = []
+
+        def write_conflict():
+            txn2 = db.begin_transaction(None, txn_options)
+            try:
+                txn2.put(b"locked", b"txn2")
+            except pyrex.RocksDBException as exc:
+                result.append(exc)
+            finally:
+                if txn2.is_active:
+                    txn2.rollback()
+
+        thread = threading.Thread(target=write_conflict)
+        thread.start()
+        thread.join(timeout=5)
+        self.assertFalse(thread.is_alive())
+        txn1.rollback()
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], (pyrex.RocksDBBusyError, pyrex.RocksDBTimeoutError, pyrex.RocksDBConflictError))
+
+    def test_15_get_for_update_after_completion_raises(self):
+        db = self.open_db()
+        txn = db.begin_transaction()
+        txn.commit()
+
+        with self.assertRaises(pyrex.RocksDBException):
+            txn.get_for_update(b"k")
+
 
 if __name__ == '__main__':
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

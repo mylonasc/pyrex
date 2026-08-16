@@ -230,6 +230,11 @@ void bind_pyrex(py::module_& m) {
     )doc")
         .def("put", &PyTransaction::put, py::arg("key"), py::arg("value"), "Adds a key-value write to the transaction.", py::call_guard<py::gil_scoped_release>())
         .def("get", &PyTransaction::get, py::arg("key"), py::arg("read_options") = nullptr, "Reads a key through the transaction view.")
+        .def("get_for_update", &PyTransaction::get_for_update, py::arg("key"), py::arg("read_options") = nullptr, py::arg("exclusive") = true, py::arg("do_validate") = true, py::arg("read_value") = true, R"doc(
+            Reads a key through the transaction view and tracks it for conflict
+            checking. When read_value is False, locks/tracks the key without
+            fetching the value and returns None.
+        )doc")
         .def("delete", &PyTransaction::del, py::arg("key"), "Adds a key deletion to the transaction.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyTransaction::write, py::arg("write_batch"), "Applies a PyWriteBatch inside the transaction.", py::call_guard<py::gil_scoped_release>())
         .def("commit", &PyTransaction::commit, py::arg("write_options") = nullptr, "Commits the transaction.", py::call_guard<py::gil_scoped_release>())

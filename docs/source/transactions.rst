@@ -86,6 +86,24 @@ prefix and stopping when keys no longer match.
 
            txn.rollback()
 
+Read For Update
+---------------
+
+``get_for_update`` reads a key and tracks it for transaction conflict checking.
+Pass ``read_value=False`` to lock or track the key without fetching its value.
+
+.. code-block:: python
+
+   import pyrex
+
+   with pyrex.TransactionDB("example_txn_db") as db:
+       db.put(b"account:alice", b"100")
+
+       with db.transaction() as txn:
+           assert txn.get_for_update(b"account:alice") == b"100"
+           txn.get_for_update(b"account:bob", read_value=False)
+           txn.commit()
+
 Transaction Options
 -------------------
 

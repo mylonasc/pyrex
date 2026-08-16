@@ -88,6 +88,7 @@ Methods and properties:
 
 * ``put(key: bytes, value: bytes) -> None``
 * ``get(key: bytes, read_options=None) -> bytes | None``
+* ``get_for_update(key: bytes, read_options=None, exclusive=True, do_validate=True, read_value=True) -> bytes | None``
 * ``delete(key: bytes) -> None``
 * ``write(write_batch: PyWriteBatch) -> None``
 * ``commit(write_options=None) -> None``
@@ -99,6 +100,10 @@ Methods and properties:
 Transaction reads see prior writes in the same transaction. ``write`` accepts
 existing ``PyWriteBatch`` objects for default column-family ``put`` and
 ``delete`` operations.
+
+``get_for_update`` reads and tracks a key for transaction conflict checking. Set
+``read_value=False`` to lock or track the key without fetching the value; the
+method returns ``None`` in that mode.
 
 PyTransactionIterator
 ---------------------

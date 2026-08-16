@@ -39,6 +39,7 @@ public:
 
     void put(const py::bytes& key, const py::bytes& value);
     py::object get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr);
+    py::object get_for_update(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr, bool exclusive = true, bool do_validate = true, bool read_value = true);
     void del(const py::bytes& key);
     void write(PyWriteBatch& batch);
     void commit(std::shared_ptr<PyWriteOptions> write_options = nullptr);

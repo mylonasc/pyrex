@@ -110,6 +110,19 @@ py::object PyTransaction::get(const py::bytes& key, std::shared_ptr<PyReadOption
     throw_rocksdb_status(s, "Transaction get failed");
 }
 
+py::object PyTransaction::get_for_update(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options, bool exclusive, bool do_validate, bool read_value) {
+    check_active();
+    std::string value_str;
+    rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+    std::string* value = read_value ? &value_str : nullptr;
+    rocksdb::Status s = txn_->GetForUpdate(opts, key_slice, value, exclusive, do_validate);
+    if (!read_value && s.ok()) return py::none();
+    if (s.ok()) return py::bytes(value_str);
+    if (s.IsNotFound()) return py::none();
+    throw_rocksdb_status(s, "Transaction get_for_update failed");
+}
+
 void PyTransaction::del(const py::bytes& key) {
     check_active();
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));

@@ -139,6 +139,9 @@ with pyrex.TransactionDB("example_txn_db") as db:
 `disable_wal=True` is not fully durable across crashes. Transaction conflicts
 and lock timeouts are exposed through specific exception subclasses such as
 `RocksDBBusyError`, `RocksDBTimeoutError`, and `RocksDBConflictError`.
+Use `txn.get_for_update(key)` to read and track a key for conflict checking, or
+`txn.get_for_update(key, read_value=False)` to lock/track it without fetching
+the value.
 
 <details>
   <summary>Note on CICD</summary>
