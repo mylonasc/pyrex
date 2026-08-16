@@ -133,6 +133,7 @@ class build_ext(_build_ext):
                 "-DROCKSDB_BUILD_SHARED=OFF",
                 "-DFAIL_ON_WARNINGS=OFF",
                 "-DWITH_TESTS=OFF",
+                "-DUSE_RTTI=ON",
 
                 "-DWITH_SNAPPY=ON",
                 "-DWITH_LZ4=ON",
@@ -302,6 +303,8 @@ pyrex_module = Extension(
         'src/pyrex/db.cpp',
         'src/pyrex/iterator.cpp',
         'src/pyrex/options.cpp',
+        'src/pyrex/transaction.cpp',
+        'src/pyrex/transaction_db.cpp',
         'src/pyrex/write_batch.cpp',
     ],
     language='c++',

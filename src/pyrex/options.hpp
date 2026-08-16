@@ -1,6 +1,8 @@
 #pragma once
 
 #include "rocksdb/options.h"
+#include "rocksdb/utilities/transaction.h"
+#include "rocksdb/utilities/transaction_db.h"
 
 class PyReadOptions {
 public:
@@ -52,4 +54,36 @@ public:
     void set_cf_write_buffer_size(size_t value);
     rocksdb::CompressionType get_cf_compression() const;
     void set_cf_compression(rocksdb::CompressionType value);
+};
+
+class PyTransactionDBOptions {
+public:
+    rocksdb::TransactionDBOptions options_;
+
+    PyTransactionDBOptions() = default;
+
+    int64_t get_transaction_lock_timeout() const;
+    void set_transaction_lock_timeout(int64_t value);
+    int64_t get_default_lock_timeout() const;
+    void set_default_lock_timeout(int64_t value);
+    int64_t get_max_num_locks() const;
+    void set_max_num_locks(int64_t value);
+    size_t get_num_stripes() const;
+    void set_num_stripes(size_t value);
+};
+
+class PyTransactionOptions {
+public:
+    rocksdb::TransactionOptions options_;
+
+    PyTransactionOptions() = default;
+
+    bool get_set_snapshot() const;
+    void set_set_snapshot(bool value);
+    int64_t get_lock_timeout() const;
+    void set_lock_timeout(int64_t value);
+    int64_t get_expiration() const;
+    void set_expiration(int64_t value);
+    bool get_deadlock_detect() const;
+    void set_deadlock_detect(bool value);
 };

@@ -3,6 +3,7 @@ import unittest
 import os
 import shutil
 import io
+import threading
 
 try:
     import pyarrow as pa
@@ -693,6 +694,216 @@ class TestPyrex(unittest.TestCase):
             retrieved = self.db.get(f"column:{name}".encode())
             restored = deserialize_column(retrieved)
             self.assertEqual(restored.to_pylist(), df[name].to_arrow().to_pylist())
+
+
+class TestPyrexTransactions(unittest.TestCase):
+    DB_BASE_PATH = "/tmp/test_pyrex_transaction_db"
+
+    @classmethod
+    def setUpClass(cls):
+        os.makedirs(cls.DB_BASE_PATH, exist_ok=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        if os.path.exists(cls.DB_BASE_PATH):
+            shutil.rmtree(cls.DB_BASE_PATH)
+
+    def setUp(self):
+        self.db_path = os.path.join(self.DB_BASE_PATH, self._testMethodName)
+        if os.path.exists(self.db_path):
+            shutil.rmtree(self.db_path)
+        self.db = None
+
+    def tearDown(self):
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+        if os.path.exists(self.db_path):
+            shutil.rmtree(self.db_path)
+
+    def open_db(self, txn_db_options=None):
+        self.db = pyrex.TransactionDB(self.db_path, None, txn_db_options)
+        return self.db
+
+    def test_01_capability_and_options_surface(self):
+        self.assertTrue(pyrex.has_transactions)
+        self.assertTrue(hasattr(pyrex, "TransactionDB"))
+        self.assertTrue(issubclass(pyrex.RocksDBConflictError, pyrex.RocksDBException))
+        self.assertTrue(issubclass(pyrex.RocksDBTimeoutError, pyrex.RocksDBException))
+        self.assertTrue(issubclass(pyrex.RocksDBBusyError, pyrex.RocksDBException))
+
+        txn_db_opts = pyrex.TransactionDBOptions()
+        txn_db_opts.default_lock_timeout = 25
+        txn_db_opts.transaction_lock_timeout = 50
+        txn_db_opts.max_num_locks = 1000
+        txn_db_opts.num_stripes = 8
+
+        txn_opts = pyrex.TransactionOptions()
+        txn_opts.set_snapshot = True
+        txn_opts.lock_timeout = 10
+        txn_opts.expiration = 5000
+        txn_opts.deadlock_detect = True
+
+        self.assertEqual(txn_db_opts.default_lock_timeout, 25)
+        self.assertEqual(txn_db_opts.transaction_lock_timeout, 50)
+        self.assertEqual(txn_db_opts.max_num_locks, 1000)
+        self.assertEqual(txn_db_opts.num_stripes, 8)
+        self.assertTrue(txn_opts.set_snapshot)
+        self.assertEqual(txn_opts.lock_timeout, 10)
+        self.assertEqual(txn_opts.expiration, 5000)
+        self.assertTrue(txn_opts.deadlock_detect)
+
+    def test_02_commit_persists_after_reopen(self):
+        db = self.open_db()
+        txn = db.begin_transaction()
+        txn.put(b"k1", b"v1")
+        txn.put(b"k2", b"v2")
+        self.assertEqual(txn.get(b"k1"), b"v1")
+        txn.commit()
+        db.close()
+        self.db = None
+
+        self.db = pyrex.TransactionDB(self.db_path)
+        self.assertEqual(self.db.get(b"k1"), b"v1")
+        self.assertEqual(self.db.get(b"k2"), b"v2")
+
+    def test_03_rollback_discards_writes(self):
+        db = self.open_db()
+        db.put(b"existing", b"old")
+        txn = db.begin_transaction()
+        txn.put(b"existing", b"new")
+        txn.put(b"new", b"value")
+        txn.delete(b"existing")
+        self.assertIsNone(txn.get(b"existing"))
+        txn.rollback()
+
+        self.assertEqual(db.get(b"existing"), b"old")
+        self.assertIsNone(db.get(b"new"))
+
+    def test_04_context_manager_rolls_back_without_explicit_commit(self):
+        db = self.open_db()
+        with db.transaction() as txn:
+            txn.put(b"k", b"v")
+            self.assertEqual(txn.get(b"k"), b"v")
+
+        self.assertIsNone(db.get(b"k"))
+
+    def test_05_context_manager_keeps_explicit_commit(self):
+        db = self.open_db()
+        with db.transaction() as txn:
+            txn.put(b"k", b"v")
+            txn.commit()
+
+        self.assertEqual(db.get(b"k"), b"v")
+
+    def test_06_context_manager_rolls_back_on_exception(self):
+        db = self.open_db()
+        with self.assertRaises(ValueError):
+            with db.transaction() as txn:
+                txn.put(b"k", b"v")
+                raise ValueError("boom")
+
+        self.assertIsNone(db.get(b"k"))
+
+    def test_07_transaction_write_batch(self):
+        db = self.open_db()
+        batch = pyrex.PyWriteBatch()
+        batch.put(b"batch_key_1", b"batch_value_1")
+        batch.put(b"batch_key_2", b"batch_value_2")
+        batch.delete(b"batch_key_1")
+
+        txn = db.begin_transaction()
+        txn.write(batch)
+        self.assertIsNone(txn.get(b"batch_key_1"))
+        self.assertEqual(txn.get(b"batch_key_2"), b"batch_value_2")
+        txn.commit()
+
+        self.assertIsNone(db.get(b"batch_key_1"))
+        self.assertEqual(db.get(b"batch_key_2"), b"batch_value_2")
+
+    def test_08_transaction_iterator_sees_local_writes(self):
+        db = self.open_db()
+        db.put(b"a1", b"old")
+        db.put(b"c1", b"old")
+
+        txn = db.begin_transaction()
+        txn.put(b"b1", b"new")
+        txn.delete(b"c1")
+        it = txn.new_iterator()
+        it.seek(b"a")
+        seen = []
+        while it.valid():
+            seen.append((it.key(), it.value()))
+            it.next()
+
+        self.assertIn((b"a1", b"old"), seen)
+        self.assertIn((b"b1", b"new"), seen)
+        self.assertNotIn((b"c1", b"old"), seen)
+        txn.rollback()
+
+    def test_09_operations_after_completion_raise(self):
+        db = self.open_db()
+        txn = db.begin_transaction()
+        txn.put(b"k", b"v")
+        txn.commit()
+        self.assertFalse(txn.is_active)
+
+        with self.assertRaises(pyrex.RocksDBException):
+            txn.put(b"k2", b"v2")
+        with self.assertRaises(pyrex.RocksDBException):
+            txn.commit()
+        with self.assertRaises(pyrex.RocksDBException):
+            txn.rollback()
+
+    def test_10_write_options_disable_wal_passthrough(self):
+        db = self.open_db()
+        write_options = pyrex.WriteOptions()
+        write_options.disable_wal = True
+        txn = db.begin_transaction(write_options)
+        txn.put(b"k", b"v")
+        txn.commit(write_options)
+        self.assertEqual(db.get(b"k"), b"v")
+
+    def test_11_conflicting_transactions_raise_retryable_error(self):
+        txn_db_options = pyrex.TransactionDBOptions()
+        txn_db_options.default_lock_timeout = 20
+        db = self.open_db(txn_db_options)
+
+        txn_options = pyrex.TransactionOptions()
+        txn_options.lock_timeout = 20
+
+        txn1 = db.begin_transaction(None, txn_options)
+        txn1.put(b"locked", b"txn1")
+        result = []
+
+        def write_conflict():
+            txn2 = db.begin_transaction(None, txn_options)
+            try:
+                txn2.put(b"locked", b"txn2")
+            except pyrex.RocksDBException as exc:
+                result.append(exc)
+            finally:
+                if txn2.is_active:
+                    txn2.rollback()
+
+        thread = threading.Thread(target=write_conflict)
+        thread.start()
+        thread.join(timeout=5)
+        self.assertFalse(thread.is_alive())
+        txn1.rollback()
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], (pyrex.RocksDBBusyError, pyrex.RocksDBTimeoutError, pyrex.RocksDBConflictError))
+
+    def test_12_close_invalidates_active_transaction(self):
+        db = self.open_db()
+        txn = db.begin_transaction()
+        txn.put(b"k", b"v")
+        db.close()
+        self.db = None
+
+        with self.assertRaises(pyrex.RocksDBException):
+            txn.put(b"k2", b"v2")
 
 
 if __name__ == '__main__':
