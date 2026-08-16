@@ -10,6 +10,8 @@
 #include "exceptions.hpp"
 #include "iterator.hpp"
 #include "options.hpp"
+#include "transaction.hpp"
+#include "transaction_db.hpp"
 #include "write_batch.hpp"
 
 #include "rocksdb/options.h"
@@ -25,7 +27,15 @@ void bind_pyrex(py::module_& m) {
            adds full support for creating, managing, and using multiple Column Families.
     )doc";
 
+    m.attr("has_transactions") = true;
+
     static py::exception<RocksDBException> rocksdb_exception(m, "RocksDBException", PyExc_RuntimeError);
+    static py::exception<RocksDBConflictError> rocksdb_conflict_error(m, "RocksDBConflictError", rocksdb_exception.ptr());
+    static py::exception<RocksDBTimeoutError> rocksdb_timeout_error(m, "RocksDBTimeoutError", rocksdb_exception.ptr());
+    static py::exception<RocksDBBusyError> rocksdb_busy_error(m, "RocksDBBusyError", rocksdb_exception.ptr());
+    static py::exception<RocksDBCorruptionError> rocksdb_corruption_error(m, "RocksDBCorruptionError", rocksdb_exception.ptr());
+    static py::exception<RocksDBIOError> rocksdb_io_error(m, "RocksDBIOError", rocksdb_exception.ptr());
+    static py::exception<RocksDBInvalidArgumentError> rocksdb_invalid_argument_error(m, "RocksDBInvalidArgumentError", rocksdb_exception.ptr());
     rocksdb_exception.doc() = R"doc(
         Custom exception raised for RocksDB-specific operational errors.
 
@@ -39,6 +49,18 @@ void bind_pyrex(py::module_& m) {
             if (p) {
                 std::rethrow_exception(p);
             }
+        } catch (const RocksDBConflictError &e) {
+            PyErr_SetString(rocksdb_conflict_error.ptr(), e.what());
+        } catch (const RocksDBTimeoutError &e) {
+            PyErr_SetString(rocksdb_timeout_error.ptr(), e.what());
+        } catch (const RocksDBBusyError &e) {
+            PyErr_SetString(rocksdb_busy_error.ptr(), e.what());
+        } catch (const RocksDBCorruptionError &e) {
+            PyErr_SetString(rocksdb_corruption_error.ptr(), e.what());
+        } catch (const RocksDBIOError &e) {
+            PyErr_SetString(rocksdb_io_error.ptr(), e.what());
+        } catch (const RocksDBInvalidArgumentError &e) {
+            PyErr_SetString(rocksdb_invalid_argument_error.ptr(), e.what());
         } catch (const RocksDBException &e) {
             PyErr_SetString(rocksdb_exception.ptr(), e.what());
         }
@@ -101,6 +123,38 @@ void bind_pyrex(py::module_& m) {
         .def_property("cf_write_buffer_size", &PyOptions::get_cf_write_buffer_size, &PyOptions::set_cf_write_buffer_size, "Default write_buffer_size for newly created Column Families.")
         .def_property("cf_compression", &PyOptions::get_cf_compression, &PyOptions::set_cf_compression, "Default compression type for newly created Column Families.");
 
+    py::class_<PyTransactionDBOptions>(m, "TransactionDBOptions", R"doc(
+        Configuration options for opening RocksDB TransactionDB.
+
+        Example:
+            opts = pyrex.TransactionDBOptions()
+            opts.default_lock_timeout = 1000
+            opts.transaction_lock_timeout = 1000
+            db = pyrex.TransactionDB("path", None, opts)
+    )doc")
+        .def(py::init<>(), "Constructs a new TransactionDBOptions object with default settings.")
+        .def_property("transaction_lock_timeout", &PyTransactionDBOptions::get_transaction_lock_timeout, &PyTransactionDBOptions::set_transaction_lock_timeout, "Lock timeout in milliseconds for transaction lock acquisition.")
+        .def_property("default_lock_timeout", &PyTransactionDBOptions::get_default_lock_timeout, &PyTransactionDBOptions::set_default_lock_timeout, "Default lock timeout in milliseconds.")
+        .def_property("max_num_locks", &PyTransactionDBOptions::get_max_num_locks, &PyTransactionDBOptions::set_max_num_locks, "Maximum number of transaction locks.")
+        .def_property("num_stripes", &PyTransactionDBOptions::get_num_stripes, &PyTransactionDBOptions::set_num_stripes, "Number of lock table stripes.");
+
+    py::class_<PyTransactionOptions, std::shared_ptr<PyTransactionOptions>>(m, "TransactionOptions", R"doc(
+        Per-transaction options for RocksDB TransactionDB transactions.
+
+        Example:
+            opts = pyrex.TransactionOptions()
+            opts.set_snapshot = True
+            opts.lock_timeout = 1000
+            with db.transaction(None, opts) as txn:
+                txn.put(b"k", b"v")
+                txn.commit()
+    )doc")
+        .def(py::init<>(), "Constructs a new TransactionOptions object with default settings.")
+        .def_property("set_snapshot", &PyTransactionOptions::get_set_snapshot, &PyTransactionOptions::set_set_snapshot, "If True, sets a transaction snapshot at begin time.")
+        .def_property("lock_timeout", &PyTransactionOptions::get_lock_timeout, &PyTransactionOptions::set_lock_timeout, "Per-transaction lock timeout in milliseconds.")
+        .def_property("expiration", &PyTransactionOptions::get_expiration, &PyTransactionOptions::set_expiration, "Transaction expiration timeout in milliseconds.")
+        .def_property("deadlock_detect", &PyTransactionOptions::get_deadlock_detect, &PyTransactionOptions::set_deadlock_detect, "Enables deadlock detection for this transaction.");
+
     py::class_<PyColumnFamilyHandle, std::shared_ptr<PyColumnFamilyHandle>>(m, "ColumnFamilyHandle", R"doc(
         Represents a handle to a RocksDB Column Family.
 
@@ -134,6 +188,108 @@ void bind_pyrex(py::module_& m) {
         .def("key", &PyRocksDBIterator::key, "Returns the current key as bytes, or None if invalid.")
         .def("value", &PyRocksDBIterator::value, "Returns the current value as bytes, or None if invalid.")
         .def("check_status", &PyRocksDBIterator::check_status, "Raises RocksDBException if an error occurred during iteration.", py::call_guard<py::gil_scoped_release>());
+
+    py::class_<PyTransactionIterator, std::shared_ptr<PyTransactionIterator>>(m, "PyTransactionIterator", R"doc(
+        An iterator over a RocksDB transaction view.
+
+        Example:
+            it = txn.new_iterator()
+            it.seek(b"user:")
+            while it.valid() and it.key().startswith(b"user:"):
+                print(it.key(), it.value())
+                it.next()
+    )doc")
+        .def("valid", &PyTransactionIterator::valid, "Returns True if the iterator is currently positioned at a valid entry.", py::call_guard<py::gil_scoped_release>())
+        .def("seek_to_first", &PyTransactionIterator::seek_to_first, "Positions the iterator at the first key.", py::call_guard<py::gil_scoped_release>())
+        .def("seek_to_last", &PyTransactionIterator::seek_to_last, "Positions the iterator at the last key.", py::call_guard<py::gil_scoped_release>())
+        .def("seek", &PyTransactionIterator::seek, py::arg("key"), "Positions the iterator at the first key >= the given key.", py::call_guard<py::gil_scoped_release>())
+        .def("next", &PyTransactionIterator::next, "Moves the iterator to the next entry.", py::call_guard<py::gil_scoped_release>())
+        .def("prev", &PyTransactionIterator::prev, "Moves the iterator to the previous entry.", py::call_guard<py::gil_scoped_release>())
+        .def("key", &PyTransactionIterator::key, "Returns the current key as bytes, or None if invalid.")
+        .def("value", &PyTransactionIterator::value, "Returns the current value as bytes, or None if invalid.")
+        .def("check_status", &PyTransactionIterator::check_status, "Raises RocksDBException if an error occurred during iteration.", py::call_guard<py::gil_scoped_release>());
+
+    py::class_<PyTransaction, std::shared_ptr<PyTransaction>>(m, "Transaction", R"doc(
+        A RocksDB pessimistic transaction.
+
+        Reads see prior writes in the same transaction. Context manager exit
+        rolls back if the transaction is still active; commit must be explicit.
+
+        Example:
+            with db.transaction() as txn:
+                txn.put(b"k", b"v")
+                assert txn.get(b"k") == b"v"
+                txn.commit()
+
+        Existing PyWriteBatch objects can be applied inside a transaction:
+            batch = pyrex.PyWriteBatch()
+            batch.put(b"a", b"1")
+            txn = db.begin_transaction()
+            txn.write(batch)
+            txn.commit()
+    )doc")
+        .def("put", &PyTransaction::put, py::arg("key"), py::arg("value"), "Adds a key-value write to the transaction.", py::call_guard<py::gil_scoped_release>())
+        .def("get", &PyTransaction::get, py::arg("key"), py::arg("read_options") = nullptr, "Reads a key through the transaction view.")
+        .def("get_for_update", &PyTransaction::get_for_update, py::arg("key"), py::arg("read_options") = nullptr, py::arg("exclusive") = true, py::arg("do_validate") = true, py::arg("read_value") = true, R"doc(
+            Reads a key through the transaction view and tracks it for conflict
+            checking. When read_value is False, locks/tracks the key without
+            fetching the value and returns None.
+        )doc")
+        .def("delete", &PyTransaction::del, py::arg("key"), "Adds a key deletion to the transaction.", py::call_guard<py::gil_scoped_release>())
+        .def("write", &PyTransaction::write, py::arg("write_batch"), "Applies a PyWriteBatch inside the transaction.", py::call_guard<py::gil_scoped_release>())
+        .def("commit", &PyTransaction::commit, py::arg("write_options") = nullptr, "Commits the transaction.", py::call_guard<py::gil_scoped_release>())
+        .def("rollback", &PyTransaction::rollback, "Rolls back the transaction.", py::call_guard<py::gil_scoped_release>())
+        .def("set_snapshot", &PyTransaction::set_snapshot, "Sets a snapshot for repeatable transaction reads.", py::call_guard<py::gil_scoped_release>())
+        .def("new_iterator", &PyTransaction::new_iterator, py::arg("read_options") = nullptr, "Creates an iterator over the transaction view.", py::keep_alive<0, 1>())
+        .def_property_readonly("is_active", &PyTransaction::is_active, "True while the transaction can still be used.")
+        .def("__enter__", [](PyTransaction &txn) -> PyTransaction& { return txn; })
+        .def("__exit__", [](PyTransaction &txn, py::object /* type */, py::object /* value */, py::object /* traceback */) {
+            if (txn.is_active()) {
+                txn.rollback();
+            }
+        });
+
+    py::class_<PyTransactionDB, std::shared_ptr<PyTransactionDB>>(m, "TransactionDB", R"doc(
+        A RocksDB database opened with pessimistic transaction support.
+
+        Use transaction() or begin_transaction() to create explicit-commit
+        transactions. If a transaction context exits while still active, it is
+        rolled back automatically.
+
+        Example:
+            import pyrex
+
+            with pyrex.TransactionDB("example_txn_db") as db:
+                with db.transaction() as txn:
+                    txn.put(b"k", b"v")
+                    assert txn.get(b"k") == b"v"
+                    txn.commit()
+
+                assert db.get(b"k") == b"v"
+
+        WriteOptions can be supplied to begin_transaction() and commit().
+        disable_wal=True is preserved but is not fully durable across crashes.
+    )doc")
+        .def(py::init<const std::string&, PyOptions*, PyTransactionDBOptions*>(),
+            py::arg("path"),
+            py::arg("options") = nullptr,
+            py::arg("transaction_db_options") = nullptr,
+            "Opens a RocksDB TransactionDB.", py::call_guard<py::gil_scoped_release>())
+        .def("put", &PyTransactionDB::put, py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
+        .def("get", &PyTransactionDB::get, py::arg("key"), py::arg("read_options") = nullptr, "Retrieves the value for a key.")
+        .def("delete", &PyTransactionDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
+        .def("write", &PyTransactionDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
+        .def("begin_transaction", &PyTransactionDB::begin_transaction, py::arg("write_options") = nullptr, py::arg("transaction_options") = nullptr, "Begins a pessimistic transaction.")
+        .def("transaction", &PyTransactionDB::transaction, py::arg("write_options") = nullptr, py::arg("transaction_options") = nullptr, "Begins a pessimistic transaction for context manager use.")
+        .def("get_options", &PyTransactionDB::get_options, "Returns the options the database was opened with.")
+        .def("get_transaction_db_options", &PyTransactionDB::get_transaction_db_options, "Returns the transaction DB options the database was opened with.")
+        .def_property("default_read_options", &PyTransactionDB::get_default_read_options, &PyTransactionDB::set_default_read_options, "The default ReadOptions used for get operations.")
+        .def_property("default_write_options", &PyTransactionDB::get_default_write_options, &PyTransactionDB::set_default_write_options, "The default WriteOptions used for writes and transactions.")
+        .def("close", &PyTransactionDB::close, "Closes the database, rolling back active transactions.", py::call_guard<py::gil_scoped_release>())
+        .def("__enter__", [](PyTransactionDB &db) -> PyTransactionDB& { return db; })
+        .def("__exit__", [](PyTransactionDB &db, py::object /* type */, py::object /* value */, py::object /* traceback */) {
+            db.close();
+        });
 
     py::class_<PyRocksDB, std::shared_ptr<PyRocksDB>>(m, "PyRocksDB", R"doc(
         A Python wrapper for RocksDB providing simple key-value storage.

@@ -42,3 +42,21 @@ size_t PyOptions::get_cf_write_buffer_size() const { return cf_options_.write_bu
 void PyOptions::set_cf_write_buffer_size(size_t value) { cf_options_.write_buffer_size = value; }
 rocksdb::CompressionType PyOptions::get_cf_compression() const { return cf_options_.compression; }
 void PyOptions::set_cf_compression(rocksdb::CompressionType value) { cf_options_.compression = value; }
+
+int64_t PyTransactionDBOptions::get_transaction_lock_timeout() const { return options_.transaction_lock_timeout; }
+void PyTransactionDBOptions::set_transaction_lock_timeout(int64_t value) { options_.transaction_lock_timeout = value; }
+int64_t PyTransactionDBOptions::get_default_lock_timeout() const { return options_.default_lock_timeout; }
+void PyTransactionDBOptions::set_default_lock_timeout(int64_t value) { options_.default_lock_timeout = value; }
+int64_t PyTransactionDBOptions::get_max_num_locks() const { return options_.max_num_locks; }
+void PyTransactionDBOptions::set_max_num_locks(int64_t value) { options_.max_num_locks = value; }
+size_t PyTransactionDBOptions::get_num_stripes() const { return options_.num_stripes; }
+void PyTransactionDBOptions::set_num_stripes(size_t value) { options_.num_stripes = value; }
+
+bool PyTransactionOptions::get_set_snapshot() const { return options_.set_snapshot; }
+void PyTransactionOptions::set_set_snapshot(bool value) { options_.set_snapshot = value; }
+int64_t PyTransactionOptions::get_lock_timeout() const { return options_.lock_timeout; }
+void PyTransactionOptions::set_lock_timeout(int64_t value) { options_.lock_timeout = value; }
+int64_t PyTransactionOptions::get_expiration() const { return options_.expiration; }
+void PyTransactionOptions::set_expiration(int64_t value) { options_.expiration = value; }
+bool PyTransactionOptions::get_deadlock_detect() const { return options_.deadlock_detect; }
+void PyTransactionOptions::set_deadlock_detect(bool value) { options_.deadlock_detect = value; }
