@@ -841,6 +841,9 @@ class TestPyrexTransactions(unittest.TestCase):
         self.assertNotIn((b"c1", b"old"), seen)
         txn.rollback()
 
+        with self.assertRaises(pyrex.RocksDBException):
+            it.valid()
+
     def test_09_operations_after_completion_raise(self):
         db = self.open_db()
         txn = db.begin_transaction()

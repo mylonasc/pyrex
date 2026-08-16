@@ -45,6 +45,7 @@ PyTransaction::PyTransaction(rocksdb::Transaction* txn, std::shared_ptr<PyTransa
 }
 
 PyTransaction::~PyTransaction() {
+    invalidate_iterators();
     if (txn_) {
         txn_->Rollback();
         delete txn_;
@@ -62,6 +63,7 @@ void PyTransaction::check_active() const {
 }
 
 void PyTransaction::invalidate_from_parent_close() {
+    invalidate_iterators();
     if (txn_) {
         txn_->Rollback();
         delete txn_;
@@ -69,6 +71,24 @@ void PyTransaction::invalidate_from_parent_close() {
     }
     active_ = false;
     parent_db_.reset();
+}
+
+void PyTransaction::register_iterator(PyTransactionIterator* it) {
+    std::lock_guard<std::mutex> lock(active_iterators_mutex_);
+    active_iterators_.insert(it);
+}
+
+void PyTransaction::unregister_iterator(PyTransactionIterator* it) {
+    std::lock_guard<std::mutex> lock(active_iterators_mutex_);
+    active_iterators_.erase(it);
+}
+
+void PyTransaction::invalidate_iterators() {
+    std::lock_guard<std::mutex> lock(active_iterators_mutex_);
+    for (PyTransactionIterator* it : active_iterators_) {
+        it->invalidate_from_parent_completion();
+    }
+    active_iterators_.clear();
 }
 
 void PyTransaction::put(const py::bytes& key, const py::bytes& value) {
@@ -111,6 +131,7 @@ void PyTransaction::commit(std::shared_ptr<PyWriteOptions> write_options) {
     }
     rocksdb::Status s = txn_->Commit();
     if (!s.ok()) throw_rocksdb_status(s, "Transaction commit failed");
+    invalidate_iterators();
     active_ = false;
     if (parent_db_) {
         parent_db_->unregister_transaction(this);
@@ -123,6 +144,7 @@ void PyTransaction::rollback() {
     check_active();
     rocksdb::Status s = txn_->Rollback();
     if (!s.ok()) throw_rocksdb_status(s, "Transaction rollback failed");
+    invalidate_iterators();
     active_ = false;
     if (parent_db_) {
         parent_db_->unregister_transaction(this);
@@ -150,17 +172,31 @@ PyTransactionIterator::PyTransactionIterator(rocksdb::Iterator* it, std::shared_
     if (!it_raw_ptr_) {
         throw RocksDBException("Failed to create transaction iterator: null pointer received.");
     }
+    parent_txn_->register_iterator(this);
 }
 
 PyTransactionIterator::~PyTransactionIterator() {
-    delete it_raw_ptr_;
+    if (parent_txn_) {
+        parent_txn_->unregister_iterator(this);
+    }
+    if (it_raw_ptr_) {
+        delete it_raw_ptr_;
+    }
     it_raw_ptr_ = nullptr;
 }
 
 void PyTransactionIterator::check_parent_transaction_is_active() const {
-    if (!parent_txn_ || !parent_txn_->is_active()) {
+    if (!it_raw_ptr_ || !parent_txn_ || !parent_txn_->is_active()) {
         throw RocksDBException("Transaction is no longer active.");
     }
+}
+
+void PyTransactionIterator::invalidate_from_parent_completion() {
+    if (it_raw_ptr_) {
+        delete it_raw_ptr_;
+        it_raw_ptr_ = nullptr;
+    }
+    parent_txn_.reset();
 }
 
 bool PyTransactionIterator::valid() { check_parent_transaction_is_active(); return it_raw_ptr_->Valid(); }

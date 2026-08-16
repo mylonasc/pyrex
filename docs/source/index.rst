@@ -8,8 +8,8 @@ pyrex-rocksdb documentation
 
 ``pyrex-rocksdb`` is a Python wrapper around RocksDB built with pybind11.
 It provides direct key-value operations, atomic write batches, iterators,
-column-family support, and native columnar batch ingestion for Arrow-compatible
-binary/string arrays.
+transaction support, column-family support, and native columnar batch ingestion
+for Arrow-compatible binary/string arrays.
 
 
 
@@ -18,6 +18,7 @@ binary/string arrays.
    :caption: Contents:
    
    examples
+   transactions
    columnar_ingestion
    column_families
    api 
@@ -27,4 +28,3 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-

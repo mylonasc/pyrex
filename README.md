@@ -89,9 +89,59 @@ with pyrex.PyRocksDB("example_columnar_db") as db:
 
 Polars users can pass `series.to_arrow()`; Polars is not a required dependency.
 
+### Transactions
+
+Use `TransactionDB` when a group of reads and writes must commit or roll back
+together. Transaction context managers use explicit commit semantics: if
+`commit()` is not called, the transaction rolls back when the block exits.
+
+```python
+import pyrex
+
+with pyrex.TransactionDB("example_txn_db") as db:
+    with db.transaction() as txn:
+        txn.put(b"k", b"v")
+        assert txn.get(b"k") == b"v"
+        txn.commit()
+
+    assert db.get(b"k") == b"v"
+```
+
+Existing `PyWriteBatch` objects can be applied inside a transaction:
+
+```python
+batch = pyrex.PyWriteBatch()
+batch.put(b"a", b"1")
+batch.delete(b"old")
+
+with pyrex.TransactionDB("example_txn_db") as db:
+    with db.transaction() as txn:
+        txn.write(batch)
+        txn.commit()
+```
+
+Transaction iterators can be used for prefix/range scans and include
+transaction-local writes where RocksDB supports them:
+
+```python
+with pyrex.TransactionDB("example_txn_db") as db:
+    with db.transaction() as txn:
+        txn.put(b"user:1", b"alice")
+        it = txn.new_iterator()
+        it.seek(b"user:")
+        while it.valid() and it.key().startswith(b"user:"):
+            print(it.key(), it.value())
+            it.next()
+        txn.rollback()
+```
+
+`WriteOptions.disable_wal` is preserved for transaction writes and commits, but
+`disable_wal=True` is not fully durable across crashes. Transaction conflicts
+and lock timeouts are exposed through specific exception subclasses such as
+`RocksDBBusyError`, `RocksDBTimeoutError`, and `RocksDBConflictError`.
+
 <details>
   <summary>Note on CICD</summary>
 The windows wheels are failing at the moment.
 The CICD workflow for package builds works and passes all tests only for MacOS and Linux. 
 </details>
-

@@ -125,6 +125,12 @@ void bind_pyrex(py::module_& m) {
 
     py::class_<PyTransactionDBOptions>(m, "TransactionDBOptions", R"doc(
         Configuration options for opening RocksDB TransactionDB.
+
+        Example:
+            opts = pyrex.TransactionDBOptions()
+            opts.default_lock_timeout = 1000
+            opts.transaction_lock_timeout = 1000
+            db = pyrex.TransactionDB("path", None, opts)
     )doc")
         .def(py::init<>(), "Constructs a new TransactionDBOptions object with default settings.")
         .def_property("transaction_lock_timeout", &PyTransactionDBOptions::get_transaction_lock_timeout, &PyTransactionDBOptions::set_transaction_lock_timeout, "Lock timeout in milliseconds for transaction lock acquisition.")
@@ -134,6 +140,14 @@ void bind_pyrex(py::module_& m) {
 
     py::class_<PyTransactionOptions, std::shared_ptr<PyTransactionOptions>>(m, "TransactionOptions", R"doc(
         Per-transaction options for RocksDB TransactionDB transactions.
+
+        Example:
+            opts = pyrex.TransactionOptions()
+            opts.set_snapshot = True
+            opts.lock_timeout = 1000
+            with db.transaction(None, opts) as txn:
+                txn.put(b"k", b"v")
+                txn.commit()
     )doc")
         .def(py::init<>(), "Constructs a new TransactionOptions object with default settings.")
         .def_property("set_snapshot", &PyTransactionOptions::get_set_snapshot, &PyTransactionOptions::set_set_snapshot, "If True, sets a transaction snapshot at begin time.")
@@ -177,6 +191,13 @@ void bind_pyrex(py::module_& m) {
 
     py::class_<PyTransactionIterator, std::shared_ptr<PyTransactionIterator>>(m, "PyTransactionIterator", R"doc(
         An iterator over a RocksDB transaction view.
+
+        Example:
+            it = txn.new_iterator()
+            it.seek(b"user:")
+            while it.valid() and it.key().startswith(b"user:"):
+                print(it.key(), it.value())
+                it.next()
     )doc")
         .def("valid", &PyTransactionIterator::valid, "Returns True if the iterator is currently positioned at a valid entry.", py::call_guard<py::gil_scoped_release>())
         .def("seek_to_first", &PyTransactionIterator::seek_to_first, "Positions the iterator at the first key.", py::call_guard<py::gil_scoped_release>())
@@ -191,7 +212,21 @@ void bind_pyrex(py::module_& m) {
     py::class_<PyTransaction, std::shared_ptr<PyTransaction>>(m, "Transaction", R"doc(
         A RocksDB pessimistic transaction.
 
-        Context manager exit rolls back if the transaction is still active. Commit must be explicit.
+        Reads see prior writes in the same transaction. Context manager exit
+        rolls back if the transaction is still active; commit must be explicit.
+
+        Example:
+            with db.transaction() as txn:
+                txn.put(b"k", b"v")
+                assert txn.get(b"k") == b"v"
+                txn.commit()
+
+        Existing PyWriteBatch objects can be applied inside a transaction:
+            batch = pyrex.PyWriteBatch()
+            batch.put(b"a", b"1")
+            txn = db.begin_transaction()
+            txn.write(batch)
+            txn.commit()
     )doc")
         .def("put", &PyTransaction::put, py::arg("key"), py::arg("value"), "Adds a key-value write to the transaction.", py::call_guard<py::gil_scoped_release>())
         .def("get", &PyTransaction::get, py::arg("key"), py::arg("read_options") = nullptr, "Reads a key through the transaction view.")
@@ -211,6 +246,24 @@ void bind_pyrex(py::module_& m) {
 
     py::class_<PyTransactionDB, std::shared_ptr<PyTransactionDB>>(m, "TransactionDB", R"doc(
         A RocksDB database opened with pessimistic transaction support.
+
+        Use transaction() or begin_transaction() to create explicit-commit
+        transactions. If a transaction context exits while still active, it is
+        rolled back automatically.
+
+        Example:
+            import pyrex
+
+            with pyrex.TransactionDB("example_txn_db") as db:
+                with db.transaction() as txn:
+                    txn.put(b"k", b"v")
+                    assert txn.get(b"k") == b"v"
+                    txn.commit()
+
+                assert db.get(b"k") == b"v"
+
+        WriteOptions can be supplied to begin_transaction() and commit().
+        disable_wal=True is preserved but is not fully durable across crashes.
     )doc")
         .def(py::init<const std::string&, PyOptions*, PyTransactionDBOptions*>(),
             py::arg("path"),

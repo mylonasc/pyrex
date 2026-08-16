@@ -57,6 +57,67 @@ Methods:
 * ``merge_cf(cf_handle, key: bytes, value: bytes) -> None``
 * ``clear() -> None``
 
+TransactionDB
+-------------
+
+``TransactionDB(path, options=None, transaction_db_options=None)`` opens a
+RocksDB database with pessimistic transaction support.
+
+Methods:
+
+* ``put(key: bytes, value: bytes, write_options=None) -> None``
+* ``get(key: bytes, read_options=None) -> bytes | None``
+* ``delete(key: bytes, write_options=None) -> None``
+* ``write(write_batch: PyWriteBatch, write_options=None) -> None``
+* ``begin_transaction(write_options=None, transaction_options=None) -> Transaction``
+* ``transaction(write_options=None, transaction_options=None) -> Transaction``
+* ``get_options() -> PyOptions``
+* ``get_transaction_db_options() -> TransactionDBOptions``
+* ``close() -> None``
+
+``transaction()`` is an alias for ``begin_transaction()`` intended for context
+manager usage. Transaction context managers require an explicit ``commit()``;
+they roll back automatically if still active on exit.
+
+Transaction
+-----------
+
+``Transaction`` represents one active RocksDB transaction.
+
+Methods and properties:
+
+* ``put(key: bytes, value: bytes) -> None``
+* ``get(key: bytes, read_options=None) -> bytes | None``
+* ``delete(key: bytes) -> None``
+* ``write(write_batch: PyWriteBatch) -> None``
+* ``commit(write_options=None) -> None``
+* ``rollback() -> None``
+* ``set_snapshot() -> None``
+* ``new_iterator(read_options=None) -> PyTransactionIterator``
+* ``is_active -> bool``
+
+Transaction reads see prior writes in the same transaction. ``write`` accepts
+existing ``PyWriteBatch`` objects for default column-family ``put`` and
+``delete`` operations.
+
+PyTransactionIterator
+---------------------
+
+Transaction iterators traverse the transaction view and can be used for prefix
+or range scans by seeking to the lower bound and stopping in Python.
+
+Methods:
+
+* ``valid() -> bool``
+* ``seek_to_first() -> None``
+* ``seek_to_last() -> None``
+* ``seek(key: bytes) -> None``
+* ``next() -> None``
+* ``prev() -> None``
+* ``key() -> bytes | None``
+* ``value() -> bytes | None``
+* ``check_status() -> None``
+
 PyRocksDBIterator
 -----------------
 
@@ -107,6 +168,24 @@ Properties:
 * ``fill_cache``
 * ``verify_checksums``
 
+``TransactionDBOptions`` configures transaction-capable database open options.
+
+Properties:
+
+* ``transaction_lock_timeout``
+* ``default_lock_timeout``
+* ``max_num_locks``
+* ``num_stripes``
+
+``TransactionOptions`` configures each transaction.
+
+Properties:
+
+* ``set_snapshot``
+* ``lock_timeout``
+* ``expiration``
+* ``deadlock_detect``
+
 CompressionType
 ---------------
 
@@ -118,3 +197,19 @@ Exceptions
 
 ``RocksDBException`` is raised for RocksDB operational errors, closed database
 usage, invalid column-family handles, and read-only write attempts.
+
+More specific subclasses are exposed for callers that need retry or recovery
+policy:
+
+* ``RocksDBConflictError``
+* ``RocksDBTimeoutError``
+* ``RocksDBBusyError``
+* ``RocksDBCorruptionError``
+* ``RocksDBIOError``
+* ``RocksDBInvalidArgumentError``
+
+Capabilities
+------------
+
+``has_transactions`` is ``True`` when the installed build exposes the
+transaction API.
