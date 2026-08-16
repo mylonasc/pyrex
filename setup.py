@@ -130,6 +130,7 @@ class build_ext(_build_ext):
                 "-DCMAKE_BUILD_TYPE=Release",
                 "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
                 f"-DCMAKE_CXX_FLAGS={cxx_flags}",
+                "-DPORTABLE=1",
                 "-DROCKSDB_BUILD_SHARED=OFF",
                 "-DFAIL_ON_WARNINGS=OFF",
                 "-DWITH_TESTS=OFF",
