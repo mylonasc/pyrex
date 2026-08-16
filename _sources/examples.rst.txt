@@ -29,11 +29,23 @@ Customize database behavior using `PyOptions`.
 Atomic Write Batch
 ------------------
 
-Perform multiple `put` and `delete` operations in a single, atomic transaction.
+Perform multiple `put` and `delete` operations in a single atomic write batch.
 
 .. literalinclude:: ../../examples_simple/write_batch.py
    :language: python
    :caption: write_batch.py
+   :linenos:
+
+Transactions
+------------
+
+Use ``TransactionDB`` when reads and writes must be grouped into an explicit
+commit/rollback unit. Transaction context managers roll back unless ``commit()``
+is called.
+
+.. literalinclude:: ../../examples_simple/transactions.py
+   :language: python
+   :caption: transactions.py
    :linenos:
 
 Columnar Batch Ingestion
@@ -72,5 +84,4 @@ Catch RocksDB-specific exceptions for robust applications.
    :language: python
    :caption: error_handling.py
    :linenos:
-
 

@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Reference &mdash; pyrex-rocksdb 0.3.0 documentation</title>
+  <title>API Reference &mdash; pyrex-rocksdb 0.4.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=e259d695"></script>
+      <script src="_static/documentation_options.js?v=c87aa342"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -47,16 +47,21 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#pyrocksdb">PyRocksDB</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#pyrocksdbextended">PyRocksDBExtended</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#pywritebatch">PyWriteBatch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#transactiondb">TransactionDB</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#transaction">Transaction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pytransactioniterator">PyTransactionIterator</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#pyrocksdbiterator">PyRocksDBIterator</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#options">Options</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#compressiontype">CompressionType</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#exceptions">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#capabilities">Capabilities</a></li>
 </ul>
 </li>
 </ul>
@@ -138,6 +143,66 @@ and applies all rows through one native RocksDB <code class="docutils literal no
 <li><p><code class="docutils literal notranslate"><span class="pre">clear()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 </ul>
 </section>
+<section id="transactiondb">
+<h2>TransactionDB<a class="headerlink" href="#transactiondb" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">TransactionDB(path,</span> <span class="pre">options=None,</span> <span class="pre">transaction_db_options=None)</span></code> opens a
+RocksDB database with pessimistic transaction support.</p>
+<p>Methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">put(key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delete(key:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">write(write_batch:</span> <span class="pre">PyWriteBatch,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">begin_transaction(write_options=None,</span> <span class="pre">transaction_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">Transaction</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">transaction(write_options=None,</span> <span class="pre">transaction_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">Transaction</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_options()</span> <span class="pre">-&gt;</span> <span class="pre">PyOptions</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_transaction_db_options()</span> <span class="pre">-&gt;</span> <span class="pre">TransactionDBOptions</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">close()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">transaction()</span></code> is an alias for <code class="docutils literal notranslate"><span class="pre">begin_transaction()</span></code> intended for context
+manager usage. Transaction context managers require an explicit <code class="docutils literal notranslate"><span class="pre">commit()</span></code>;
+they roll back automatically if still active on exit.</p>
+</section>
+<section id="transaction">
+<h2>Transaction<a class="headerlink" href="#transaction" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">Transaction</span></code> represents one active RocksDB transaction.</p>
+<p>Methods and properties:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">put(key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_for_update(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None,</span> <span class="pre">exclusive=True,</span> <span class="pre">do_validate=True,</span> <span class="pre">read_value=True)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delete(key:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">write(write_batch:</span> <span class="pre">PyWriteBatch)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">commit(write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">rollback()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">set_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">new_iterator(read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">PyTransactionIterator</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">is_active</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p></li>
+</ul>
+<p>Transaction reads see prior writes in the same transaction. <code class="docutils literal notranslate"><span class="pre">write</span></code> accepts
+existing <code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code> objects for default column-family <code class="docutils literal notranslate"><span class="pre">put</span></code> and
+<code class="docutils literal notranslate"><span class="pre">delete</span></code> operations.</p>
+<p><code class="docutils literal notranslate"><span class="pre">get_for_update</span></code> reads and tracks a key for transaction conflict checking. Set
+<code class="docutils literal notranslate"><span class="pre">read_value=False</span></code> to lock or track the key without fetching the value; the
+method returns <code class="docutils literal notranslate"><span class="pre">None</span></code> in that mode.</p>
+</section>
+<section id="pytransactioniterator">
+<h2>PyTransactionIterator<a class="headerlink" href="#pytransactioniterator" title="Link to this heading"></a></h2>
+<p>Transaction iterators traverse the transaction view and can be used for prefix
+or range scans by seeking to the lower bound and stopping in Python.</p>
+<p>Methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">valid()</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seek_to_first()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seek_to_last()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seek(key:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">next()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prev()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key()</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">value()</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">check_status()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+</ul>
+</section>
 <section id="pyrocksdbiterator">
 <h2>PyRocksDBIterator<a class="headerlink" href="#pyrocksdbiterator" title="Link to this heading"></a></h2>
 <p>Iterators traverse keys in RocksDB byte order.</p>
@@ -183,6 +248,22 @@ and applies all rows through one native RocksDB <code class="docutils literal no
 <li><p><code class="docutils literal notranslate"><span class="pre">fill_cache</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">verify_checksums</span></code></p></li>
 </ul>
+<p><code class="docutils literal notranslate"><span class="pre">TransactionDBOptions</span></code> configures transaction-capable database open options.</p>
+<p>Properties:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">transaction_lock_timeout</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">default_lock_timeout</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_num_locks</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">num_stripes</span></code></p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">TransactionOptions</span></code> configures each transaction.</p>
+<p>Properties:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">set_snapshot</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lock_timeout</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">expiration</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deadlock_detect</span></code></p></li>
+</ul>
 </section>
 <section id="compressiontype">
 <h2>CompressionType<a class="headerlink" href="#compressiontype" title="Link to this heading"></a></h2>
@@ -193,6 +274,21 @@ and applies all rows through one native RocksDB <code class="docutils literal no
 <h2>Exceptions<a class="headerlink" href="#exceptions" title="Link to this heading"></a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">RocksDBException</span></code> is raised for RocksDB operational errors, closed database
 usage, invalid column-family handles, and read-only write attempts.</p>
+<p>More specific subclasses are exposed for callers that need retry or recovery
+policy:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">RocksDBConflictError</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RocksDBTimeoutError</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RocksDBBusyError</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RocksDBCorruptionError</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RocksDBIOError</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RocksDBInvalidArgumentError</span></code></p></li>
+</ul>
+</section>
+<section id="capabilities">
+<h2>Capabilities<a class="headerlink" href="#capabilities" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">has_transactions</span></code> is <code class="docutils literal notranslate"><span class="pre">True</span></code> when the installed build exposes the
+transaction API.</p>
 </section>
 </section>
 
