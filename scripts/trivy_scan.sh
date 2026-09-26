@@ -5,8 +5,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/runpath_guard.sh"
 set -euo pipefail
 
 trivy_image="${TRIVY_IMAGE:-aquasec/trivy:0.74.0}"
+uv_image="${UV_IMAGE:-ghcr.io/astral-sh/uv:0.8.22-python3.13-bookworm-slim}"
 cache_dir="${TRIVY_CACHE_DIR:-$HOME/.cache/trivy}"
 html_report=""
+dependency_dir=""
 
 usage() {
   cat <<'USAGE'
@@ -51,12 +53,67 @@ fi
 
 mkdir -p "$cache_dir"
 
+dependency_dir="$(mktemp -d)"
+trap 'rm -rf "$dependency_dir"' EXIT
+mkdir -p "$dependency_dir/package" "$dependency_dir/build" "$dependency_dir/docs"
+
+echo "Resolving Python dependencies from pyproject.toml"
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  --env UV_NO_CACHE=1 \
+  --volume "$PWD:/workspace:ro" \
+  --volume "$dependency_dir:/output" \
+  --workdir /workspace \
+  "$uv_image" \
+  /usr/local/bin/uv --quiet pip compile \
+  pyproject.toml \
+  --all-extras \
+  --universal \
+  --no-annotate \
+  --no-header \
+  --output-file /output/package/requirements.txt
+
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  --volume "$PWD:/workspace:ro" \
+  "$uv_image" \
+  python -c 'import pathlib, tomllib; data = tomllib.loads(pathlib.Path("/workspace/pyproject.toml").read_text()); print("\n".join(data["build-system"]["requires"]))' \
+  > "$dependency_dir/build/requirements.in"
+
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  --env UV_NO_CACHE=1 \
+  --volume "$dependency_dir:/output" \
+  "$uv_image" \
+  /usr/local/bin/uv --quiet pip compile \
+  /output/build/requirements.in \
+  --universal \
+  --no-annotate \
+  --no-header \
+  --output-file /output/build/requirements.txt
+
+if [[ -f docs/requirements.txt ]]; then
+  docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    --env UV_NO_CACHE=1 \
+    --volume "$PWD:/workspace:ro" \
+    --volume "$dependency_dir:/output" \
+    "$uv_image" \
+    /usr/local/bin/uv --quiet pip compile \
+    /workspace/docs/requirements.txt \
+    --universal \
+    --no-annotate \
+    --no-header \
+    --output-file /output/docs/requirements.txt
+fi
+
 run_trivy() {
   docker run --rm \
     --user "$(id -u):$(id -g)" \
-    --volume "$PWD:/workspace:ro" \
+    --volume "$PWD:/scan/project:ro" \
+    --volume "$dependency_dir:/scan/python-dependencies:ro" \
     --volume "$cache_dir:/trivy-cache" \
-    --workdir /workspace \
+    --workdir /scan \
     "$trivy_image" \
     filesystem \
     --cache-dir /trivy-cache \
