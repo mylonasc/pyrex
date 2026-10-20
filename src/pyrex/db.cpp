@@ -1,5 +1,8 @@
 #include "db.hpp"
 
+#include <cstring>
+
+#include "arrow_scan.hpp"
 #include "columnar_batch.hpp"
 #include "exceptions.hpp"
 #include "iterator.hpp"
@@ -65,6 +68,18 @@ rocksdb::ColumnFamilyHandle* PyRocksDB::get_default_cf_handle() const {
 
 void PyRocksDB::close() {
     if (!is_closed_.exchange(true)) {
+        // arrow_mutex_ serializes snapshot/scan teardown with concurrent
+        // scan creation and snapshot release; it is held until db_ is gone
+        // so no scan path can touch a half-destroyed DB.
+        std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+        for (PyArrowScan* scan : active_arrow_scans_) {
+            scan->invalidate_for_db_close(db_);
+        }
+        active_arrow_scans_.clear();
+        for (PySnapshot* snapshot : active_snapshots_) {
+            snapshot->invalidate_for_db_close(db_);
+        }
+        active_snapshots_.clear();
         {
             std::lock_guard<std::mutex> lock(active_iterators_mutex_);
             for (rocksdb::Iterator* iter_raw_ptr : active_rocksdb_iterators_) {
@@ -192,6 +207,117 @@ void PyRocksDB::set_default_write_options(std::shared_ptr<PyWriteOptions> opts) 
     default_write_options_ = opts;
 }
 
+// ---------------------------------------------------------------------------
+// Snapshots and batched Arrow scans (feature #31).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr size_t kMaxBatchSize = 16 * 1024 * 1024;
+constexpr size_t kMaxBatchBytes = size_t{4} * 1024 * 1024 * 1024;
+
+int compare_bounds(const std::string& a, const std::string& b) {
+    const size_t common = a.size() < b.size() ? a.size() : b.size();
+    if (common > 0) {
+        const int cmp = std::memcmp(a.data(), b.data(), common);
+        if (cmp != 0) return cmp < 0 ? -1 : 1;
+    }
+    if (a.size() == b.size()) return 0;
+    return a.size() < b.size() ? -1 : 1;
+}
+
+std::pair<bool, std::string> parse_bound(const py::object& obj, const char* name) {
+    if (obj.is_none()) return {false, {}};
+    if (py::isinstance<py::bytes>(obj)) return {true, obj.cast<py::bytes>()};
+    throw py::type_error(std::string("scan_arrow: '") + name + "' must be bytes or None");
+}
+
+std::shared_ptr<PyArrowScan> scan_arrow_impl(std::shared_ptr<PyRocksDB> self, std::shared_ptr<PyColumnFamilyHandle> cf,
+                                             py::object prefix, py::object start, py::object stop, size_t batch_size,
+                                             size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+                                             std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
+    if (batch_size < 1 || batch_size > kMaxBatchSize) {
+        throw py::value_error("scan_arrow: batch_size must be in [1, " + std::to_string(kMaxBatchSize) + "]");
+    }
+    if (max_batch_bytes < 1 || max_batch_bytes > kMaxBatchBytes) {
+        throw py::value_error("scan_arrow: max_batch_bytes must be in [1, " + std::to_string(kMaxBatchBytes) + "]");
+    }
+    auto [has_prefix, prefix_bytes] = parse_bound(prefix, "prefix");
+    auto [has_start, start_bytes] = parse_bound(start, "start");
+    auto [has_stop, stop_bytes] = parse_bound(stop, "stop");
+    if (has_start && has_stop && compare_bounds(start_bytes, stop_bytes) > 0) {
+        throw py::value_error("scan_arrow: start must be <= stop (start is inclusive, stop is exclusive)");
+    }
+
+    PyArrowScan::Config config;
+    config.prefix = std::move(prefix_bytes);
+    config.has_prefix = has_prefix;
+    config.start = std::move(start_bytes);
+    config.has_start = has_start;
+    config.stop = std::move(stop_bytes);
+    config.has_stop = has_stop;
+    config.batch_size = batch_size;
+    config.max_batch_bytes = max_batch_bytes;
+    config.allow_overflow = allow_overflow;
+
+    // The constructor pins the snapshot, pushes bounds down and seeks; only
+    // register with the parent once it is fully established.
+    auto scan = std::make_shared<PyArrowScan>(self, cf, config, snapshot, read_options);
+    self->register_scan(scan.get());
+    return scan;
+}
+
+}  // namespace
+
+void PyRocksDB::register_scan(PyArrowScan* scan) {
+    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    active_arrow_scans_.insert(scan);
+}
+
+void PyRocksDB::unregister_scan(PyArrowScan* scan) {
+    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    active_arrow_scans_.erase(scan);
+}
+
+void PyRocksDB::detach_scan_resources(PyArrowScan* scan, bool mark_exhausted) {
+    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::mutex> scan_lock(scan->mutex_);
+    scan->finish_locked(db_);
+    if (mark_exhausted) {
+        scan->exhausted_ = true;
+    } else {
+        scan->closed_ = true;
+    }
+}
+
+void PyRocksDB::detach_snapshot(PySnapshot* snapshot) {
+    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::mutex> snap_lock(snapshot->mutex_);
+    if (!snapshot->released_ && snapshot->snapshot_ && db_) {
+        db_->ReleaseSnapshot(snapshot->snapshot_);
+    }
+    snapshot->release_locked();
+    active_snapshots_.erase(snapshot);
+}
+
+std::shared_ptr<PySnapshot> PyRocksDB::create_snapshot() {
+    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    check_db_open();
+    const rocksdb::Snapshot* raw = db_->GetSnapshot();
+    if (!raw) throw RocksDBException("create_snapshot failed: null snapshot returned.");
+    auto snapshot = std::make_shared<PySnapshot>(shared_from_this(), raw);
+    active_snapshots_.insert(snapshot.get());
+    return snapshot;
+}
+
+std::shared_ptr<PyArrowScan> PyRocksDB::scan_arrow(py::object prefix, py::object start, py::object stop, size_t batch_size,
+                                                   size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+                                                   std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
+    check_db_open();
+    return scan_arrow_impl(shared_from_this(), nullptr, std::move(prefix), std::move(start), std::move(stop), batch_size,
+                           max_batch_bytes, read_options, snapshot, allow_overflow);
+}
+
 PyRocksDBExtended::PyRocksDBExtended(const std::string& path, PyOptions* py_options, bool read_only) {
     this->path_ = path;
     this->is_read_only_ = read_only;
@@ -317,6 +443,15 @@ void PyRocksDBExtended::drop_column_family(PyColumnFamilyHandle& cf_handle) {
     rocksdb::ColumnFamilyHandle* raw_handle = cf_handle.cf_handle_;
     std::string cf_name = cf_handle.get_name();
 
+    {
+        std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+        for (PyArrowScan* scan : active_arrow_scans_) {
+            if (scan->uses_cf_active(cf_name)) {
+                throw RocksDBException("Cannot drop column family '" + cf_name + "': an active Arrow scan is using it. Close the scan first.");
+            }
+        }
+    }
+
     rocksdb::Status s = db_->DropColumnFamily(raw_handle);
     if (!s.ok()) throw RocksDBException("Failed to drop column family '" + cf_name + "': " + s.ToString());
 
@@ -349,4 +484,23 @@ std::shared_ptr<PyRocksDBIterator> PyRocksDBExtended::new_cf_iterator(PyColumnFa
         active_rocksdb_iterators_.insert(raw_iter);
     }
     return std::make_shared<PyRocksDBIterator>(raw_iter, shared_from_this());
+}
+
+std::shared_ptr<PyArrowScan> PyRocksDBExtended::scan_arrow_cf(PyColumnFamilyHandle& cf_handle, py::object prefix, py::object start,
+                                                              py::object stop, size_t batch_size, size_t max_batch_bytes,
+                                                              std::shared_ptr<PyReadOptions> read_options,
+                                                              std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
+    check_db_open();
+    if (!cf_handle.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
+    std::shared_ptr<PyColumnFamilyHandle> cf;
+    {
+        std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+        auto it = cf_handles_.find(cf_handle.get_name());
+        if (it == cf_handles_.end() || !it->second->is_valid()) {
+            throw RocksDBException("Column family '" + cf_handle.get_name() + "' is not open in this database.");
+        }
+        cf = it->second;
+    }
+    return scan_arrow_impl(shared_from_this(), cf, std::move(prefix), std::move(start), std::move(stop), batch_size,
+                           max_batch_bytes, read_options, snapshot, allow_overflow);
 }

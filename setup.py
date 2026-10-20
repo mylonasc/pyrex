@@ -298,6 +298,7 @@ pyrex_module = Extension(
     name='pyrex._pyrex',
     sources=[
         'src/pyrex/_pyrex.cpp',
+        'src/pyrex/arrow_scan.cpp',
         'src/pyrex/bindings.cpp',
         'src/pyrex/columnar_batch.cpp',
         'src/pyrex/column_family.cpp',

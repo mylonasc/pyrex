@@ -75,6 +75,16 @@ Traverse key-value pairs using `PyRocksDBIterator` for forward and backward scan
    :caption: iterator_usage.py
    :linenos:
 
+Batched Arrow Scans
+-------------------
+
+Scan key/value ranges natively into Arrow RecordBatches with snapshot support.
+
+.. literalinclude:: ../../examples_simple/arrow_scan.py
+   :language: python
+   :caption: arrow_scan.py
+   :linenos:
+
 Error Handling
 --------------
 

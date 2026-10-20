@@ -17,6 +17,8 @@ Methods:
 * ``write(write_batch: PyWriteBatch, write_options=None) -> None``
 * ``write_columnar_batch(keys, values, *, write_options=None, on_null="error") -> None``
 * ``new_iterator(read_options=None) -> PyRocksDBIterator``
+* ``create_snapshot() -> Snapshot``
+* ``scan_arrow(prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False) -> ArrowScan``
 * ``get_options() -> PyOptions``
 * ``close() -> None``
 
@@ -39,7 +41,22 @@ Methods:
 * ``drop_column_family(cf_handle) -> None``
 * ``get_column_family(name: str) -> ColumnFamilyHandle | None``
 * ``new_cf_iterator(cf_handle, read_options=None) -> PyRocksDBIterator``
+* ``scan_arrow_cf(cf_handle, prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False) -> ArrowScan``
 * ``default_cf`` returns the default column-family handle.
+
+ArrowScan and Snapshot
+----------------------
+
+``ArrowScan`` is a lazy single-consumer stream returned by ``scan_arrow()``
+and ``scan_arrow_cf()``. It exports the Arrow C Stream interface via
+``__arrow_c_stream__`` (PyCapsule ``arrow_array_stream``) with schema
+``struct<key: binary (non-null), value: binary (non-null)>`` and supports
+``close()``, ``is_closed``, ``sequence_number``, and context-manager use.
+
+``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
+multiple scans. Methods: ``release()``, ``is_valid``, ``sequence_number``.
+
+See ``arrow_scans`` for the full scan/range/snapshot/lifecycle contract.
 
 PyWriteBatch
 ------------
