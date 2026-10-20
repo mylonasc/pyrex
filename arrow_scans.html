@@ -1,0 +1,232 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Batched Arrow Scans &mdash; pyrex-rocksdb 0.5.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Column Family Usage Example" href="column_families.html" />
+    <link rel="prev" title="Columnar Batch Ingestion" href="columnar_ingestion.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Batched Arrow Scans</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#scan-bounds">Scan bounds</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#batch-sizing">Batch sizing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#snapshots">Snapshots</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#column-families">Column families</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#lifecycle-and-safety">Lifecycle and safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Batched Arrow Scans</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/arrow_scans.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="batched-arrow-scans">
+<h1>Batched Arrow Scans<a class="headerlink" href="#batched-arrow-scans" title="Link to this heading"></a></h1>
+<p>Native, columnar reads complement <code class="docutils literal notranslate"><span class="pre">write_columnar_batch()</span></code>: <code class="docutils literal notranslate"><span class="pre">scan_arrow()</span></code>
+iterates RocksDB in C++ and packs raw key/value bytes into Arrow
+<code class="docutils literal notranslate"><span class="pre">binary</span></code> columns. Python only sees one Arrow stream per scan instead of
+one <code class="docutils literal notranslate"><span class="pre">bytes</span></code> object per record. Consume the stream with any Arrow C Stream
+client (PyArrow, Polars, DataFusion) without per-row Python conversion.</p>
+<p>Quick start:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+
+<span class="n">db</span> <span class="o">=</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">PyRocksDB</span><span class="p">(</span><span class="s2">"/tmp/sensors"</span><span class="p">)</span>
+<span class="n">reader</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">scan_arrow</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="sa">b</span><span class="s2">"sensor/"</span><span class="p">))</span>
+<span class="n">table</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">read_all</span><span class="p">()</span>          <span class="c1"># struct&lt;key: binary, value: binary&gt;</span>
+</pre></div>
+</div>
+<p>A scan is lazy and bounded-memory: each <code class="docutils literal notranslate"><span class="pre">get_next</span></code> gathers at most
+<code class="docutils literal notranslate"><span class="pre">batch_size</span></code> rows or <code class="docutils literal notranslate"><span class="pre">max_batch_bytes</span></code> payload bytes into freshly owned
+Arrow buffers. Already exported batches stay valid after iterator
+advancement, stream release, and even database closure.</p>
+<section id="scan-bounds">
+<h2>Scan bounds<a class="headerlink" href="#scan-bounds" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">prefix</span></code> selects keys starting with the prefix. <code class="docutils literal notranslate"><span class="pre">b&quot;&quot;</span></code>/<code class="docutils literal notranslate"><span class="pre">None</span></code> = all keys.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">start</span></code> is inclusive, <code class="docutils literal notranslate"><span class="pre">stop</span></code> is exclusive; both are pushed down to
+RocksDB via <code class="docutils literal notranslate"><span class="pre">iterate_upper_bound</span></code> where possible.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prefix</span></code> and <code class="docutils literal notranslate"><span class="pre">[start,</span> <span class="pre">stop)</span></code> are intersected. <code class="docutils literal notranslate"><span class="pre">start</span> <span class="pre">&gt;</span> <span class="pre">stop</span></code> raises
+<code class="docutils literal notranslate"><span class="pre">ValueError</span></code>; equal bounds produce an empty scan that still exposes the
+schema.</p></li>
+<li><p>Keys are raw bytes (empty keys, embedded nulls, and <code class="docutils literal notranslate"><span class="pre">0xff</span></code> bytes are all
+valid). The MVP assumes RocksDB’s default bytewise comparator and rejects
+custom comparators explicitly instead of mis-scanning them.</p></li>
+</ul>
+<p>Results follow comparator order with no missing/duplicate records across
+batch boundaries. Iterator errors propagate (through the Arrow consumer as
+an error carrying the native message) and are never masked as clean
+end-of-stream.</p>
+</section>
+<section id="batch-sizing">
+<h2>Batch sizing<a class="headerlink" href="#batch-sizing" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">batch_size</span></code> (default 65536): maximum rows per batch.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_batch_bytes</span></code> (default 8 MiB): maximum key+value payload plus offset
+overhead per batch. A single record larger than the cap raises a clear
+error; pass <code class="docutils literal notranslate"><span class="pre">allow_overflow=True</span></code> to emit it alone instead.</p></li>
+<li><p>The schema uses int32 offsets for the whole stream. Records that would
+overflow int32 offsets fail explicitly; the schema never changes mid-stream.</p></li>
+</ul>
+<p>These caps bound producer batch memory, not whole-process RSS: the block
+cache, pinned snapshot history, and consumer-retained batches are additional.</p>
+</section>
+<section id="snapshots">
+<h2>Snapshots<a class="headerlink" href="#snapshots" title="Link to this heading"></a></h2>
+<p>Every scan pins a consistent RocksDB read view when it is established, so
+concurrent writes cannot change what an open stream observes:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">snap</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_snapshot</span><span class="p">()</span>
+<span class="n">a</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="sa">b</span><span class="s2">"a/"</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snap</span><span class="p">)</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="sa">b</span><span class="s2">"b/"</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snap</span><span class="p">)</span>
+<span class="n">snap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>   <span class="c1"># streams already hold the pinned view</span>
+</pre></div>
+</div>
+<p>Two streams sharing one snapshot observe the same horizon across intervening
+writes; separately created snapshots may see later data. The snapshot must
+belong to the same DB instance and must not be released while a scan that
+uses it is being created. <code class="docutils literal notranslate"><span class="pre">Snapshot.sequence_number</span></code> exposes the pinned
+read-view identity for integration checks. A scan created without an
+explicit snapshot pins its own view at creation time.</p>
+</section>
+<section id="column-families">
+<h2>Column families<a class="headerlink" href="#column-families" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended.scan_arrow_cf(cf_handle,</span> <span class="pre">...)</span></code> scans a named column
+family with the same contract. A snapshot created on the DB may be shared
+across column families so multi-relation consumers observe one horizon.
+Dropping a column family with an active scan on it is rejected; close the
+scan first.</p>
+</section>
+<section id="lifecycle-and-safety">
+<h2>Lifecycle and safety<a class="headerlink" href="#lifecycle-and-safety" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Streams are single-consumer: <code class="docutils literal notranslate"><span class="pre">__arrow_c_stream__</span></code> may be called exactly
+once (PyCapsule name <code class="docutils literal notranslate"><span class="pre">arrow_array_stream</span></code> per the Arrow PyCapsule
+standard). The capsule destructor releases stream state exactly once.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.close()</span></code> (also a context manager) ends iteration early and
+releases the iterator and snapshot resources. Reading after close, or
+after database closure, fails instead of touching freed memory.</p></li>
+<li><p>Closing the database invalidates active scans safely: exported batches
+remain valid (owned buffers), subsequent reads fail clearly.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code> reports the read view the scan observes.</p></li>
+</ul>
+<p>Reading data back yields raw <code class="docutils literal notranslate"><span class="pre">key</span></code>/<code class="docutils literal notranslate"><span class="pre">value</span></code> binary columns. Decoding
+application payloads (JSON, MessagePack, term encodings, graph relations)
+stays with the caller; predicate filtering and graph semantics do not belong
+in PyRex.</p>
+</section>
+<section id="reference">
+<h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.scan_arrow(prefix=None,</span> <span class="pre">start=None,</span> <span class="pre">stop=None,</span> <span class="pre">batch_size=65536,</span>
+<span class="pre">max_batch_bytes=8388608,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span>
+<span class="pre">allow_overflow=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended.scan_arrow_cf(cf_handle,</span> <span class="pre">...)</span></code> — same keyword contract.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.create_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">Snapshot</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Snapshot.release()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.is_valid</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.sequence_number</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.close()</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code></p></li>
+</ul>
+<p>See <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_scan.py</span></code> for the reproducible comparison of
+Python iterators vs. native scans, and <code class="docutils literal notranslate"><span class="pre">examples_simple/arrow_scan.py</span></code> for
+a minimal end-to-end example.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="columnar_ingestion.html" class="btn btn-neutral float-left" title="Columnar Batch Ingestion" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="column_families.html" class="btn btn-neutral float-right" title="Column Family Usage Example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

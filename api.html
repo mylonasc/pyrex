@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Reference &mdash; pyrex-rocksdb 0.4.1 documentation</title>
+  <title>API Reference &mdash; pyrex-rocksdb 0.5.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=c87aa342"></script>
+      <script src="_static/documentation_options.js?v=1dd76d02"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -49,10 +49,12 @@
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_scans.html">Batched Arrow Scans</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#pyrocksdb">PyRocksDB</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#pyrocksdbextended">PyRocksDBExtended</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#arrowscan-and-snapshot">ArrowScan and Snapshot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#pywritebatch">PyWriteBatch</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transactiondb">TransactionDB</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transaction">Transaction</a></li>
@@ -105,6 +107,8 @@ uses the default column family.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">write(write_batch:</span> <span class="pre">PyWriteBatch,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">write_columnar_batch(keys,</span> <span class="pre">values,</span> <span class="pre">*,</span> <span class="pre">write_options=None,</span> <span class="pre">on_null=&quot;error&quot;)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">new_iterator(read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">PyRocksDBIterator</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">create_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">Snapshot</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scan_arrow(prefix=None,</span> <span class="pre">start=None,</span> <span class="pre">stop=None,</span> <span class="pre">batch_size=65536,</span> <span class="pre">max_batch_bytes=8388608,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span> <span class="pre">allow_overflow=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_options()</span> <span class="pre">-&gt;</span> <span class="pre">PyOptions</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">close()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 </ul>
@@ -125,8 +129,20 @@ and applies all rows through one native RocksDB <code class="docutils literal no
 <li><p><code class="docutils literal notranslate"><span class="pre">drop_column_family(cf_handle)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_column_family(name:</span> <span class="pre">str)</span> <span class="pre">-&gt;</span> <span class="pre">ColumnFamilyHandle</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">new_cf_iterator(cf_handle,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">PyRocksDBIterator</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scan_arrow_cf(cf_handle,</span> <span class="pre">prefix=None,</span> <span class="pre">start=None,</span> <span class="pre">stop=None,</span> <span class="pre">batch_size=65536,</span> <span class="pre">max_batch_bytes=8388608,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span> <span class="pre">allow_overflow=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">default_cf</span></code> returns the default column-family handle.</p></li>
 </ul>
+</section>
+<section id="arrowscan-and-snapshot">
+<h2>ArrowScan and Snapshot<a class="headerlink" href="#arrowscan-and-snapshot" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ArrowScan</span></code> is a lazy single-consumer stream returned by <code class="docutils literal notranslate"><span class="pre">scan_arrow()</span></code>
+and <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf()</span></code>. It exports the Arrow C Stream interface via
+<code class="docutils literal notranslate"><span class="pre">__arrow_c_stream__</span></code> (PyCapsule <code class="docutils literal notranslate"><span class="pre">arrow_array_stream</span></code>) with schema
+<code class="docutils literal notranslate"><span class="pre">struct&lt;key:</span> <span class="pre">binary</span> <span class="pre">(non-null),</span> <span class="pre">value:</span> <span class="pre">binary</span> <span class="pre">(non-null)&gt;</span></code> and supports
+<code class="docutils literal notranslate"><span class="pre">close()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>, and context-manager use.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> is a pinned read view from <code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> shareable by
+multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
+<p>See <code class="docutils literal notranslate"><span class="pre">arrow_scans</span></code> for the full scan/range/snapshot/lifecycle contract.</p>
 </section>
 <section id="pywritebatch">
 <h2>PyWriteBatch<a class="headerlink" href="#pywritebatch" title="Link to this heading"></a></h2>
