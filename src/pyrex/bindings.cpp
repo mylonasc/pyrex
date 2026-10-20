@@ -9,6 +9,7 @@
 #include "db.hpp"
 #include "exceptions.hpp"
 #include "iterator.hpp"
+#include "arrow_scan.hpp"
 #include "options.hpp"
 #include "transaction.hpp"
 #include "transaction_db.hpp"
@@ -164,6 +165,45 @@ void bind_pyrex(py::module_& m) {
         .def_property_readonly("name", &PyColumnFamilyHandle::get_name, "The name of this column family.")
         .def("is_valid", &PyColumnFamilyHandle::is_valid, "Checks if the handle is still valid (i.e., has not been dropped).");
 
+    py::class_<PySnapshot, std::shared_ptr<PySnapshot>>(m, "Snapshot", R"doc(
+        A pinned, consistent RocksDB read view shared by Arrow scans.
+
+        Create with `PyRocksDB.create_snapshot()` and pass as `snapshot=` to
+        `scan_arrow()` / `scan_arrow_cf()`. All streams sharing one snapshot
+        observe the same horizon across intervening writes. The snapshot must
+        belong to the same DB instance and must not be released while in use.
+
+        Example:
+            snap = db.create_snapshot()
+            s1 = db.scan_arrow(prefix=b"a:", snapshot=snap)
+            s2 = db.scan_arrow(prefix=b"b:", snapshot=snap)
+            snap.release()
+    )doc")
+        .def("release", &PySnapshot::release, "Releases the snapshot early. Idempotent; also runs at destruction.")
+        .def("is_valid", &PySnapshot::is_valid, "True while the snapshot is still pinned.")
+        .def_property_readonly("sequence_number", &PySnapshot::sequence_number, "RocksDB sequence number identifying the pinned read view.");
+
+    py::class_<PyArrowScan, std::shared_ptr<PyArrowScan>>(m, "ArrowScan", R"doc(
+        A lazy native scan exporting key/value batches via Arrow C Stream.
+
+        Do not construct directly; use `PyRocksDB.scan_arrow()` or
+        `PyRocksDBExtended.scan_arrow_cf()`. The stream schema is
+        `struct<key: binary (non-null), value: binary (non-null)>` with
+        int32 offsets, fixed for the whole stream. The stream is
+        single-consumer: `__arrow_c_stream__` may be called exactly once.
+
+        Consume with any Arrow C Stream client without per-row Python work,
+        e.g. `pyarrow.RecordBatchReader.from_stream(scan)` or
+        `polars.from_arrow(...)`.
+    )doc")
+        .def("__arrow_c_stream__", &PyArrowScan::export_stream, py::arg("requested_schema") = nullptr,
+             "Exports the scan as an ArrowArrayStream PyCapsule (single-consumer).")
+        .def("close", &PyArrowScan::close, "Closes the scan early, releasing its iterator and snapshot resources. Already exported batches stay valid.")
+        .def_property_readonly("sequence_number", &PyArrowScan::sequence_number, "Sequence number of the read view this scan observes.")
+        .def_property_readonly("is_closed", &PyArrowScan::is_closed, "True after close() or database closure.")
+        .def("__enter__", [](PyArrowScan& scan) -> PyArrowScan& { return scan; })
+        .def("__exit__", [](PyArrowScan& scan, py::object, py::object, py::object) { scan.close(); });
+
     py::class_<PyWriteBatch>(m, "PyWriteBatch", R"doc(
         A batch of write operations (Put, Delete) that can be applied atomically.
     )doc")
@@ -316,6 +356,29 @@ void bind_pyrex(py::module_& m) {
         .def("write", &PyRocksDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
         .def("write_columnar_batch", &PyRocksDB::write_columnar_batch, py::arg("keys"), py::arg("values"), py::kw_only(), py::arg("write_options") = nullptr, py::arg("on_null") = "error", "Writes columnar key/value arrays using a native RocksDB WriteBatch.")
         .def("new_iterator", &PyRocksDB::new_iterator, py::arg("read_options") = nullptr, "Creates a new iterator.", py::keep_alive<0, 1>())
+        .def("create_snapshot", &PyRocksDB::create_snapshot, "Pins a consistent read view shareable by scan_arrow streams.")
+        .def("scan_arrow", &PyRocksDB::scan_arrow, py::arg("prefix") = nullptr, py::arg("start") = nullptr,
+             py::arg("stop") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, R"doc(
+            Scans the default column family natively into Arrow RecordBatches.
+
+            Args:
+                prefix (bytes, optional): Only keys starting with this prefix are returned.
+                start (bytes, optional): Inclusive lower bound.
+                stop (bytes, optional): Exclusive upper bound (also pushed down to RocksDB).
+                batch_size (int): Maximum rows per batch.
+                max_batch_bytes (int): Maximum key+value payload (+ offset overhead) bytes per batch.
+                    A single record exceeding it raises unless allow_overflow is True.
+                read_options (ReadOptions, optional): fill_cache/verify_checksums are honored.
+                snapshot (Snapshot, optional): Shared pinned read view from the same DB.
+                    Without one, the scan pins its own view at creation.
+                allow_overflow (bool): If True, a single record larger than max_batch_bytes
+                    is emitted alone instead of raising.
+
+            Returns:
+                ArrowScan: single-consumer stream of struct<key: binary, value: binary>.
+                Consume via `pyarrow.RecordBatchReader.from_stream(scan)`.
+        )doc")
         .def("get_options", &PyRocksDB::get_options, "Returns the options the database was opened with.")
         .def_property("default_read_options", &PyRocksDB::get_default_read_options, &PyRocksDB::set_default_read_options, "The default ReadOptions used for get and iterator operations.")
         .def_property("default_write_options", &PyRocksDB::get_default_write_options, &PyRocksDB::set_default_write_options, "The default WriteOptions used for put, delete, and write operations.")
@@ -348,6 +411,16 @@ void bind_pyrex(py::module_& m) {
         .def("create_column_family", &PyRocksDBExtended::create_column_family, py::arg("name"), py::arg("cf_options") = nullptr, "Creates a new column family.", py::call_guard<py::gil_scoped_release>())
         .def("drop_column_family", &PyRocksDBExtended::drop_column_family, py::arg("cf_handle"), "Drops a column family.", py::call_guard<py::gil_scoped_release>())
         .def("new_cf_iterator", &PyRocksDBExtended::new_cf_iterator, py::arg("cf_handle"), py::arg("read_options") = nullptr, "Creates a new iterator for a specific column family.", py::keep_alive<0, 1>())
+        .def("scan_arrow_cf", &PyRocksDBExtended::scan_arrow_cf, py::arg("cf_handle"), py::arg("prefix") = nullptr,
+             py::arg("start") = nullptr, py::arg("stop") = nullptr, py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, R"doc(
+            Scans a named column family natively into Arrow RecordBatches.
+
+            Same contract as `scan_arrow()`; a snapshot created on this DB may
+            be shared across column families so multi-relation consumers
+            observe one horizon.
+        )doc")
         .def("get_column_family", &PyRocksDBExtended::get_column_family, py::arg("name"), "Retrieves a ColumnFamilyHandle by its name.")
         .def_property_readonly("default_cf", &PyRocksDBExtended::get_default_cf, "Returns the handle for the default column family.");
 }

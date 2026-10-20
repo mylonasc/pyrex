@@ -20,6 +20,7 @@ for Arrow-compatible binary/string arrays.
    examples
    transactions
    columnar_ingestion
+   arrow_scans
    column_families
    api 
 

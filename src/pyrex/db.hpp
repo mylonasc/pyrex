@@ -18,6 +18,8 @@ namespace py = pybind11;
 
 class PyRocksDBIterator;
 class PyWriteBatch;
+class PySnapshot;
+class PyArrowScan;
 
 class PyRocksDB : public std::enable_shared_from_this<PyRocksDB> {
 protected:
@@ -33,7 +35,16 @@ protected:
     std::shared_ptr<PyReadOptions> default_read_options_;
     std::shared_ptr<PyWriteOptions> default_write_options_;
 
+    // Guards db_ lifetime for snapshot/scan paths, plus the two sets below.
+    // Lock order is always arrow_mutex_ -> scan/snapshot mutex_, never the
+    // reverse (scan helpers never take arrow_mutex_ while holding their own).
+    std::mutex arrow_mutex_;
+    std::set<PyArrowScan*> active_arrow_scans_;
+    std::set<PySnapshot*> active_snapshots_;
+
     friend class PyRocksDBIterator;
+    friend class PySnapshot;
+    friend class PyArrowScan;
 
     void check_db_open() const;
     void check_read_only() const;
@@ -51,11 +62,28 @@ public:
     void write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write_options = nullptr);
     void write_columnar_batch(const py::object& keys, const py::object& values, std::shared_ptr<PyWriteOptions> write_options = nullptr, const std::string& on_null = "error");
     std::shared_ptr<PyRocksDBIterator> new_iterator(std::shared_ptr<PyReadOptions> read_options = nullptr);
+    // Pins a consistent read view shared by one or more scan_arrow streams.
+    std::shared_ptr<PySnapshot> create_snapshot();
+    // Native batched Arrow scan of the default column family. Bounds are
+    // raw bytes (None = unbounded); start inclusive, stop exclusive; prefix
+    // intersects with [start, stop). See docs/arrow_scan.md for the contract.
+    std::shared_ptr<PyArrowScan> scan_arrow(py::object prefix = py::none(), py::object start = py::none(), py::object stop = py::none(),
+                                            size_t batch_size = 65536, size_t max_batch_bytes = 8 * 1024 * 1024,
+                                            std::shared_ptr<PyReadOptions> read_options = nullptr,
+                                            std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false);
     PyOptions get_options() const;
     std::shared_ptr<PyReadOptions> get_default_read_options();
     void set_default_read_options(std::shared_ptr<PyReadOptions> opts);
     std::shared_ptr<PyWriteOptions> get_default_write_options();
     void set_default_write_options(std::shared_ptr<PyWriteOptions> opts);
+
+    // Internal lifetime helpers for PySnapshot / PyArrowScan. detach_* take
+    // arrow_mutex_ first, then the object mutex (consistent with close(),
+    // which holds arrow_mutex_ while invalidating).
+    void register_scan(PyArrowScan* scan);
+    void unregister_scan(PyArrowScan* scan);
+    void detach_scan_resources(PyArrowScan* scan, bool mark_exhausted);
+    void detach_snapshot(PySnapshot* snapshot);
 };
 
 class PyRocksDBExtended : public PyRocksDB {
@@ -71,4 +99,11 @@ public:
     std::shared_ptr<PyColumnFamilyHandle> get_column_family(const std::string& name);
     std::shared_ptr<PyColumnFamilyHandle> get_default_cf();
     std::shared_ptr<PyRocksDBIterator> new_cf_iterator(PyColumnFamilyHandle& cf_handle, std::shared_ptr<PyReadOptions> read_options = nullptr);
+    // Native batched Arrow scan of a named column family (same contract as
+    // scan_arrow; shares the DB snapshot when one is supplied).
+    std::shared_ptr<PyArrowScan> scan_arrow_cf(PyColumnFamilyHandle& cf_handle, py::object prefix = py::none(), py::object start = py::none(),
+                                               py::object stop = py::none(), size_t batch_size = 65536,
+                                               size_t max_batch_bytes = 8 * 1024 * 1024,
+                                               std::shared_ptr<PyReadOptions> read_options = nullptr,
+                                               std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false);
 };
