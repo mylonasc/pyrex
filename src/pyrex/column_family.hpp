@@ -1,10 +1,11 @@
 #pragma once
 
 #include <string>
+#include <memory>
 
 #include "rocksdb/db.h"
 
-class PyColumnFamilyHandle {
+class PyColumnFamilyHandle : public std::enable_shared_from_this<PyColumnFamilyHandle> {
 public:
     rocksdb::ColumnFamilyHandle* cf_handle_;
     std::string name_;

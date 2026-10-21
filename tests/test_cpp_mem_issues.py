@@ -1,21 +1,15 @@
 import threading
 import time
-import os
-import shutil
 import pytest
 import pyrex  # Assuming your compiled module is named pyrex
 
-DB_PATH = "./test_db"
-
 # --- Fixture to set up and tear down the database ---
 @pytest.fixture
-def db():
+def db(tmp_path):
     """A fixture that creates a fresh RocksDB instance for each test."""
     print("at DB")
-    if os.path.exists(DB_PATH):
-        shutil.rmtree(DB_PATH)
     # Use PyRocksDBExtended as it covers all functionality
-    db_instance = pyrex.PyRocksDBExtended(DB_PATH)
+    db_instance = pyrex.PyRocksDBExtended(str(tmp_path / "db"))
     yield db_instance
     # The close() method is critical for resource cleanup.
     # We also check if it's already closed to avoid errors in tests that close it manually.
@@ -59,7 +53,7 @@ def test_iterator_use_after_db_close_segfault(db):
     print("\nSUCCESS: test_iterator_use_after_db_close_segfault passed. The wrapper correctly prevented a segfault.")
 
 
-def test_concurrent_close_and_iterate_deadlock():
+def test_concurrent_close_and_iterate_deadlock(tmp_path):
     """
     SURFACES: Iterator and DB close() Race Condition / Deadlock
     
@@ -69,10 +63,7 @@ def test_concurrent_close_and_iterate_deadlock():
     if the mutex protecting the active iterators list is locked incorrectly.
     """
     print("at test_concurent")
-    if os.path.exists(DB_PATH):
-        shutil.rmtree(DB_PATH)
-    
-    db_instance = pyrex.PyRocksDBExtended(DB_PATH)
+    db_instance = pyrex.PyRocksDBExtended(str(tmp_path / "db"))
     db_instance.put(b"key1", b"value1")
     
     # Keep a reference to the iterator to ensure it's not garbage collected early.
@@ -158,6 +149,5 @@ def test_use_dropped_column_family_handle(db):
         db.get_cf(cf_handle, b"key_cf")
 
     print("\nSUCCESS: test_use_dropped_column_family_handle passed. The wrapper correctly prevented use of a dropped handle.")
-
 
 

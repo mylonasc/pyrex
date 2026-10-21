@@ -46,7 +46,7 @@ Write Batch Inside A Transaction
 --------------------------------
 
 Existing ``PyWriteBatch`` objects can be applied inside a transaction. The
-current transaction batch support covers default column-family ``put`` and
+current transaction batch support covers default/named column-family ``put`` and
 ``delete`` operations.
 
 .. code-block:: python
@@ -85,6 +85,33 @@ prefix and stopping when keys no longer match.
                it.next()
 
            txn.rollback()
+
+Column Families and Shared Read Views
+-------------------------------------
+
+Since 0.6.0, ``TransactionDB`` supports named column families, atomic
+``txn.put_cf`` / ``txn.get_cf`` / ``txn.delete_cf``, and native
+``db.scan_arrow_cf``. One ``db.create_snapshot()`` can be shared by scans,
+``db.get`` / ``db.get_cf`` and ``db.multi_get`` / ``db.multi_get_cf``.
+This preserves the storage horizon from index extraction through point
+materialization, even while other transactions commit.
+
+Native DB scans/point reads observe committed state only; read-your-writes
+remains on the ``txn`` handle. ``TransactionOptions.set_snapshot=True``
+pins repeatable transaction reads, including ``get_cf``. A transaction's
+internal snapshot is not interchangeable with a DB ``Snapshot``.
+
+CFs are reopened automatically. CF drops are rejected while any transaction
+is active or a relevant Arrow scan is open. Transactions should be used by
+one thread at a time; do not mutate option objects or batches while another
+thread is using them in a native operation.
+
+.. literalinclude:: ../../examples_simple/snapshot_cf_reads.py
+   :language: python
+   :caption: snapshot_cf_reads.py
+
+See :doc:`arrow_scans` for bounds, byte limits, ownership and integration
+opportunities for higher-level systems such as GestaltDB.
 
 Read For Update
 ---------------

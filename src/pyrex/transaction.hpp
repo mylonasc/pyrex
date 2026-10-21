@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 
 #include <pybind11/pybind11.h>
 
@@ -15,6 +16,7 @@ namespace py = pybind11;
 class PyTransactionDB;
 class PyWriteBatch;
 class PyTransactionIterator;
+class PyColumnFamilyHandle;
 
 class PyTransaction : public std::enable_shared_from_this<PyTransaction> {
 private:
@@ -23,6 +25,13 @@ private:
     bool active_ = true;
     std::mutex active_iterators_mutex_;
     std::set<PyTransactionIterator*> active_iterators_;
+    mutable std::mutex operation_mutex_;
+    struct OperationGuard {
+        std::shared_lock<std::shared_mutex> db_lock;
+        std::lock_guard<std::mutex> txn_lock;
+        explicit OperationGuard(const PyTransaction& txn);
+    };
+    void check_cf(PyColumnFamilyHandle& cf) const;
 
     friend class PyTransactionDB;
     friend class PyTransactionIterator;
@@ -38,6 +47,9 @@ public:
     ~PyTransaction();
 
     void put(const py::bytes& key, const py::bytes& value);
+    void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value);
+    py::object get_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr);
+    void del_cf(PyColumnFamilyHandle& cf, const py::bytes& key);
     py::object get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr);
     py::object get_for_update(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr, bool exclusive = true, bool do_validate = true, bool read_value = true);
     void del(const py::bytes& key);

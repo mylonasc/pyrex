@@ -1,6 +1,7 @@
 #pragma once
 
 #include <pybind11/pybind11.h>
+#include <set>
 
 #include "column_family.hpp"
 #include "rocksdb/write_batch.h"
@@ -10,6 +11,9 @@ namespace py = pybind11;
 class PyWriteBatch {
 public:
     rocksdb::WriteBatch wb_;
+    // Preserve handle identity until submission; raw CF IDs alone can be
+    // identical in different databases and must not authenticate a batch.
+    std::set<std::shared_ptr<PyColumnFamilyHandle>> families_;
 
     PyWriteBatch() = default;
     // This API batches RocksDB writes but still pays one Python-to-C++ call per put.

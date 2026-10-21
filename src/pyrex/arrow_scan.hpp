@@ -98,8 +98,8 @@ public:
         bool allow_overflow = false;
     };
 
-    // Factory path only: PyRocksDB::scan_arrow_impl() builds the object via
-    // make_shared, seeks the iterator, then registers it with the parent.
+    // Factory path only: native initialization and parent registration are
+    // performed atomically under the DB lifecycle mutex.
     PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyColumnFamilyHandle> cf_handle, const Config& config,
                 std::shared_ptr<PySnapshot> shared_snapshot, std::shared_ptr<PyReadOptions> read_options);
     ~PyArrowScan();
@@ -158,7 +158,7 @@ private:
     // parent detach helper or invalidate_for_db_close); db_raw may be
     // null when the parent DB is already gone (then the snapshot was already
     // released by close() and only local state is cleared).
-    void finish_locked(rocksdb::DB* db_raw);
+    std::shared_ptr<PySnapshot> finish_locked(rocksdb::DB* db_raw);
 
     std::shared_ptr<PyRocksDB> parent_;
     std::shared_ptr<PyColumnFamilyHandle> cf_handle_;

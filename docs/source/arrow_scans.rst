@@ -81,6 +81,75 @@ across column families so multi-relation consumers observe one horizon.
 Dropping a column family with an active scan on it is rejected; close the
 scan first.
 
+TransactionDB
+-------------
+
+``TransactionDB.scan_arrow(...)`` exposes the same native scan contract on
+transaction-capable databases. ``scan_arrow_cf(cf, ...)`` scans a named CF;
+``create_snapshot()`` and ``new_iterator()`` are available as well. A scan
+observes *committed* state at its pinned snapshot: writes from still-open
+transactions are not visible and appear only after commit. A snapshot must
+belong to the same database instance, so snapshots cannot be shared between
+a ``TransactionDB`` and a plain ``PyRocksDB``. Transaction-local
+read-your-writes stays on the ``Transaction`` handle (``txn.get``); merging
+uncommitted writes into a scan remains a follow-up.
+
+``TransactionDB`` opens all persisted column families on reopen and supports
+the same CF management and direct CF reads/writes as ``PyRocksDBExtended``.
+Transactions support ``put_cf``, ``get_cf`` and ``delete_cf``, and CF
+put/delete operations in ``PyWriteBatch``. Dropping a CF is conservatively
+rejected while *any* transaction is active, or while an Arrow scan uses it.
+Finish transactions and close streams before dropping their families.
+
+Snapshot-consistent materialization
+-----------------------------------
+
+On ``PyRocksDB``, ``PyRocksDBExtended`` and ``TransactionDB``, ``get`` and
+``multi_get`` accept the same ``snapshot=`` object used by scans. CF variants
+``get_cf`` and ``multi_get_cf`` do too. This closes the read-horizon gap in an
+index-scan / point-materialization pipeline::
+
+    snap = db.create_snapshot()
+    try:
+        with db.scan_arrow_cf(index_cf, prefix=b"p/", snapshot=snap) as scan:
+            reader = pa.RecordBatchReader.from_stream(scan)
+            for batch in reader:
+                version_keys = batch.column("value").to_pylist()
+                payloads = db.multi_get_cf(facts_cf, version_keys, snapshot=snap)
+                # Decode/validate payloads in the application, not PyRex.
+    finally:
+        snap.release()
+
+``multi_get`` / ``multi_get_cf`` call native RocksDB MultiGet, returning a
+Python list in input order. Duplicate keys are preserved; missing keys are
+``None`` and empty values are ``b""``. Empty inputs still validate the DB,
+CF and snapshot. Inputs must contain at most 65536 byte keys per call;
+results are materialized, not a streaming or byte-bounded Arrow API.
+An operational error raises rather than returning a partial result list.
+Foreign, released and DB-closed snapshots fail clearly.
+
+Keep the snapshot alive through both scan and point reads. A RocksDB sequence
+number identifies a storage view, not an authenticated application-level
+temporal horizon. GestaltDB-like consumers still need their own visibility,
+exact evidence identity, payload decoding and term-encoding checks.
+
+Column-family integration opportunities
+---------------------------------------
+
+For a future CF-backed consumer, a single snapshot can cover fact records,
+index locators, dictionaries and persisted derived generations. CF-specific
+compression/compaction settings can isolate different access patterns while
+transactions publish related CF writes atomically. These are architectural
+capabilities, not measured reasoning speedups. Do not create a CF per predicate
+without measuring its handle/memtable/compaction costs.
+
+GestaltDB currently stores prefixed keys in the default family, so its current
+layout needs ``scan_arrow`` plus snapshot-consistent point reads, not a CF
+migration. Its ``NativeKeyScan`` adapter currently converts Arrow buffers to
+Python byte rows; CF support alone does not provide decoded columnar facts or
+zero-Python reasoning. Re-audit its capability matrix and adapters before
+enabling transactional/CF acceleration (GestaltDB issue #194).
+
 Lifecycle and safety
 --------------------
 
@@ -93,6 +162,8 @@ Lifecycle and safety
 * Closing the database invalidates active scans safely: exported batches
   remain valid (owned buffers), subsequent reads fail clearly.
 * ``ArrowScan.sequence_number`` reports the read view the scan observes.
+* Releasing an Arrow consumer closes the native scan even if an ``ArrowScan``
+  variable is retained. Explicit close and repeated release are idempotent.
 
 Reading data back yields raw ``key``/``value`` binary columns. Decoding
 application payloads (JSON, MessagePack, term encodings, graph relations)
@@ -106,8 +177,16 @@ Reference
   max_batch_bytes=8388608, read_options=None, snapshot=None,
   allow_overflow=False) -> ArrowScan``
 * ``PyRocksDBExtended.scan_arrow_cf(cf_handle, ...)`` — same keyword contract.
-* ``PyRocksDB.create_snapshot() -> Snapshot``
-* ``Snapshot.release()``, ``Snapshot.is_valid``, ``Snapshot.sequence_number``
+* ``TransactionDB.scan_arrow(...)`` — same keyword contract on the default
+  column family; observes committed state (open-transaction writes excluded).
+* ``TransactionDB.scan_arrow_cf(cf_handle, ...)`` — same contract across CFs.
+* ``get(key, read_options=None, snapshot=None)`` and
+  ``multi_get(keys, read_options=None, snapshot=None)``
+* ``get_cf(cf, key, read_options=None, snapshot=None)`` and
+  ``multi_get_cf(cf, keys, read_options=None, snapshot=None)``
+* ``PyRocksDB.create_snapshot() -> Snapshot`` (also on ``TransactionDB``;
+  snapshots are per-instance and never shared across DB objects)
+* ``Snapshot.release()``, ``Snapshot.is_valid()``, ``Snapshot.sequence_number``
 * ``ArrowScan.close()``, ``ArrowScan.is_closed``, ``ArrowScan.sequence_number``
 
 See ``benchmarks/bench_arrow_scan.py`` for the reproducible comparison of

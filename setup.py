@@ -1,4 +1,5 @@
 # setup.py
+from __future__ import annotations
 import os
 import io
 import sys
@@ -10,6 +11,7 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext as _build_ext
 import platform
 import hashlib
+import shlex
 import pybind11
 
 # --- Project Configuration ---
@@ -176,8 +178,21 @@ class build_ext(_build_ext):
             platform.machine(),
             platform.system(),
             libc_type,
+            repr(platform.libc_ver()),
+            os.environ.get("CC", "cc"),
+            os.environ.get("CXX", "c++"),
+            os.environ.get("CXXFLAGS", ""),
             *sorted(cmake_args)
         ])
+        # A host cache can be shared with manylinux containers. liburing's
+        # public struct layout differs across releases: reusing a library
+        # built against other headers can corrupt the heap at queue_init.
+        # Fingerprint its headers as well as the compiler/libc environment.
+        compiler = os.environ.get("CXX", "c++")
+        config_str += subprocess.check_output(shlex.split(compiler) + ["--version"], text=True)
+        for header in (Path("/usr/include/liburing.h"), Path("/usr/include/liburing/io_uring.h")):
+            if header.exists():
+                config_str += hashlib.sha256(header.read_bytes()).hexdigest()
         
         config_hash = hashlib.sha256(config_str.encode('utf-8')).hexdigest()[:16]
         

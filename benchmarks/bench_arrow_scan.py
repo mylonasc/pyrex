@@ -7,8 +7,9 @@ Compares, on identical ordered records (digest-validated):
   4. Native scan consumed by an Arrow-compute operation (no per-row Python).
 
 Covers full scans and selective prefix scans, short and variable-length
-values, and batch-size sensitivity. Reports wall time, throughput, peak RSS
-delta, output bytes vs. capacity, and scan setup/teardown cost.
+values, and batch-size sensitivity. Reports wall time, throughput, table
+bytes and cumulative process high-water RSS changes. This is not a
+per-mode isolated RSS or native allocation-capacity measurement.
 
 Streaming consumption and full materialization are labeled separately: a
 ``collect()`` of the whole stream is NOT a bounded-memory scan benchmark.
@@ -20,6 +21,7 @@ import hashlib
 import os
 import resource
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -40,7 +42,8 @@ def seed_db(path, rows, value_size, variable):
     db = pyrex.PyRocksDB(path)
     batch = 5000
     for start in range(0, rows, batch):
-        keys = make_keys(rows, prefix="sensor/")[start : start + batch]
+        width = len(str(rows))
+        keys = [f"sensor/{i:0{width}d}".encode() for i in range(start, min(rows, start + batch))]
         if variable:
             values = [bytes(((i * 7) % value_size) + 1) for i in range(start, start + len(keys))]
         else:
@@ -79,7 +82,8 @@ def digest_table(table):
 
 
 def rss_mb():
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+    divisor = 1024.0 * 1024 if sys.platform == "darwin" else 1024.0
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / divisor
 
 
 def time_fn(fn, repeat):
@@ -93,13 +97,16 @@ def time_fn(fn, repeat):
     return best, out
 
 
-def bench_python_iter(db):
+def bench_python_iter(db, prefix=None):
     def run():
         it = db.new_iterator()
-        it.seek_to_first()
+        if prefix is None: it.seek_to_first()
+        else: it.seek(prefix)
         pairs = []
         while it.valid():
-            pairs.append((it.key(), it.value()))
+            key = it.key()
+            if prefix is not None and not key.startswith(prefix): break
+            pairs.append((key, it.value()))
             it.next()
         it.check_status()
         return pairs
@@ -107,13 +114,16 @@ def bench_python_iter(db):
     return run
 
 
-def bench_python_iter_arrow(db):
+def bench_python_iter_arrow(db, prefix=None):
     def run():
         it = db.new_iterator()
-        it.seek_to_first()
+        if prefix is None: it.seek_to_first()
+        else: it.seek(prefix)
         keys, values = [], []
         while it.valid():
-            keys.append(it.key())
+            key = it.key()
+            if prefix is not None and not key.startswith(prefix): break
+            keys.append(key)
             values.append(it.value())
             it.next()
         it.check_status()
@@ -140,10 +150,12 @@ def bench_native_scan_compute(db, batch_size, max_batch_bytes, prefix=None):
         )
         total_len = 0
         batches = 0
+        rows = 0
         for batch in reader:
             total_len += pc.sum(pc.binary_length(batch.column("value"))).as_py()
             batches += 1
-        return total_len, batches
+            rows += batch.num_rows
+        return total_len, batches, rows
 
     return run
 
@@ -164,15 +176,15 @@ def main():
     prefix = args.prefix.encode() if args.prefix else None
     try:
         # reference digest from the Python iterator (full scan only for digest)
-        ref_pairs = bench_python_iter(db)()
+        ref_pairs = bench_python_iter(db, prefix)()
         ref_digest = digest_pairs(ref_pairs)
         ref_count = len(ref_pairs)
         print(f"dataset: rows={ref_count} value_size~{args.value_size} variable={args.variable}")
         print(f"reference sha256: {ref_digest}")
 
         modes = [
-            ("python_iter_collect", bench_python_iter(db)),
-            ("python_iter_then_arrow", bench_python_iter_arrow(db)),
+            ("python_iter_collect", bench_python_iter(db, prefix)),
+            ("python_iter_then_arrow", bench_python_iter_arrow(db, prefix)),
             ("native_scan_materialize", bench_native_scan(db, args.batch_size, args.max_batch_bytes, prefix)),
             ("native_scan_compute", bench_native_scan_compute(db, args.batch_size, args.max_batch_bytes, prefix)),
         ]
@@ -181,21 +193,21 @@ def main():
             elapsed, out = time_fn(fn, args.repeat)
             rss_after = rss_mb()
             if isinstance(out, list):
-                assert digest_pairs(out) == ref_digest or prefix, f"{name}: digest mismatch"
+                assert digest_pairs(out) == ref_digest, f"{name}: digest mismatch"
                 rows = len(out)
                 extra = ""
             elif isinstance(out, tuple):
-                rows = f"value_bytes={out[0]} batches={out[1]}"
-                extra = ""
+                assert out[0] == sum(len(v) for _, v in ref_pairs) and out[2] == ref_count
+                rows = out[2]
+                extra = f" value_bytes={out[0]} batches={out[1]}"
             else:
-                if prefix is None:
-                    assert digest_table(out) == ref_digest, f"{name}: digest mismatch"
+                assert digest_table(out) == ref_digest, f"{name}: digest mismatch"
                 rows = out.num_rows
                 extra = f" table_bytes={out.nbytes}"
             rps = f"{(ref_count / elapsed):,.0f} rows/s" if isinstance(rows, int) else ""
             print(
                 f"{name:28s} best_of_{args.repeat}={elapsed * 1000:9.1f} ms  {rps:>16s}  "
-                f"rows={rows}{extra}  peak_rss_delta={rss_after - rss_before:.1f} MB"
+                f"rows={rows}{extra}  cumulative_process_peak_rss_delta={rss_after - rss_before:.1f} MB"
             )
         # batch-size sensitivity on the native scan
         print("batch-size sensitivity (native_scan_materialize):")

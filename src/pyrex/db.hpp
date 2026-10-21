@@ -28,6 +28,7 @@ protected:
     PyOptions opened_options_;
     std::string path_;
     std::map<std::string, std::shared_ptr<PyColumnFamilyHandle>> cf_handles_;
+    bool owns_cf_handles_ = false;
     std::atomic<bool> is_closed_{false};
     std::atomic<bool> is_read_only_{false};
     std::mutex active_iterators_mutex_;
@@ -45,21 +46,36 @@ protected:
     friend class PyRocksDBIterator;
     friend class PySnapshot;
     friend class PyArrowScan;
+    friend class PyTransaction;
+    friend class PyTransactionIterator;
 
     void check_db_open() const;
+    virtual void before_close_locked() {}
+    virtual void check_cf_drop_locked() {}
     void check_read_only() const;
     rocksdb::ColumnFamilyHandle* get_default_cf_handle() const;
+    // Caller holds arrow_mutex_. Checks identity, not just the CF name.
+    std::shared_ptr<PyColumnFamilyHandle> require_cf(PyColumnFamilyHandle& cf) const;
+    rocksdb::ReadOptions snapshot_read_options(std::shared_ptr<PyReadOptions> options,
+                                             const std::shared_ptr<PySnapshot>& snapshot) const;
+    py::object get_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
+                        std::shared_ptr<PyReadOptions> options, std::shared_ptr<PySnapshot> snapshot);
+    py::list multi_get_impl(PyColumnFamilyHandle* cf, const py::sequence& keys,
+                           std::shared_ptr<PyReadOptions> options, std::shared_ptr<PySnapshot> snapshot);
 
 public:
     PyRocksDB();
     PyRocksDB(const std::string& path, PyOptions* py_options, bool read_only = false);
     virtual ~PyRocksDB();
 
-    void close();
-    void put(const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr);
-    py::object get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr);
-    void del(const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr);
-    void write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write_options = nullptr);
+    virtual void close();
+    virtual void put(const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr);
+    virtual py::object get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr,
+                           std::shared_ptr<PySnapshot> snapshot = nullptr);
+    py::list multi_get(const py::sequence& keys, std::shared_ptr<PyReadOptions> read_options = nullptr,
+                       std::shared_ptr<PySnapshot> snapshot = nullptr);
+    virtual void del(const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr);
+    virtual void write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write_options = nullptr);
     void write_columnar_batch(const py::object& keys, const py::object& values, std::shared_ptr<PyWriteOptions> write_options = nullptr, const std::string& on_null = "error");
     std::shared_ptr<PyRocksDBIterator> new_iterator(std::shared_ptr<PyReadOptions> read_options = nullptr);
     // Pins a consistent read view shared by one or more scan_arrow streams.
@@ -80,18 +96,23 @@ public:
     // Internal lifetime helpers for PySnapshot / PyArrowScan. detach_* take
     // arrow_mutex_ first, then the object mutex (consistent with close(),
     // which holds arrow_mutex_ while invalidating).
-    void register_scan(PyArrowScan* scan);
     void unregister_scan(PyArrowScan* scan);
     void detach_scan_resources(PyArrowScan* scan, bool mark_exhausted);
     void detach_snapshot(PySnapshot* snapshot);
 };
 
 class PyRocksDBExtended : public PyRocksDB {
+protected:
+    PyRocksDBExtended() = default;
 public:
     PyRocksDBExtended(const std::string& path, PyOptions* py_options, bool read_only = false);
 
     void put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr);
-    py::object get_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr);
+    py::object get_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr,
+                      std::shared_ptr<PySnapshot> snapshot = nullptr);
+    py::list multi_get_cf(PyColumnFamilyHandle& cf, const py::sequence& keys,
+                         std::shared_ptr<PyReadOptions> read_options = nullptr,
+                         std::shared_ptr<PySnapshot> snapshot = nullptr);
     void del_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr);
     std::vector<std::string> list_column_families();
     std::shared_ptr<PyColumnFamilyHandle> create_column_family(const std::string& name, PyOptions* cf_py_options = nullptr);
