@@ -12,7 +12,8 @@ uses the default column family.
 Methods:
 
 * ``put(key: bytes, value: bytes, write_options=None) -> None``
-* ``get(key: bytes, read_options=None) -> bytes | None``
+* ``get(key: bytes, read_options=None, snapshot=None) -> bytes | None``
+* ``multi_get(keys, read_options=None, snapshot=None) -> list[bytes | None]``
 * ``delete(key: bytes, write_options=None) -> None``
 * ``write(write_batch: PyWriteBatch, write_options=None) -> None``
 * ``write_columnar_batch(keys, values, *, write_options=None, on_null="error") -> None``
@@ -34,7 +35,8 @@ PyRocksDBExtended
 Methods:
 
 * ``put_cf(cf_handle, key: bytes, value: bytes, write_options=None) -> None``
-* ``get_cf(cf_handle, key: bytes, read_options=None) -> bytes | None``
+* ``get_cf(cf_handle, key: bytes, read_options=None, snapshot=None) -> bytes | None``
+* ``multi_get_cf(cf_handle, keys, read_options=None, snapshot=None) -> list[bytes | None]``
 * ``delete_cf(cf_handle, key: bytes, write_options=None) -> None``
 * ``list_column_families() -> list[str]``
 * ``create_column_family(name: str, cf_options=None) -> ColumnFamilyHandle``
@@ -54,7 +56,11 @@ and ``scan_arrow_cf()``. It exports the Arrow C Stream interface via
 ``close()``, ``is_closed``, ``sequence_number``, and context-manager use.
 
 ``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
-multiple scans. Methods: ``release()``, ``is_valid``, ``sequence_number``.
+multiple scans. Methods: ``release()``, ``is_valid()``, ``sequence_number``.
+
+The same snapshot also pins ``get`` / ``multi_get`` and their CF variants.
+MultiGet preserves input order/duplicates and returns ``None`` for missing
+keys; at most 65536 keys per call. Results are Python lists, not Arrow streams.
 
 See ``arrow_scans`` for the full scan/range/snapshot/lifecycle contract.
 
@@ -83,14 +89,25 @@ RocksDB database with pessimistic transaction support.
 Methods:
 
 * ``put(key: bytes, value: bytes, write_options=None) -> None``
-* ``get(key: bytes, read_options=None) -> bytes | None``
+* ``get(key: bytes, read_options=None, snapshot=None) -> bytes | None``
+* ``multi_get(keys, read_options=None, snapshot=None) -> list[bytes | None]``
 * ``delete(key: bytes, write_options=None) -> None``
 * ``write(write_batch: PyWriteBatch, write_options=None) -> None``
 * ``begin_transaction(write_options=None, transaction_options=None) -> Transaction``
 * ``transaction(write_options=None, transaction_options=None) -> Transaction``
+* ``new_iterator(read_options=None) -> PyRocksDBIterator`` (committed state)
+* ``create_snapshot() -> Snapshot``
+* ``scan_arrow(prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False) -> ArrowScan`` (committed state; uncommitted transaction writes are not visible)
 * ``get_options() -> PyOptions``
 * ``get_transaction_db_options() -> TransactionDBOptions``
 * ``close() -> None``
+
+Also exposes CF management and direct CF operations:
+``create_column_family``, ``get_column_family``, ``list_column_families``,
+``drop_column_family``, ``default_cf``, ``put_cf``, ``get_cf``, ``multi_get_cf``,
+``delete_cf`` and ``scan_arrow_cf``. Reopening opens all persisted CFs.
+One explicit ``Snapshot`` can span scans and point reads across those CFs.
+Dropping a CF while any transaction is active is rejected.
 
 ``transaction()`` is an alias for ``begin_transaction()`` intended for context
 manager usage. Transaction context managers require an explicit ``commit()``;
@@ -105,6 +122,9 @@ Methods and properties:
 
 * ``put(key: bytes, value: bytes) -> None``
 * ``get(key: bytes, read_options=None) -> bytes | None``
+* ``put_cf(cf_handle, key: bytes, value: bytes) -> None``
+* ``get_cf(cf_handle, key: bytes, read_options=None) -> bytes | None``
+* ``delete_cf(cf_handle, key: bytes) -> None``
 * ``get_for_update(key: bytes, read_options=None, exclusive=True, do_validate=True, read_value=True) -> bytes | None``
 * ``delete(key: bytes) -> None``
 * ``write(write_batch: PyWriteBatch) -> None``
@@ -115,7 +135,7 @@ Methods and properties:
 * ``is_active -> bool``
 
 Transaction reads see prior writes in the same transaction. ``write`` accepts
-existing ``PyWriteBatch`` objects for default column-family ``put`` and
+existing ``PyWriteBatch`` objects for default/named column-family ``put`` and
 ``delete`` operations.
 
 ``get_for_update`` reads and tracks a key for transaction conflict checking. Set

@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Batched Arrow Scans &mdash; pyrex-rocksdb 0.5.0 documentation</title>
+  <title>Batched Arrow Scans &mdash; pyrex-rocksdb 0.6.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="_static/documentation_options.js?v=8fa8b3e9"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -55,6 +55,9 @@
 <li class="toctree-l2"><a class="reference internal" href="#batch-sizing">Batch sizing</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#snapshots">Snapshots</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#column-families">Column families</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#transactiondb">TransactionDB</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#snapshot-consistent-materialization">Snapshot-consistent materialization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#column-family-integration-opportunities">Column-family integration opportunities</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#lifecycle-and-safety">Lifecycle and safety</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
 </ul>
@@ -163,6 +166,69 @@ across column families so multi-relation consumers observe one horizon.
 Dropping a column family with an active scan on it is rejected; close the
 scan first.</p>
 </section>
+<section id="transactiondb">
+<h2>TransactionDB<a class="headerlink" href="#transactiondb" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">TransactionDB.scan_arrow(...)</span></code> exposes the same native scan contract on
+transaction-capable databases. <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf(cf,</span> <span class="pre">...)</span></code> scans a named CF;
+<code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> and <code class="docutils literal notranslate"><span class="pre">new_iterator()</span></code> are available as well. A scan
+observes <em>committed</em> state at its pinned snapshot: writes from still-open
+transactions are not visible and appear only after commit. A snapshot must
+belong to the same database instance, so snapshots cannot be shared between
+a <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code> and a plain <code class="docutils literal notranslate"><span class="pre">PyRocksDB</span></code>. Transaction-local
+read-your-writes stays on the <code class="docutils literal notranslate"><span class="pre">Transaction</span></code> handle (<code class="docutils literal notranslate"><span class="pre">txn.get</span></code>); merging
+uncommitted writes into a scan remains a follow-up.</p>
+<p><code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code> opens all persisted column families on reopen and supports
+the same CF management and direct CF reads/writes as <code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended</span></code>.
+Transactions support <code class="docutils literal notranslate"><span class="pre">put_cf</span></code>, <code class="docutils literal notranslate"><span class="pre">get_cf</span></code> and <code class="docutils literal notranslate"><span class="pre">delete_cf</span></code>, and CF
+put/delete operations in <code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code>. Dropping a CF is conservatively
+rejected while <em>any</em> transaction is active, or while an Arrow scan uses it.
+Finish transactions and close streams before dropping their families.</p>
+</section>
+<section id="snapshot-consistent-materialization">
+<h2>Snapshot-consistent materialization<a class="headerlink" href="#snapshot-consistent-materialization" title="Link to this heading"></a></h2>
+<p>On <code class="docutils literal notranslate"><span class="pre">PyRocksDB</span></code>, <code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended</span></code> and <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code>, <code class="docutils literal notranslate"><span class="pre">get</span></code> and
+<code class="docutils literal notranslate"><span class="pre">multi_get</span></code> accept the same <code class="docutils literal notranslate"><span class="pre">snapshot=</span></code> object used by scans. CF variants
+<code class="docutils literal notranslate"><span class="pre">get_cf</span></code> and <code class="docutils literal notranslate"><span class="pre">multi_get_cf</span></code> do too. This closes the read-horizon gap in an
+index-scan / point-materialization pipeline:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">snap</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_snapshot</span><span class="p">()</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow_cf</span><span class="p">(</span><span class="n">index_cf</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="sa">b</span><span class="s2">"p/"</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snap</span><span class="p">)</span> <span class="k">as</span> <span class="n">scan</span><span class="p">:</span>
+        <span class="n">reader</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">scan</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">reader</span><span class="p">:</span>
+            <span class="n">version_keys</span> <span class="o">=</span> <span class="n">batch</span><span class="o">.</span><span class="n">column</span><span class="p">(</span><span class="s2">"value"</span><span class="p">)</span><span class="o">.</span><span class="n">to_pylist</span><span class="p">()</span>
+            <span class="n">payloads</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">multi_get_cf</span><span class="p">(</span><span class="n">facts_cf</span><span class="p">,</span> <span class="n">version_keys</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snap</span><span class="p">)</span>
+            <span class="c1"># Decode/validate payloads in the application, not PyRex.</span>
+<span class="k">finally</span><span class="p">:</span>
+    <span class="n">snap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">multi_get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get_cf</span></code> call native RocksDB MultiGet, returning a
+Python list in input order. Duplicate keys are preserved; missing keys are
+<code class="docutils literal notranslate"><span class="pre">None</span></code> and empty values are <code class="docutils literal notranslate"><span class="pre">b&quot;&quot;</span></code>. Empty inputs still validate the DB,
+CF and snapshot. Inputs must contain at most 65536 byte keys per call;
+results are materialized, not a streaming or byte-bounded Arrow API.
+An operational error raises rather than returning a partial result list.
+Foreign, released and DB-closed snapshots fail clearly.</p>
+<p>Keep the snapshot alive through both scan and point reads. A RocksDB sequence
+number identifies a storage view, not an authenticated application-level
+temporal horizon. GestaltDB-like consumers still need their own visibility,
+exact evidence identity, payload decoding and term-encoding checks.</p>
+</section>
+<section id="column-family-integration-opportunities">
+<h2>Column-family integration opportunities<a class="headerlink" href="#column-family-integration-opportunities" title="Link to this heading"></a></h2>
+<p>For a future CF-backed consumer, a single snapshot can cover fact records,
+index locators, dictionaries and persisted derived generations. CF-specific
+compression/compaction settings can isolate different access patterns while
+transactions publish related CF writes atomically. These are architectural
+capabilities, not measured reasoning speedups. Do not create a CF per predicate
+without measuring its handle/memtable/compaction costs.</p>
+<p>GestaltDB currently stores prefixed keys in the default family, so its current
+layout needs <code class="docutils literal notranslate"><span class="pre">scan_arrow</span></code> plus snapshot-consistent point reads, not a CF
+migration. Its <code class="docutils literal notranslate"><span class="pre">NativeKeyScan</span></code> adapter currently converts Arrow buffers to
+Python byte rows; CF support alone does not provide decoded columnar facts or
+zero-Python reasoning. Re-audit its capability matrix and adapters before
+enabling transactional/CF acceleration (GestaltDB issue #194).</p>
+</section>
 <section id="lifecycle-and-safety">
 <h2>Lifecycle and safety<a class="headerlink" href="#lifecycle-and-safety" title="Link to this heading"></a></h2>
 <ul class="simple">
@@ -175,6 +241,8 @@ after database closure, fails instead of touching freed memory.</p></li>
 <li><p>Closing the database invalidates active scans safely: exported batches
 remain valid (owned buffers), subsequent reads fail clearly.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code> reports the read view the scan observes.</p></li>
+<li><p>Releasing an Arrow consumer closes the native scan even if an <code class="docutils literal notranslate"><span class="pre">ArrowScan</span></code>
+variable is retained. Explicit close and repeated release are idempotent.</p></li>
 </ul>
 <p>Reading data back yields raw <code class="docutils literal notranslate"><span class="pre">key</span></code>/<code class="docutils literal notranslate"><span class="pre">value</span></code> binary columns. Decoding
 application payloads (JSON, MessagePack, term encodings, graph relations)
@@ -188,8 +256,16 @@ in PyRex.</p>
 <span class="pre">max_batch_bytes=8388608,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span>
 <span class="pre">allow_overflow=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended.scan_arrow_cf(cf_handle,</span> <span class="pre">...)</span></code> — same keyword contract.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.create_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">Snapshot</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">Snapshot.release()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.is_valid</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.sequence_number</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TransactionDB.scan_arrow(...)</span></code> — same keyword contract on the default
+column family; observes committed state (open-transaction writes excluded).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TransactionDB.scan_arrow_cf(cf_handle,</span> <span class="pre">...)</span></code> — same contract across CFs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get(key,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span></code> and
+<code class="docutils literal notranslate"><span class="pre">multi_get(keys,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_cf(cf,</span> <span class="pre">key,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span></code> and
+<code class="docutils literal notranslate"><span class="pre">multi_get_cf(cf,</span> <span class="pre">keys,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.create_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">Snapshot</span></code> (also on <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code>;
+snapshots are per-instance and never shared across DB objects)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Snapshot.release()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.sequence_number</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.close()</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code></p></li>
 </ul>
 <p>See <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_scan.py</span></code> for the reproducible comparison of

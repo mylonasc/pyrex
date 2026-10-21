@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Reference &mdash; pyrex-rocksdb 0.5.0 documentation</title>
+  <title>API Reference &mdash; pyrex-rocksdb 0.6.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="_static/documentation_options.js?v=8fa8b3e9"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -102,7 +102,8 @@ uses the default column family.</p>
 <p>Methods:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">put(key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">multi_get(keys,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span> <span class="pre">-&gt;</span> <span class="pre">list[bytes</span> <span class="pre">|</span> <span class="pre">None]</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">delete(key:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">write(write_batch:</span> <span class="pre">PyWriteBatch,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">write_columnar_batch(keys,</span> <span class="pre">values,</span> <span class="pre">*,</span> <span class="pre">write_options=None,</span> <span class="pre">on_null=&quot;error&quot;)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
@@ -122,7 +123,8 @@ and applies all rows through one native RocksDB <code class="docutils literal no
 <p>Methods:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">put_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">get_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">multi_get_cf(cf_handle,</span> <span class="pre">keys,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span> <span class="pre">-&gt;</span> <span class="pre">list[bytes</span> <span class="pre">|</span> <span class="pre">None]</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">delete_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">list_column_families()</span> <span class="pre">-&gt;</span> <span class="pre">list[str]</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">create_column_family(name:</span> <span class="pre">str,</span> <span class="pre">cf_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">ColumnFamilyHandle</span></code></p></li>
@@ -141,7 +143,10 @@ and <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf()
 <code class="docutils literal notranslate"><span class="pre">struct&lt;key:</span> <span class="pre">binary</span> <span class="pre">(non-null),</span> <span class="pre">value:</span> <span class="pre">binary</span> <span class="pre">(non-null)&gt;</span></code> and supports
 <code class="docutils literal notranslate"><span class="pre">close()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>, and context-manager use.</p>
 <p><code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> is a pinned read view from <code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> shareable by
-multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
+multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
+<p>The same snapshot also pins <code class="docutils literal notranslate"><span class="pre">get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> and their CF variants.
+MultiGet preserves input order/duplicates and returns <code class="docutils literal notranslate"><span class="pre">None</span></code> for missing
+keys; at most 65536 keys per call. Results are Python lists, not Arrow streams.</p>
 <p>See <code class="docutils literal notranslate"><span class="pre">arrow_scans</span></code> for the full scan/range/snapshot/lifecycle contract.</p>
 </section>
 <section id="pywritebatch">
@@ -166,15 +171,25 @@ RocksDB database with pessimistic transaction support.</p>
 <p>Methods:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">put(key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">multi_get(keys,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None)</span> <span class="pre">-&gt;</span> <span class="pre">list[bytes</span> <span class="pre">|</span> <span class="pre">None]</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">delete(key:</span> <span class="pre">bytes,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">write(write_batch:</span> <span class="pre">PyWriteBatch,</span> <span class="pre">write_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">begin_transaction(write_options=None,</span> <span class="pre">transaction_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">Transaction</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">transaction(write_options=None,</span> <span class="pre">transaction_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">Transaction</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">new_iterator(read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">PyRocksDBIterator</span></code> (committed state)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">create_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">Snapshot</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scan_arrow(prefix=None,</span> <span class="pre">start=None,</span> <span class="pre">stop=None,</span> <span class="pre">batch_size=65536,</span> <span class="pre">max_batch_bytes=8388608,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span> <span class="pre">allow_overflow=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code> (committed state; uncommitted transaction writes are not visible)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_options()</span> <span class="pre">-&gt;</span> <span class="pre">PyOptions</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_transaction_db_options()</span> <span class="pre">-&gt;</span> <span class="pre">TransactionDBOptions</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">close()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 </ul>
+<p>Also exposes CF management and direct CF operations:
+<code class="docutils literal notranslate"><span class="pre">create_column_family</span></code>, <code class="docutils literal notranslate"><span class="pre">get_column_family</span></code>, <code class="docutils literal notranslate"><span class="pre">list_column_families</span></code>,
+<code class="docutils literal notranslate"><span class="pre">drop_column_family</span></code>, <code class="docutils literal notranslate"><span class="pre">default_cf</span></code>, <code class="docutils literal notranslate"><span class="pre">put_cf</span></code>, <code class="docutils literal notranslate"><span class="pre">get_cf</span></code>, <code class="docutils literal notranslate"><span class="pre">multi_get_cf</span></code>,
+<code class="docutils literal notranslate"><span class="pre">delete_cf</span></code> and <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf</span></code>. Reopening opens all persisted CFs.
+One explicit <code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> can span scans and point reads across those CFs.
+Dropping a CF while any transaction is active is rejected.</p>
 <p><code class="docutils literal notranslate"><span class="pre">transaction()</span></code> is an alias for <code class="docutils literal notranslate"><span class="pre">begin_transaction()</span></code> intended for context
 manager usage. Transaction context managers require an explicit <code class="docutils literal notranslate"><span class="pre">commit()</span></code>;
 they roll back automatically if still active on exit.</p>
@@ -186,6 +201,9 @@ they roll back automatically if still active on exit.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">put(key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">put_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes,</span> <span class="pre">value:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delete_cf(cf_handle,</span> <span class="pre">key:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_for_update(key:</span> <span class="pre">bytes,</span> <span class="pre">read_options=None,</span> <span class="pre">exclusive=True,</span> <span class="pre">do_validate=True,</span> <span class="pre">read_value=True)</span> <span class="pre">-&gt;</span> <span class="pre">bytes</span> <span class="pre">|</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">delete(key:</span> <span class="pre">bytes)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">write(write_batch:</span> <span class="pre">PyWriteBatch)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code></p></li>
@@ -196,7 +214,7 @@ they roll back automatically if still active on exit.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">is_active</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p></li>
 </ul>
 <p>Transaction reads see prior writes in the same transaction. <code class="docutils literal notranslate"><span class="pre">write</span></code> accepts
-existing <code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code> objects for default column-family <code class="docutils literal notranslate"><span class="pre">put</span></code> and
+existing <code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code> objects for default/named column-family <code class="docutils literal notranslate"><span class="pre">put</span></code> and
 <code class="docutils literal notranslate"><span class="pre">delete</span></code> operations.</p>
 <p><code class="docutils literal notranslate"><span class="pre">get_for_update</span></code> reads and tracks a key for transaction conflict checking. Set
 <code class="docutils literal notranslate"><span class="pre">read_value=False</span></code> to lock or track the key without fetching the value; the

@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Column Family Usage Example &mdash; pyrex-rocksdb 0.5.0 documentation</title>
+  <title>Column Family Usage Example &mdash; pyrex-rocksdb 0.6.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="_static/documentation_options.js?v=8fa8b3e9"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -82,6 +82,10 @@
   <section id="column-family-usage-example">
 <h1>Column Family Usage Example<a class="headerlink" href="#column-family-usage-example" title="Link to this heading"></a></h1>
 <p>This example demonstrates how to use <cite>PyRocksDBExtended</cite> to manage and interact with multiple column families within a RocksDB database.</p>
+<p>Since 0.6.0, <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code> also supports CF management and atomic CF
+writes. Both handles support <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf</span></code> and snapshot-aware <code class="docutils literal notranslate"><span class="pre">get_cf</span></code> /
+<code class="docutils literal notranslate"><span class="pre">multi_get_cf</span></code> sharing one DB horizon. See <a class="reference internal" href="transactions.html"><span class="doc">Transactions</span></a> and
+<a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for the transactional example and lifetime guarantees.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>Column families are an advanced feature of RocksDB that allow you to logically

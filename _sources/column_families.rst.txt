@@ -5,6 +5,11 @@ Column Family Usage Example
 
 This example demonstrates how to use `PyRocksDBExtended` to manage and interact with multiple column families within a RocksDB database.
 
+Since 0.6.0, ``TransactionDB`` also supports CF management and atomic CF
+writes. Both handles support ``scan_arrow_cf`` and snapshot-aware ``get_cf`` /
+``multi_get_cf`` sharing one DB horizon. See :doc:`transactions` and
+:doc:`arrow_scans` for the transactional example and lifetime guarantees.
+
 .. note::
 
         Column families are an advanced feature of RocksDB that allow you to logically

@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Transactions &mdash; pyrex-rocksdb 0.5.0 documentation</title>
+  <title>Transactions &mdash; pyrex-rocksdb 0.6.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=1dd76d02"></script>
+      <script src="_static/documentation_options.js?v=8fa8b3e9"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -53,6 +53,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#rollback-on-exception">Rollback On Exception</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#write-batch-inside-a-transaction">Write Batch Inside A Transaction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transaction-iterators">Transaction Iterators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#column-families-and-shared-read-views">Column Families and Shared Read Views</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#read-for-update">Read For Update</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transaction-options">Transaction Options</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#write-options-and-durability">Write Options And Durability</a></li>
@@ -131,7 +132,7 @@ the transaction is still active when the <code class="docutils literal notransla
 <section id="write-batch-inside-a-transaction">
 <h2>Write Batch Inside A Transaction<a class="headerlink" href="#write-batch-inside-a-transaction" title="Link to this heading"></a></h2>
 <p>Existing <code class="docutils literal notranslate"><span class="pre">PyWriteBatch</span></code> objects can be applied inside a transaction. The
-current transaction batch support covers default column-family <code class="docutils literal notranslate"><span class="pre">put</span></code> and
+current transaction batch support covers default/named column-family <code class="docutils literal notranslate"><span class="pre">put</span></code> and
 <code class="docutils literal notranslate"><span class="pre">delete</span></code> operations.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
 
@@ -167,6 +168,64 @@ prefix and stopping when keys no longer match.</p>
         <span class="n">txn</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
 </pre></div>
 </div>
+</section>
+<section id="column-families-and-shared-read-views">
+<h2>Column Families and Shared Read Views<a class="headerlink" href="#column-families-and-shared-read-views" title="Link to this heading"></a></h2>
+<p>Since 0.6.0, <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code> supports named column families, atomic
+<code class="docutils literal notranslate"><span class="pre">txn.put_cf</span></code> / <code class="docutils literal notranslate"><span class="pre">txn.get_cf</span></code> / <code class="docutils literal notranslate"><span class="pre">txn.delete_cf</span></code>, and native
+<code class="docutils literal notranslate"><span class="pre">db.scan_arrow_cf</span></code>. One <code class="docutils literal notranslate"><span class="pre">db.create_snapshot()</span></code> can be shared by scans,
+<code class="docutils literal notranslate"><span class="pre">db.get</span></code> / <code class="docutils literal notranslate"><span class="pre">db.get_cf</span></code> and <code class="docutils literal notranslate"><span class="pre">db.multi_get</span></code> / <code class="docutils literal notranslate"><span class="pre">db.multi_get_cf</span></code>.
+This preserves the storage horizon from index extraction through point
+materialization, even while other transactions commit.</p>
+<p>Native DB scans/point reads observe committed state only; read-your-writes
+remains on the <code class="docutils literal notranslate"><span class="pre">txn</span></code> handle. <code class="docutils literal notranslate"><span class="pre">TransactionOptions.set_snapshot=True</span></code>
+pins repeatable transaction reads, including <code class="docutils literal notranslate"><span class="pre">get_cf</span></code>. A transaction’s
+internal snapshot is not interchangeable with a DB <code class="docutils literal notranslate"><span class="pre">Snapshot</span></code>.</p>
+<p>CFs are reopened automatically. CF drops are rejected while any transaction
+is active or a relevant Arrow scan is open. Transactions should be used by
+one thread at a time; do not mutate option objects or batches while another
+thread is using them in a native operation.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">snapshot_cf_reads.py</span><a class="headerlink" href="#id1" title="Link to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="sd">"""Atomic cross-CF publication and one-horizon scan/lookup materialization."""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tempfile</span><span class="w"> </span><span class="kn">import</span> <span class="n">TemporaryDirectory</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrex</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="k">with</span> <span class="n">TemporaryDirectory</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">"pyrex-snapshot-cf-"</span><span class="p">)</span> <span class="k">as</span> <span class="n">path</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">TransactionDB</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_column_family</span><span class="p">(</span><span class="s2">"index"</span><span class="p">)</span>
+            <span class="n">facts</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_column_family</span><span class="p">(</span><span class="s2">"facts"</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">transaction</span><span class="p">()</span> <span class="k">as</span> <span class="n">txn</span><span class="p">:</span>
+                <span class="n">txn</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"p/a"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"version/1"</span><span class="p">)</span>
+                <span class="n">txn</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">facts</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"version/1"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"old"</span><span class="p">)</span>
+                <span class="n">txn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+            <span class="n">snapshot</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">create_snapshot</span><span class="p">()</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># A concurrent publication must not change materialization.</span>
+                <span class="n">db</span><span class="o">.</span><span class="n">put_cf</span><span class="p">(</span><span class="n">facts</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"version/1"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"new"</span><span class="p">)</span>
+                <span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow_cf</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="sa">b</span><span class="s2">"p/"</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">)</span> <span class="k">as</span> <span class="n">scan</span><span class="p">:</span>
+                    <span class="n">reader</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">scan</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">reader</span><span class="p">:</span>
+                        <span class="n">keys</span> <span class="o">=</span> <span class="n">batch</span><span class="o">.</span><span class="n">column</span><span class="p">(</span><span class="s2">"value"</span><span class="p">)</span><span class="o">.</span><span class="n">to_pylist</span><span class="p">()</span>
+                        <span class="k">assert</span> <span class="n">db</span><span class="o">.</span><span class="n">multi_get_cf</span><span class="p">(</span><span class="n">facts</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">)</span> <span class="o">==</span> <span class="p">[</span><span class="sa">b</span><span class="s2">"old"</span><span class="p">]</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">"snapshot values:"</span><span class="p">,</span> <span class="n">db</span><span class="o">.</span><span class="n">multi_get_cf</span><span class="p">(</span><span class="n">facts</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">))</span>
+                <span class="k">assert</span> <span class="n">db</span><span class="o">.</span><span class="n">get_cf</span><span class="p">(</span><span class="n">facts</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"version/1"</span><span class="p">)</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">"new"</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="n">snapshot</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<p>See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for bounds, byte limits, ownership and integration
+opportunities for higher-level systems such as GestaltDB.</p>
 </section>
 <section id="read-for-update">
 <h2>Read For Update<a class="headerlink" href="#read-for-update" title="Link to this heading"></a></h2>
@@ -246,8 +305,8 @@ subclasses so callers can decide whether to retry.</p>
 </section>
 <section id="complete-example">
 <h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading"></a></h2>
-<div class="literal-block-wrapper docutils container" id="id1">
-<div class="code-block-caption"><span class="caption-text">transactions.py</span><a class="headerlink" href="#id1" title="Link to this code"></a></div>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">transactions.py</span><a class="headerlink" href="#id2" title="Link to this code"></a></div>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="linenos"> 2</span><span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 <span class="linenos"> 3</span>
