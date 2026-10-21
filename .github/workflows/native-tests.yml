@@ -1,0 +1,40 @@
+name: Native API tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12", "3.14"]
+    env:
+      PYREX_VERSION: "0.6.0"
+      ROCKSDB_VERSION: "10.7.5"
+      HOST_CACHE_DIR: /tmp/pyrex-native-cache
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Native dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libsnappy-dev liblz4-dev zlib1g-dev libbz2-dev libzstd-dev liburing-dev
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/pyrex-native-cache
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('setup.py') }}
+      - name: Build and install
+        run: python -m pip install . pytest pyarrow polars
+      - name: Verify Arrow extras and run all tests
+        run: |
+          python -c "import pyrex, pyarrow, polars; print(pyrex.__version__, pyarrow.__version__, polars.__version__)"
+          python -m pytest tests/ -q

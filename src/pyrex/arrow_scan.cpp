@@ -225,6 +225,8 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
     }
     if (has_eff_stop_) upper_bound_storage_ = eff_stop_;
 
+    // Never wait for the GIL while holding the DB lifecycle lock.
+    py::gil_scoped_release release;
     std::lock_guard<std::mutex> arrow_lock(parent_->arrow_mutex_);
     if (parent_->is_closed_.load() || !parent_->db_) {
         throw RocksDBException("Cannot scan: database is closed.");
@@ -233,7 +235,7 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
 
     rocksdb::ColumnFamilyHandle* cf_raw = nullptr;
     if (cf_handle_) {
-        if (!cf_handle_->is_valid()) throw RocksDBException("Cannot scan: ColumnFamilyHandle is invalid.");
+        parent_->require_cf(*cf_handle_);
         cf_raw = cf_handle_->cf_handle_;
         cf_name_ = cf_handle_->get_name();
     } else {
@@ -271,45 +273,34 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
         snapshot_seq_ = view->GetSequenceNumber();
     }
 
-    rocksdb::ReadOptions opts = read_options ? read_options->options_ : parent_->default_read_options_->options_;
-    opts.snapshot = view;
-    if (has_eff_stop_) {
-        upper_bound_slice_ = rocksdb::Slice(upper_bound_storage_);
-        opts.iterate_upper_bound = &upper_bound_slice_;
-    }
-
-    rocksdb::Iterator* it = db_raw->NewIterator(opts, cf_raw);
-    if (!it) {
-        if (owned_snapshot_) {
-            db_raw->ReleaseSnapshot(owned_snapshot_);
-            owned_snapshot_ = nullptr;
+    try {
+        rocksdb::ReadOptions opts = read_options ? read_options->options_ : parent_->default_read_options_->options_;
+        opts.snapshot = view;
+        if (has_eff_stop_) {
+            upper_bound_slice_ = rocksdb::Slice(upper_bound_storage_);
+            opts.iterate_upper_bound = &upper_bound_slice_;
         }
-        shared_snapshot_.reset();
-        throw RocksDBException("scan_arrow: failed to create iterator.");
-    }
-    iter_ = it;
 
-    {
-        py::gil_scoped_release release;
+        iter_ = db_raw->NewIterator(opts, cf_raw);
+        if (!iter_) throw RocksDBException("scan_arrow: failed to create iterator.");
         if (has_eff_start_) {
             iter_->Seek(rocksdb::Slice(eff_start_));
         } else {
             iter_->SeekToFirst();
         }
-    }
-    rocksdb::Status s = iter_->status();
-    if (!s.ok()) {
-        rocksdb::Status err = s;
+        const auto status = iter_->status();
+        if (!status.ok()) throw RocksDBException("scan_arrow: seek failed: " + status.ToString());
+        started_ = true;
+        // Registration and establishment are atomic with respect to close/drop.
+        parent_->active_arrow_scans_.insert(this);
+    } catch (...) {
         delete iter_;
         iter_ = nullptr;
-        if (owned_snapshot_) {
-            db_raw->ReleaseSnapshot(owned_snapshot_);
-            owned_snapshot_ = nullptr;
-        }
+        if (owned_snapshot_) db_raw->ReleaseSnapshot(owned_snapshot_);
+        owned_snapshot_ = nullptr;
         shared_snapshot_.reset();
-        throw RocksDBException("scan_arrow: seek failed: " + err.ToString());
+        throw;
     }
-    started_ = true;
 }
 
 PyArrowScan::~PyArrowScan() {
@@ -337,11 +328,14 @@ uint64_t PyArrowScan::sequence_number() const { return snapshot_seq_; }
 
 void PyArrowScan::invalidate_for_db_close(rocksdb::DB* db_raw) {
     std::lock_guard<std::mutex> lock(mutex_);
-    finish_locked(db_raw);
+    auto deferred = finish_locked(db_raw);
+    // Keep the Python-facing object until teardown is outside the parent
+    // lock. DB close invalidates its native snapshot separately below.
+    shared_snapshot_ = std::move(deferred);
     closed_ = true;
 }
 
-void PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
+std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
     if (iter_) {
         delete iter_;
         iter_ = nullptr;
@@ -350,7 +344,9 @@ void PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
         if (db_raw) db_raw->ReleaseSnapshot(owned_snapshot_);
         owned_snapshot_ = nullptr;
     }
-    shared_snapshot_.reset();
+    // The last reference can call back into the parent. Destroy it only
+    // AFTER the parent and scan locks have been released by the caller.
+    return std::move(shared_snapshot_);
 }
 
 bool PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values) {
@@ -388,7 +384,7 @@ bool PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<
         }
         const uint64_t n = static_cast<uint64_t>(keys.size());
         // 8 bytes of offset overhead per row (two int32 offset slots).
-        const uint64_t prospective = key_total + key_len + value_total + value_len + 8 * (n + 1);
+        const uint64_t prospective = key_total + key_len + value_total + value_len + 8 * (n + 2);
         if (!keys.empty() && prospective > static_cast<uint64_t>(max_batch_bytes_)) {
             break;  // emit the current batch; the iterator stays on this record
         }
@@ -415,37 +411,32 @@ bool PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<
 int PyArrowScan::fill_schema(ArrowSchema* out) {
     if (!out) return EINVAL;
     std::memset(out, 0, sizeof(*out));
+    out->release = &free_schema;
     try {
-        ArrowSchema** children = static_cast<ArrowSchema**>(std::calloc(2, sizeof(ArrowSchema*)));
-        if (!children) return ENOMEM;
-        ArrowSchema* key_schema = new (std::nothrow) ArrowSchema();
-        ArrowSchema* value_schema = new (std::nothrow) ArrowSchema();
-        if (!key_schema || !value_schema) {
-            delete key_schema;
-            delete value_schema;
-            std::free(children);
-            return ENOMEM;
+        out->children = static_cast<ArrowSchema**>(std::calloc(2, sizeof(ArrowSchema*)));
+        if (!out->children) throw std::bad_alloc();
+        out->n_children = 2;
+        for (int i = 0; i < 2; ++i) {
+            out->children[i] = new ArrowSchema{};
+            out->children[i]->release = &free_schema;
         }
-        std::memset(key_schema, 0, sizeof(*key_schema));
-        std::memset(value_schema, 0, sizeof(*value_schema));
+        auto* key_schema = out->children[0];
+        auto* value_schema = out->children[1];
         key_schema->format = dup_cstr("z");  // binary, non-null
         key_schema->name = dup_cstr("key");
         key_schema->release = &free_schema;
         value_schema->format = dup_cstr("z");
         value_schema->name = dup_cstr("value");
         value_schema->release = &free_schema;
-        children[0] = key_schema;
-        children[1] = value_schema;
 
         out->format = dup_cstr("+s");  // struct
         out->name = dup_cstr("");
-        out->n_children = 2;
-        out->children = children;
-        out->release = &free_schema;
         return 0;
     } catch (const std::bad_alloc&) {
+        free_schema(out);
         return ENOMEM;
     } catch (...) {
+        free_schema(out);
         return EINVAL;
     }
 }
@@ -497,8 +488,10 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
     auto* priv = new (std::nothrow) BatchBuffers();
     if (!priv) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        last_error_ = "scan_arrow: allocation failed";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_error_ = "scan_arrow: allocation failed";
+        }
         if (parent_) parent_->detach_scan_resources(this, false);
         return ENOMEM;
     }
@@ -508,8 +501,10 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         delete key_owned;
         delete value_owned;
         delete priv;
-        std::lock_guard<std::mutex> lock(mutex_);
-        last_error_ = "scan_arrow: allocation failed";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_error_ = "scan_arrow: allocation failed";
+        }
         if (parent_) parent_->detach_scan_resources(this, false);
         return ENOMEM;
     }
@@ -543,8 +538,10 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         delete priv->key_array;
         delete priv->value_array;
         delete priv;
-        std::lock_guard<std::mutex> lock(mutex_);
-        last_error_ = "scan_arrow: batch allocation failed";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_error_ = "scan_arrow: batch allocation failed";
+        }
         if (parent_) parent_->detach_scan_resources(this, false);
         return ENOMEM;
     }
@@ -589,7 +586,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
 const char* PyArrowScan::last_error_cstr() {
     std::lock_guard<std::mutex> lock(mutex_);
-    return last_error_.empty() ? "" : last_error_.c_str();
+    return last_error_.empty() ? "scan_arrow: native allocation or stream failure" : last_error_.c_str();
 }
 
 // ---------------------------------------------------------------------------
@@ -615,7 +612,17 @@ int stream_get_next(ArrowArrayStream* stream, ArrowArray* out) {
     // No GIL handling here: consumers (e.g. PyArrow) may call get_next with
     // the GIL released, and fill_next touches no Python API (native RocksDB
     // iteration, malloc'd buffers, mutexes only), so it is safe either way.
-    return exp->scan->fill_next(out);
+    try {
+        return exp->scan->fill_next(out);
+    } catch (const std::bad_alloc&) {
+        try { exp->scan->close(); } catch (...) {}
+        std::memset(out, 0, sizeof(*out));
+        return ENOMEM;
+    } catch (...) {
+        try { exp->scan->close(); } catch (...) {}
+        std::memset(out, 0, sizeof(*out));
+        return EIO;
+    }
 }
 
 const char* stream_get_last_error(ArrowArrayStream* stream) {
@@ -626,7 +633,11 @@ const char* stream_get_last_error(ArrowArrayStream* stream) {
 
 void stream_release(ArrowArrayStream* stream) {
     if (!stream || !stream->release) return;
-    delete static_cast<StreamExport*>(stream->private_data);
+    auto* exp = static_cast<StreamExport*>(stream->private_data);
+    // Releasing a consumer must cancel native resources even if Python
+    // still holds an ArrowScan reference. Never throw through the C ABI.
+    try { if (exp) exp->scan->close(); } catch (...) {}
+    delete exp;
     stream->private_data = nullptr;
     stream->release = nullptr;
 }
@@ -668,8 +679,11 @@ py::object PyArrowScan::export_stream(py::object /*requested_schema*/) {
     exported_ = true;
     PyObject* capsule = PyCapsule_New(static_cast<void*>(stream), "arrow_array_stream", &stream_capsule_destructor);
     if (!capsule) {
-        stream->release(stream);
+        // export_stream already owns mutex_: stream_release would call
+        // close() and recursively acquire it. No consumer exists yet.
+        delete exp;
         delete stream;
+        exported_ = false;
         throw py::error_already_set();
     }
     return py::reinterpret_steal<py::object>(capsule);

@@ -4,6 +4,39 @@ All notable changes to `pyrex-rocksdb` are documented here. This changelog
 is maintained incrementally from this point onward; earlier history is
 available via `git log`.
 
+## [0.6.0] - 2026-10-21
+
+### Added
+
+- `TransactionDB.scan_arrow()` / `scan_arrow_cf()`, `create_snapshot()`
+  and `new_iterator()` over committed state. Shared snapshots span default
+  and named CFs; uncommitted transaction writes are deliberately excluded.
+- TransactionDB CF management, persisted-CF reopen, direct CF reads/writes,
+  and transactional `put_cf` / `get_cf` / `delete_cf` / CF WriteBatch writes.
+  CF drops are rejected while transactions or relevant Arrow scans are active.
+- Snapshot-consistent `get(..., snapshot=...)` / `get_cf(...)` and native
+  `multi_get` / `multi_get_cf` on plain, extended and transactional DBs.
+  MultiGet accepts up to 65536 byte keys, preserves order/duplicates and
+  returns `None` for missing values. Index scans and fact materialization
+  can now share exactly one storage horizon.
+- Cross-CF snapshot/materialization example and documented GestaltDB
+  integration opportunities/limitations; regression and allocation-failure tests.
+- Mandatory Arrow/Polars-enabled PR tests and release-wheel tests.
+
+### Fixed
+
+- Shared-snapshot destruction deadlocks, scan creation/close/drop races,
+  allocation-failure cleanup/deadlocks and deterministic Arrow consumer release.
+- Batch byte caps now include both initial binary offsets (eight previously
+  omitted bytes). Foreign CF handles are rejected by identity, not name.
+- Owned CF handles are destroyed before their DB; native DB/iterator and
+  transaction operations are serialized with explicit closure.
+- Transaction snapshots are applied to default and CF reads/iterators.
+- Selective benchmark baselines now use identical bounds, validate digests
+  and use the selected row count for throughput.
+- RocksDB cache keys include libc, compiler, flags and liburing headers,
+  preventing cross-environment ABI-incompatible cache reuse.
+
 ## [0.5.0] - 2026-10-21
 
 ### Added

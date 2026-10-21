@@ -11,6 +11,7 @@ void PyWriteBatch::put(const py::bytes& key, const py::bytes& value) {
 
 void PyWriteBatch::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
     if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
+    families_.insert(cf.shared_from_this());
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     rocksdb::Slice value_slice(static_cast<std::string_view>(value));
     wb_.Put(cf.cf_handle_, key_slice, value_slice);
@@ -23,6 +24,7 @@ void PyWriteBatch::del(const py::bytes& key) {
 
 void PyWriteBatch::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
     if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
+    families_.insert(cf.shared_from_this());
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     wb_.Delete(cf.cf_handle_, key_slice);
 }
@@ -35,9 +37,10 @@ void PyWriteBatch::merge(const py::bytes& key, const py::bytes& value) {
 
 void PyWriteBatch::merge_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
     if (!cf.is_valid()) throw RocksDBException("ColumnFamilyHandle is invalid.");
+    families_.insert(cf.shared_from_this());
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     rocksdb::Slice value_slice(static_cast<std::string_view>(value));
     wb_.Merge(cf.cf_handle_, key_slice, value_slice);
 }
 
-void PyWriteBatch::clear() { wb_.Clear(); }
+void PyWriteBatch::clear() { wb_.Clear(); families_.clear(); }

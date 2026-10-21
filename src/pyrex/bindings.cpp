@@ -179,7 +179,7 @@ void bind_pyrex(py::module_& m) {
             s2 = db.scan_arrow(prefix=b"b:", snapshot=snap)
             snap.release()
     )doc")
-        .def("release", &PySnapshot::release, "Releases the snapshot early. Idempotent; also runs at destruction.")
+        .def("release", &PySnapshot::release, "Releases the snapshot early. Idempotent; also runs at destruction.", py::call_guard<py::gil_scoped_release>())
         .def("is_valid", &PySnapshot::is_valid, "True while the snapshot is still pinned.")
         .def_property_readonly("sequence_number", &PySnapshot::sequence_number, "RocksDB sequence number identifying the pinned read view.");
 
@@ -198,11 +198,11 @@ void bind_pyrex(py::module_& m) {
     )doc")
         .def("__arrow_c_stream__", &PyArrowScan::export_stream, py::arg("requested_schema") = nullptr,
              "Exports the scan as an ArrowArrayStream PyCapsule (single-consumer).")
-        .def("close", &PyArrowScan::close, "Closes the scan early, releasing its iterator and snapshot resources. Already exported batches stay valid.")
+        .def("close", &PyArrowScan::close, "Closes the scan early, releasing its iterator and snapshot resources. Already exported batches stay valid.", py::call_guard<py::gil_scoped_release>())
         .def_property_readonly("sequence_number", &PyArrowScan::sequence_number, "Sequence number of the read view this scan observes.")
         .def_property_readonly("is_closed", &PyArrowScan::is_closed, "True after close() or database closure.")
         .def("__enter__", [](PyArrowScan& scan) -> PyArrowScan& { return scan; })
-        .def("__exit__", [](PyArrowScan& scan, py::object, py::object, py::object) { scan.close(); });
+        .def("__exit__", [](PyArrowScan& scan, py::object, py::object, py::object) { py::gil_scoped_release release; scan.close(); });
 
     py::class_<PyWriteBatch>(m, "PyWriteBatch", R"doc(
         A batch of write operations (Put, Delete) that can be applied atomically.
@@ -269,6 +269,9 @@ void bind_pyrex(py::module_& m) {
             txn.commit()
     )doc")
         .def("put", &PyTransaction::put, py::arg("key"), py::arg("value"), "Adds a key-value write to the transaction.", py::call_guard<py::gil_scoped_release>())
+        .def("put_cf", &PyTransaction::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), py::call_guard<py::gil_scoped_release>())
+        .def("get_cf", &PyTransaction::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr)
+        .def("delete_cf", &PyTransaction::del_cf, py::arg("cf_handle"), py::arg("key"), py::call_guard<py::gil_scoped_release>())
         .def("get", &PyTransaction::get, py::arg("key"), py::arg("read_options") = nullptr, "Reads a key through the transaction view.")
         .def("get_for_update", &PyTransaction::get_for_update, py::arg("key"), py::arg("read_options") = nullptr, py::arg("exclusive") = true, py::arg("do_validate") = true, py::arg("read_value") = true, R"doc(
             Reads a key through the transaction view and tracks it for conflict
@@ -285,6 +288,7 @@ void bind_pyrex(py::module_& m) {
         .def("__enter__", [](PyTransaction &txn) -> PyTransaction& { return txn; })
         .def("__exit__", [](PyTransaction &txn, py::object /* type */, py::object /* value */, py::object /* traceback */) {
             if (txn.is_active()) {
+                py::gil_scoped_release release;
                 txn.rollback();
             }
         });
@@ -309,6 +313,9 @@ void bind_pyrex(py::module_& m) {
 
         WriteOptions can be supplied to begin_transaction() and commit().
         disable_wal=True is preserved but is not fully durable across crashes.
+
+        Native Arrow scans (`scan_arrow()`, `create_snapshot()`) observe
+        committed state at the pinned snapshot, mirroring `PyRocksDB`.
     )doc")
         .def(py::init<const std::string&, PyOptions*, PyTransactionDBOptions*>(),
             py::arg("path"),
@@ -316,11 +323,44 @@ void bind_pyrex(py::module_& m) {
             py::arg("transaction_db_options") = nullptr,
             "Opens a RocksDB TransactionDB.", py::call_guard<py::gil_scoped_release>())
         .def("put", &PyTransactionDB::put, py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
-        .def("get", &PyTransactionDB::get, py::arg("key"), py::arg("read_options") = nullptr, "Retrieves the value for a key.")
+        .def("get", &PyTransactionDB::get, py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Reads committed state, optionally at a shared Snapshot.")
+        .def("multi_get", &PyTransactionDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
         .def("delete", &PyTransactionDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyTransactionDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
         .def("begin_transaction", &PyTransactionDB::begin_transaction, py::arg("write_options") = nullptr, py::arg("transaction_options") = nullptr, "Begins a pessimistic transaction.")
         .def("transaction", &PyTransactionDB::transaction, py::arg("write_options") = nullptr, py::arg("transaction_options") = nullptr, "Begins a pessimistic transaction for context manager use.")
+        .def("new_iterator", &PyTransactionDB::new_iterator, py::arg("read_options") = nullptr, "Creates a new iterator over committed state.", py::keep_alive<0, 1>())
+        .def("put_cf", &PyTransactionDB::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, py::call_guard<py::gil_scoped_release>())
+        .def("get_cf", &PyTransactionDB::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr)
+        .def("multi_get_cf", &PyTransactionDB::multi_get_cf, py::arg("cf_handle"), py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr)
+        .def("delete_cf", &PyTransactionDB::del_cf, py::arg("cf_handle"), py::arg("key"), py::arg("write_options") = nullptr, py::call_guard<py::gil_scoped_release>())
+        .def("list_column_families", &PyTransactionDB::list_column_families, py::call_guard<py::gil_scoped_release>())
+        .def("create_column_family", &PyTransactionDB::create_column_family, py::arg("name"), py::arg("cf_options") = nullptr, py::call_guard<py::gil_scoped_release>())
+        .def("drop_column_family", &PyTransactionDB::drop_column_family, py::arg("cf_handle"), py::call_guard<py::gil_scoped_release>())
+        .def("get_column_family", &PyTransactionDB::get_column_family, py::arg("name"))
+        .def_property_readonly("default_cf", &PyTransactionDB::get_default_cf)
+        .def("scan_arrow_cf", &PyTransactionDB::scan_arrow_cf, py::arg("cf_handle"), py::arg("prefix") = nullptr,
+             py::arg("start") = nullptr, py::arg("stop") = nullptr, py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false,
+             "Scans committed CF records at a shared DB snapshot; excludes uncommitted transaction writes.")
+        .def("create_snapshot", &PyTransactionDB::create_snapshot, "Pins a consistent read view shareable by scan_arrow streams.")
+        .def("scan_arrow", &PyTransactionDB::scan_arrow, py::arg("prefix") = nullptr, py::arg("start") = nullptr,
+             py::arg("stop") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, R"doc(
+            Scans the default column family natively into Arrow RecordBatches.
+
+            Same contract as `PyRocksDB.scan_arrow()`: fixed schema
+            `struct<key: binary (non-null), value: binary (non-null)>`,
+            lazy bounded-memory streaming, `[start, stop)` bounds with prefix
+            intersection, snapshot-horizon isolation. The scan observes
+            committed state at the pinned snapshot; uncommitted writes of
+            open transactions are not visible.
+
+            Returns:
+                ArrowScan: single-consumer stream consumable via
+                `pyarrow.RecordBatchReader.from_stream(scan)`.
+        )doc")
         .def("get_options", &PyTransactionDB::get_options, "Returns the options the database was opened with.")
         .def("get_transaction_db_options", &PyTransactionDB::get_transaction_db_options, "Returns the transaction DB options the database was opened with.")
         .def_property("default_read_options", &PyTransactionDB::get_default_read_options, &PyTransactionDB::set_default_read_options, "The default ReadOptions used for get operations.")
@@ -328,6 +368,7 @@ void bind_pyrex(py::module_& m) {
         .def("close", &PyTransactionDB::close, "Closes the database, rolling back active transactions.", py::call_guard<py::gil_scoped_release>())
         .def("__enter__", [](PyTransactionDB &db) -> PyTransactionDB& { return db; })
         .def("__exit__", [](PyTransactionDB &db, py::object /* type */, py::object /* value */, py::object /* traceback */) {
+            py::gil_scoped_release release;
             db.close();
         });
 
@@ -351,7 +392,8 @@ void bind_pyrex(py::module_& m) {
                                             Defaults to False.
         )doc", py::call_guard<py::gil_scoped_release>())
         .def("put", &PyRocksDB::put, py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
-        .def("get", &PyRocksDB::get, py::arg("key"), py::arg("read_options") = nullptr, "Retrieves the value for a key.")
+        .def("get", &PyRocksDB::get, py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Retrieves a value, optionally at a shared Snapshot.")
+        .def("multi_get", &PyRocksDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
         .def("delete", &PyRocksDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyRocksDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
         .def("write_columnar_batch", &PyRocksDB::write_columnar_batch, py::arg("keys"), py::arg("values"), py::kw_only(), py::arg("write_options") = nullptr, py::arg("on_null") = "error", "Writes columnar key/value arrays using a native RocksDB WriteBatch.")
@@ -385,6 +427,7 @@ void bind_pyrex(py::module_& m) {
         .def("close", &PyRocksDB::close, "Closes the database, releasing resources and the lock.", py::call_guard<py::gil_scoped_release>())
         .def("__enter__", [](PyRocksDB &db) -> PyRocksDB& { return db; })
         .def("__exit__", [](PyRocksDB &db, py::object /* type */, py::object /* value */, py::object /* traceback */) {
+            py::gil_scoped_release release;
             db.close();
         });
 
@@ -405,7 +448,8 @@ void bind_pyrex(py::module_& m) {
                                             Defaults to False.
         )doc", py::call_guard<py::gil_scoped_release>())
         .def("put_cf", &PyRocksDBExtended::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair into a specific column family.", py::call_guard<py::gil_scoped_release>())
-        .def("get_cf", &PyRocksDBExtended::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr, "Retrieves the value for a key from a specific column family.")
+        .def("get_cf", &PyRocksDBExtended::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Retrieves a CF value, optionally at a shared Snapshot.")
+        .def("multi_get_cf", &PyRocksDBExtended::multi_get_cf, py::arg("cf_handle"), py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr)
         .def("delete_cf", &PyRocksDBExtended::del_cf, py::arg("cf_handle"), py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key from a specific column family.", py::call_guard<py::gil_scoped_release>())
         .def("list_column_families", &PyRocksDBExtended::list_column_families, "Lists the names of all existing column families.")
         .def("create_column_family", &PyRocksDBExtended::create_column_family, py::arg("name"), py::arg("cf_options") = nullptr, "Creates a new column family.", py::call_guard<py::gil_scoped_release>())

@@ -12,22 +12,24 @@ namespace {
 class TransactionWriteBatchHandler : public rocksdb::WriteBatch::Handler {
 private:
     rocksdb::Transaction* txn_;
+    std::map<uint32_t, rocksdb::ColumnFamilyHandle*> families_;
 
 public:
-    explicit TransactionWriteBatchHandler(rocksdb::Transaction* txn) : txn_(txn) {}
+    TransactionWriteBatchHandler(rocksdb::Transaction* txn, const std::map<std::string, std::shared_ptr<PyColumnFamilyHandle>>& families)
+        : txn_(txn) {
+        for (const auto& entry : families) families_[entry.second->cf_handle_->GetID()] = entry.second->cf_handle_;
+    }
 
     rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-        if (column_family_id != 0) {
-            return rocksdb::Status::InvalidArgument("transaction write batch column families are not supported yet");
-        }
-        return txn_->Put(key, value);
+        auto it = families_.find(column_family_id);
+        if (it == families_.end()) return rocksdb::Status::InvalidArgument("unknown transaction column family");
+        return txn_->Put(it->second, key, value);
     }
 
     rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
-        if (column_family_id != 0) {
-            return rocksdb::Status::InvalidArgument("transaction write batch column families are not supported yet");
-        }
-        return txn_->Delete(key);
+        auto it = families_.find(column_family_id);
+        if (it == families_.end()) return rocksdb::Status::InvalidArgument("unknown transaction column family");
+        return txn_->Delete(it->second, key);
     }
 
     rocksdb::Status MergeCF(uint32_t /* column_family_id */, const rocksdb::Slice& /* key */, const rocksdb::Slice& /* value */) override {
@@ -44,7 +46,16 @@ PyTransaction::PyTransaction(rocksdb::Transaction* txn, std::shared_ptr<PyTransa
     parent_db_->register_transaction(this);
 }
 
+PyTransaction::OperationGuard::OperationGuard(const PyTransaction& txn)
+    : db_lock(txn.parent_db_->transaction_operations_mutex_), txn_lock(txn.operation_mutex_) {}
+
+void PyTransaction::check_cf(PyColumnFamilyHandle& cf) const {
+    std::lock_guard<std::mutex> lock(parent_db_->arrow_mutex_);
+    parent_db_->require_cf(cf);
+}
+
 PyTransaction::~PyTransaction() {
+    OperationGuard guard(*this);
     invalidate_iterators();
     if (txn_) {
         txn_->Rollback();
@@ -70,7 +81,6 @@ void PyTransaction::invalidate_from_parent_close() {
         txn_ = nullptr;
     }
     active_ = false;
-    parent_db_.reset();
 }
 
 void PyTransaction::register_iterator(PyTransactionIterator* it) {
@@ -92,6 +102,7 @@ void PyTransaction::invalidate_iterators() {
 }
 
 void PyTransaction::put(const py::bytes& key, const py::bytes& value) {
+    OperationGuard guard(*this);
     check_active();
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     rocksdb::Slice value_slice(static_cast<std::string_view>(value));
@@ -99,24 +110,71 @@ void PyTransaction::put(const py::bytes& key, const py::bytes& value) {
     if (!s.ok()) throw_rocksdb_status(s, "Transaction put failed");
 }
 
-py::object PyTransaction::get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options) {
+void PyTransaction::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
+    OperationGuard guard(*this);
     check_active();
+    check_cf(cf);
+    auto s = txn_->Put(cf.cf_handle_, rocksdb::Slice(static_cast<std::string_view>(key)),
+                       rocksdb::Slice(static_cast<std::string_view>(value)));
+    if (!s.ok()) throw_rocksdb_status(s, "Transaction put_cf failed");
+}
+
+py::object PyTransaction::get_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyReadOptions> read_options) {
+    std::string key_storage = key;
+    auto opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    std::string value;
+    rocksdb::Status s;
+    {
+        py::gil_scoped_release release;
+        OperationGuard guard(*this);
+        check_active();
+        check_cf(cf);
+        opts.snapshot = txn_->GetSnapshot();
+        s = txn_->Get(opts, cf.cf_handle_, rocksdb::Slice(key_storage), &value);
+    }
+    if (s.ok()) return py::bytes(value);
+    if (s.IsNotFound()) return py::none();
+    throw_rocksdb_status(s, "Transaction get_cf failed");
+}
+
+void PyTransaction::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
+    OperationGuard guard(*this);
+    check_active();
+    check_cf(cf);
+    auto s = txn_->Delete(cf.cf_handle_, rocksdb::Slice(static_cast<std::string_view>(key)));
+    if (!s.ok()) throw_rocksdb_status(s, "Transaction delete_cf failed");
+}
+
+py::object PyTransaction::get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options) {
+    std::string key_storage = key;
     std::string value_str;
     rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
-    rocksdb::Slice key_slice(static_cast<std::string_view>(key));
-    rocksdb::Status s = txn_->Get(opts, key_slice, &value_str);
+    rocksdb::Status s;
+    {
+        py::gil_scoped_release release;
+        OperationGuard guard(*this);
+        check_active();
+        opts.snapshot = txn_->GetSnapshot();
+        s = txn_->Get(opts, rocksdb::Slice(key_storage), &value_str);
+    }
     if (s.ok()) return py::bytes(value_str);
     if (s.IsNotFound()) return py::none();
     throw_rocksdb_status(s, "Transaction get failed");
 }
 
 py::object PyTransaction::get_for_update(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options, bool exclusive, bool do_validate, bool read_value) {
-    check_active();
+    std::string key_storage = key;
     std::string value_str;
     rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
-    rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     std::string* value = read_value ? &value_str : nullptr;
-    rocksdb::Status s = txn_->GetForUpdate(opts, key_slice, value, exclusive, do_validate);
+    rocksdb::Status s;
+    {
+        py::gil_scoped_release release;
+        OperationGuard guard(*this);
+        check_active();
+        opts.snapshot = txn_->GetSnapshot();
+        s = txn_->GetForUpdate(opts, rocksdb::Slice(key_storage), value, exclusive, do_validate);
+    }
     if (!read_value && s.ok()) return py::none();
     if (s.ok()) return py::bytes(value_str);
     if (s.IsNotFound()) return py::none();
@@ -124,6 +182,7 @@ py::object PyTransaction::get_for_update(const py::bytes& key, std::shared_ptr<P
 }
 
 void PyTransaction::del(const py::bytes& key) {
+    OperationGuard guard(*this);
     check_active();
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     rocksdb::Status s = txn_->Delete(key_slice);
@@ -131,13 +190,19 @@ void PyTransaction::del(const py::bytes& key) {
 }
 
 void PyTransaction::write(PyWriteBatch& batch) {
+    OperationGuard guard(*this);
     check_active();
-    TransactionWriteBatchHandler handler(txn_);
+    auto handler = [&] {
+        std::lock_guard<std::mutex> lock(parent_db_->arrow_mutex_);
+        for (const auto& cf : batch.families_) parent_db_->require_cf(*cf);
+        return TransactionWriteBatchHandler(txn_, parent_db_->cf_handles_);
+    }();
     rocksdb::Status s = batch.wb_.Iterate(&handler);
     if (!s.ok()) throw_rocksdb_status(s, "Transaction write batch failed");
 }
 
 void PyTransaction::commit(std::shared_ptr<PyWriteOptions> write_options) {
+    OperationGuard guard(*this);
     check_active();
     if (write_options) {
         txn_->SetWriteOptions(write_options->options_);
@@ -154,6 +219,7 @@ void PyTransaction::commit(std::shared_ptr<PyWriteOptions> write_options) {
 }
 
 void PyTransaction::rollback() {
+    OperationGuard guard(*this);
     check_active();
     rocksdb::Status s = txn_->Rollback();
     if (!s.ok()) throw_rocksdb_status(s, "Transaction rollback failed");
@@ -167,18 +233,26 @@ void PyTransaction::rollback() {
 }
 
 void PyTransaction::set_snapshot() {
+    OperationGuard guard(*this);
     check_active();
     txn_->SetSnapshot();
 }
 
 std::shared_ptr<PyTransactionIterator> PyTransaction::new_iterator(std::shared_ptr<PyReadOptions> read_options) {
+    py::gil_scoped_release release;
+    OperationGuard guard(*this);
     check_active();
     rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    opts.snapshot = txn_->GetSnapshot();
     rocksdb::Iterator* raw_iter = txn_->GetIterator(opts);
     return std::make_shared<PyTransactionIterator>(raw_iter, shared_from_this());
 }
 
-bool PyTransaction::is_active() const { return active_ && txn_ != nullptr; }
+bool PyTransaction::is_active() const {
+    py::gil_scoped_release release;
+    OperationGuard guard(*this);
+    return active_ && txn_ != nullptr;
+}
 
 PyTransactionIterator::PyTransactionIterator(rocksdb::Iterator* it, std::shared_ptr<PyTransaction> parent_txn)
     : it_raw_ptr_(it), parent_txn_(std::move(parent_txn)) {
@@ -189,6 +263,7 @@ PyTransactionIterator::PyTransactionIterator(rocksdb::Iterator* it, std::shared_
 }
 
 PyTransactionIterator::~PyTransactionIterator() {
+    PyTransaction::OperationGuard guard(*parent_txn_);
     if (parent_txn_) {
         parent_txn_->unregister_iterator(this);
     }
@@ -199,7 +274,7 @@ PyTransactionIterator::~PyTransactionIterator() {
 }
 
 void PyTransactionIterator::check_parent_transaction_is_active() const {
-    if (!it_raw_ptr_ || !parent_txn_ || !parent_txn_->is_active()) {
+    if (!it_raw_ptr_ || !parent_txn_ || !parent_txn_->active_) {
         throw RocksDBException("Transaction is no longer active.");
     }
 }
@@ -209,17 +284,17 @@ void PyTransactionIterator::invalidate_from_parent_completion() {
         delete it_raw_ptr_;
         it_raw_ptr_ = nullptr;
     }
-    parent_txn_.reset();
 }
 
-bool PyTransactionIterator::valid() { check_parent_transaction_is_active(); return it_raw_ptr_->Valid(); }
-void PyTransactionIterator::seek_to_first() { check_parent_transaction_is_active(); it_raw_ptr_->SeekToFirst(); }
-void PyTransactionIterator::seek_to_last() { check_parent_transaction_is_active(); it_raw_ptr_->SeekToLast(); }
-void PyTransactionIterator::seek(const py::bytes& key) { check_parent_transaction_is_active(); it_raw_ptr_->Seek(static_cast<std::string>(key)); }
-void PyTransactionIterator::next() { check_parent_transaction_is_active(); it_raw_ptr_->Next(); }
-void PyTransactionIterator::prev() { check_parent_transaction_is_active(); it_raw_ptr_->Prev(); }
+bool PyTransactionIterator::valid() { PyTransaction::OperationGuard guard(*parent_txn_); check_parent_transaction_is_active(); return it_raw_ptr_->Valid(); }
+void PyTransactionIterator::seek_to_first() { PyTransaction::OperationGuard guard(*parent_txn_); check_parent_transaction_is_active(); it_raw_ptr_->SeekToFirst(); }
+void PyTransactionIterator::seek_to_last() { PyTransaction::OperationGuard guard(*parent_txn_); check_parent_transaction_is_active(); it_raw_ptr_->SeekToLast(); }
+void PyTransactionIterator::seek(const py::bytes& key) { PyTransaction::OperationGuard guard(*parent_txn_); check_parent_transaction_is_active(); it_raw_ptr_->Seek(static_cast<std::string>(key)); }
+void PyTransactionIterator::next() { PyTransaction::OperationGuard guard(*parent_txn_); check_parent_transaction_is_active(); it_raw_ptr_->Next(); }
+void PyTransactionIterator::prev() { PyTransaction::OperationGuard guard(*parent_txn_); check_parent_transaction_is_active(); it_raw_ptr_->Prev(); }
 
 py::object PyTransactionIterator::key() {
+    PyTransaction::OperationGuard guard(*parent_txn_);
     check_parent_transaction_is_active();
     if (it_raw_ptr_ && it_raw_ptr_->Valid()) {
         return py::bytes(it_raw_ptr_->key().ToString());
@@ -228,6 +303,7 @@ py::object PyTransactionIterator::key() {
 }
 
 py::object PyTransactionIterator::value() {
+    PyTransaction::OperationGuard guard(*parent_txn_);
     check_parent_transaction_is_active();
     if (it_raw_ptr_ && it_raw_ptr_->Valid()) {
         return py::bytes(it_raw_ptr_->value().ToString());
@@ -236,6 +312,7 @@ py::object PyTransactionIterator::value() {
 }
 
 void PyTransactionIterator::check_status() {
+    PyTransaction::OperationGuard guard(*parent_txn_);
     check_parent_transaction_is_active();
     rocksdb::Status s = it_raw_ptr_->status();
     if (!s.ok()) throw_rocksdb_status(s, "Transaction iterator error");
