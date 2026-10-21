@@ -219,8 +219,11 @@ void PyRocksDB::write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write
 }
 
 void PyRocksDB::write_columnar_batch(const py::object& keys, const py::object& values, std::shared_ptr<PyWriteOptions> write_options, const std::string& on_null) {
-    check_db_open();
-    check_read_only();
+    {
+        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        check_db_open();
+        check_read_only();
+    }
 
     if (on_null != "error") {
         throw py::value_error("on_null must be 'error'");
@@ -556,7 +559,6 @@ std::shared_ptr<PyColumnFamilyHandle> PyRocksDBExtended::get_column_family(const
 }
 
 std::shared_ptr<PyColumnFamilyHandle> PyRocksDBExtended::get_default_cf() {
-    check_db_open();
     return get_column_family(rocksdb::kDefaultColumnFamilyName);
 }
 

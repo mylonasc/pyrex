@@ -294,3 +294,15 @@ def test_cf_point_read_snapshot_rejection(tmp_path):
         with pytest.raises(pyrex.RocksDBException, match="released"):
             a.get_cf(cf, b"k", snapshot=own)
         foreign.release()
+
+
+def test_transactional_cf_polars_consumer(tmp_path):
+    pl = pytest.importorskip("polars")
+    with pyrex.TransactionDB(str(tmp_path / "db")) as handle:
+        cf = handle.create_column_family("facts")
+        handle.put_cf(cf, b"a", b"1")
+        handle.put_cf(cf, b"b", b"2")
+        scan = handle.scan_arrow_cf(cf, batch_size=1)
+        frame = pl.from_arrow(pa.RecordBatchReader.from_stream(scan))
+        assert frame.schema == {"key": pl.Binary, "value": pl.Binary}
+        assert frame.rows() == [(b"a", b"1"), (b"b", b"2")]

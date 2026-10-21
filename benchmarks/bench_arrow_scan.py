@@ -7,8 +7,9 @@ Compares, on identical ordered records (digest-validated):
   4. Native scan consumed by an Arrow-compute operation (no per-row Python).
 
 Covers full scans and selective prefix scans, short and variable-length
-values, and batch-size sensitivity. Reports wall time, throughput, peak RSS
-delta, output bytes vs. capacity, and scan setup/teardown cost.
+values, and batch-size sensitivity. Reports wall time, throughput, table
+bytes and cumulative process high-water RSS changes. This is not a
+per-mode isolated RSS or native allocation-capacity measurement.
 
 Streaming consumption and full materialization are labeled separately: a
 ``collect()`` of the whole stream is NOT a bounded-memory scan benchmark.
@@ -20,6 +21,7 @@ import hashlib
 import os
 import resource
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -80,7 +82,8 @@ def digest_table(table):
 
 
 def rss_mb():
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+    divisor = 1024.0 * 1024 if sys.platform == "darwin" else 1024.0
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / divisor
 
 
 def time_fn(fn, repeat):
@@ -101,8 +104,9 @@ def bench_python_iter(db, prefix=None):
         else: it.seek(prefix)
         pairs = []
         while it.valid():
-            if prefix is not None and not it.key().startswith(prefix): break
-            pairs.append((it.key(), it.value()))
+            key = it.key()
+            if prefix is not None and not key.startswith(prefix): break
+            pairs.append((key, it.value()))
             it.next()
         it.check_status()
         return pairs
@@ -117,8 +121,9 @@ def bench_python_iter_arrow(db, prefix=None):
         else: it.seek(prefix)
         keys, values = [], []
         while it.valid():
-            if prefix is not None and not it.key().startswith(prefix): break
-            keys.append(it.key())
+            key = it.key()
+            if prefix is not None and not key.startswith(prefix): break
+            keys.append(key)
             values.append(it.value())
             it.next()
         it.check_status()
