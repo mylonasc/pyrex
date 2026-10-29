@@ -227,7 +227,7 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
 
     // Never wait for the GIL while holding the DB lifecycle lock.
     py::gil_scoped_release release;
-    std::lock_guard<std::mutex> arrow_lock(parent_->arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(parent_->arrow_mutex_);
     if (parent_->is_closed_.load() || !parent_->db_) {
         throw RocksDBException("Cannot scan: database is closed.");
     }
@@ -274,7 +274,7 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
     }
 
     try {
-        rocksdb::ReadOptions opts = read_options ? read_options->options_ : parent_->default_read_options_->options_;
+        rocksdb::ReadOptions opts = (read_options ? read_options : parent_->default_read_options_)->native_options();
         opts.snapshot = view;
         if (has_eff_stop_) {
             upper_bound_slice_ = rocksdb::Slice(upper_bound_storage_);

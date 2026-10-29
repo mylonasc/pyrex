@@ -17,7 +17,7 @@ jobs:
       matrix:
         python: ["3.9", "3.12", "3.14"]
     env:
-      PYREX_VERSION: "0.7.0"
+      PYREX_VERSION: "0.7.1"
       ROCKSDB_VERSION: "10.7.5"
       HOST_CACHE_DIR: /tmp/pyrex-native-cache
       CMAKE_BUILD_PARALLEL_LEVEL: "2"

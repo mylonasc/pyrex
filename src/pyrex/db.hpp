@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -39,7 +40,14 @@ protected:
     // Guards db_ lifetime for snapshot/scan paths, plus the two sets below.
     // Lock order is always arrow_mutex_ -> scan/snapshot mutex_, never the
     // reverse (scan helpers never take arrow_mutex_ while holding their own).
-    std::mutex arrow_mutex_;
+    //
+    // Reader-shared protocol (issue #36): reads and ordinary writes take
+    // shared access; RocksDB synchronizes the underlying data operations.
+    // Close/CF create/drop, snapshot/scan bookkeeping and default-options
+    // replacement retain exclusive access. Keep the lock through Get/Write:
+    // raw pointer lookup alone does not protect resource lifetimes.
+    // See docs/source/point_reads.rst for the fast-path/safe-path contract.
+    mutable std::shared_mutex arrow_mutex_;
     std::set<PyArrowScan*> active_arrow_scans_;
     std::set<PySnapshot*> active_snapshots_;
 
@@ -54,10 +62,22 @@ protected:
     virtual void check_cf_drop_locked() {}
     void check_read_only() const;
     rocksdb::ColumnFamilyHandle* get_default_cf_handle() const;
-    // Caller holds arrow_mutex_. Checks identity, not just the CF name.
+    // Caller holds arrow_mutex_ (shared or exclusive). Checks identity, not just the CF name.
     std::shared_ptr<PyColumnFamilyHandle> require_cf(PyColumnFamilyHandle& cf) const;
     rocksdb::ReadOptions snapshot_read_options(std::shared_ptr<PyReadOptions> options,
                                              const std::shared_ptr<PySnapshot>& snapshot) const;
+    // Previous point-read implementation, preserved for every read that is
+    // not eligible for the fast path (explicit snapshot, explicit read
+    // options, or a named column family). Keeps the key/ReadOptions copies,
+    // snapshot/CF validation and map lookup of the 0.6.0/0.7.0 path.
+    py::object get_safe_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
+                             std::shared_ptr<PyReadOptions> options,
+                             std::shared_ptr<PySnapshot> snapshot);
+    // Fast path for the common ordinary read: default column family, default
+    // read options, no explicit snapshot. Borrows the Python key buffer and
+    // uses the cached default handle/options under a shared lock, so it pays
+    // none of the per-read copies or map lookups of the safe path.
+    py::object get_fast_impl(const py::bytes& key);
     py::object get_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
                         std::shared_ptr<PyReadOptions> options, std::shared_ptr<PySnapshot> snapshot);
     py::list multi_get_impl(PyColumnFamilyHandle* cf, const py::sequence& keys,
@@ -70,6 +90,8 @@ public:
 
     virtual void close();
     virtual void put(const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr);
+    // Ordinary-read binding entry point, alongside the general get API.
+    py::object get_default(const py::bytes& key) { return get_fast_impl(key); }
     virtual py::object get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options = nullptr,
                            std::shared_ptr<PySnapshot> snapshot = nullptr);
     py::list multi_get(const py::sequence& keys, std::shared_ptr<PyReadOptions> read_options = nullptr,
@@ -94,8 +116,8 @@ public:
     void set_default_write_options(std::shared_ptr<PyWriteOptions> opts);
 
     // Internal lifetime helpers for PySnapshot / PyArrowScan. detach_* take
-    // arrow_mutex_ first, then the object mutex (consistent with close(),
-    // which holds arrow_mutex_ while invalidating).
+    // arrow_mutex_ exclusively first, then the object mutex (consistent with
+    // close(), which holds arrow_mutex_ exclusively while invalidating).
     void unregister_scan(PyArrowScan* scan);
     void detach_scan_resources(PyArrowScan* scan, bool mark_exhausted);
     void detach_snapshot(PySnapshot* snapshot);
