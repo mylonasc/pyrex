@@ -4,6 +4,15 @@ All notable changes to `pyrex-rocksdb` are documented here. This changelog
 is maintained incrementally from this point onward; earlier history is
 available via `git log`.
 
+## [Unreleased]
+
+### Added
+
+- Read-only `Transaction.snapshot_sequence_number` (`int | None`) and
+  `TransactionDB.latest_sequence_number` (`int`) for snapshot provenance (#34).
+  Both are constant-time native lookups with lifetime/operation locking;
+  reading them does not write, scan, hash, or change the pinned snapshot.
+
 ## [0.6.0] - 2026-10-21
 
 ### Added

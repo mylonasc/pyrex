@@ -69,6 +69,13 @@ void PyTransactionDB::close() {
     PyRocksDB::close();
 }
 
+uint64_t PyTransactionDB::latest_sequence_number() const {
+    py::gil_scoped_release release;
+    std::shared_lock<std::shared_mutex> operations(transaction_operations_mutex_);
+    check_db_open();
+    return db_->GetLatestSequenceNumber();
+}
+
 void PyTransactionDB::before_close_locked() {
     {
         std::lock_guard<std::mutex> lock(active_transactions_mutex_);

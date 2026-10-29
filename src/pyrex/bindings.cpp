@@ -283,6 +283,8 @@ void bind_pyrex(py::module_& m) {
         .def("commit", &PyTransaction::commit, py::arg("write_options") = nullptr, "Commits the transaction.", py::call_guard<py::gil_scoped_release>())
         .def("rollback", &PyTransaction::rollback, "Rolls back the transaction.", py::call_guard<py::gil_scoped_release>())
         .def("set_snapshot", &PyTransaction::set_snapshot, "Sets a snapshot for repeatable transaction reads.", py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("snapshot_sequence_number", &PyTransaction::snapshot_sequence_number,
+            "The pinned snapshot's sequence (int, including zero), or None without a snapshot. Raises after commit, rollback, or database closure; does not acquire or reset a snapshot.")
         .def("new_iterator", &PyTransaction::new_iterator, py::arg("read_options") = nullptr, "Creates an iterator over the transaction view.", py::keep_alive<0, 1>())
         .def_property_readonly("is_active", &PyTransaction::is_active, "True while the transaction can still be used.")
         .def("__enter__", [](PyTransaction &txn) -> PyTransaction& { return txn; })
@@ -363,6 +365,8 @@ void bind_pyrex(py::module_& m) {
         )doc")
         .def("get_options", &PyTransactionDB::get_options, "Returns the options the database was opened with.")
         .def("get_transaction_db_options", &PyTransactionDB::get_transaction_db_options, "Returns the transaction DB options the database was opened with.")
+        .def_property_readonly("latest_sequence_number", &PyTransactionDB::latest_sequence_number,
+            "The database's latest sequence (int). Raises after closure. Does not advance existing transaction snapshots; not a substitute for their pinned sequences.")
         .def_property("default_read_options", &PyTransactionDB::get_default_read_options, &PyTransactionDB::set_default_read_options, "The default ReadOptions used for get operations.")
         .def_property("default_write_options", &PyTransactionDB::get_default_write_options, &PyTransactionDB::set_default_write_options, "The default WriteOptions used for writes and transactions.")
         .def("close", &PyTransactionDB::close, "Closes the database, rolling back active transactions.", py::call_guard<py::gil_scoped_release>())

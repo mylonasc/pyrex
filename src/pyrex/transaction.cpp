@@ -238,6 +238,15 @@ void PyTransaction::set_snapshot() {
     txn_->SetSnapshot();
 }
 
+std::optional<uint64_t> PyTransaction::snapshot_sequence_number() const {
+    py::gil_scoped_release release;
+    OperationGuard guard(*this);
+    check_active();
+    const auto* snapshot = txn_->GetSnapshot();
+    if (!snapshot) return std::nullopt;
+    return snapshot->GetSequenceNumber();
+}
+
 std::shared_ptr<PyTransactionIterator> PyTransaction::new_iterator(std::shared_ptr<PyReadOptions> read_options) {
     py::gil_scoped_release release;
     OperationGuard guard(*this);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -55,6 +56,7 @@ public:
     ~PyTransactionDB() override;
 
     void close() override;
+    uint64_t latest_sequence_number() const;
     void put(const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options = nullptr) override;
     void del(const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options = nullptr) override;
     void write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write_options = nullptr) override;
