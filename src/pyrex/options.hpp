@@ -1,14 +1,27 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
+
 #include "rocksdb/options.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/transaction_db.h"
 
 class PyReadOptions {
-public:
-    rocksdb::ReadOptions options_;
+private:
+    // Only these two flags are exposed by the Python API. Publish them as
+    // one atomic state; native readers borrow an immutable configuration.
+    // No DB mutex or GIL is required to mutate/read the flags.
+    static constexpr uint8_t kFillCache = 1;
+    static constexpr uint8_t kVerifyChecksums = 2;
+    std::atomic<uint8_t> flags_{kFillCache | kVerifyChecksums};
 
+public:
     PyReadOptions() = default;
+
+    // Process-lifetime immutable options for the four flag combinations.
+    // Copy the result before overriding snapshot or iterator bounds.
+    const rocksdb::ReadOptions& native_options() const;
 
     bool get_fill_cache() const;
     void set_fill_cache(bool value);

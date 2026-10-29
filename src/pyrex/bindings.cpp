@@ -17,6 +17,24 @@
 
 #include "rocksdb/options.h"
 
+// Keep the existing Python signature and general C++ implementation. Borrow
+// optional argument handles here instead of running the shared_ptr casters
+// for None on every ordinary read. Unlike a one-key overload, this also
+// avoids failed-overload dispatch on explicit-options/snapshot calls.
+// The interpreter owns the arguments through this invocation; materialize
+// shared_ptr ownership before entering the general GIL-releasing read path.
+template <class DB>
+py::object point_get(DB& db, const py::bytes& key, py::handle options, py::handle snapshot) {
+    if (options.is_none() && snapshot.is_none()) return db.get_default(key);
+    if (!options.is_none() && !py::isinstance<PyReadOptions>(options))
+        throw py::type_error("read_options must be ReadOptions or None");
+    if (!snapshot.is_none() && !py::isinstance<PySnapshot>(snapshot))
+        throw py::type_error("snapshot must be Snapshot or None");
+    return db.get(key,
+                  options.is_none() ? nullptr : options.cast<std::shared_ptr<PyReadOptions>>(),
+                  snapshot.is_none() ? nullptr : snapshot.cast<std::shared_ptr<PySnapshot>>());
+}
+
 void bind_pyrex(py::module_& m) {
     m.doc() = R"doc(
         A robust, high-performance Python wrapper for the RocksDB key-value store.
@@ -325,7 +343,8 @@ void bind_pyrex(py::module_& m) {
             py::arg("transaction_db_options") = nullptr,
             "Opens a RocksDB TransactionDB.", py::call_guard<py::gil_scoped_release>())
         .def("put", &PyTransactionDB::put, py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
-        .def("get", &PyTransactionDB::get, py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Reads committed state, optionally at a shared Snapshot.")
+        .def("get", &point_get<PyTransactionDB>, py::arg("key"), py::arg("read_options") = py::none(), py::arg("snapshot") = py::none(),
+             "Reads committed state, optionally at a shared Snapshot. None options/snapshot use the ordinary read path; explicit objects use the validated general path.")
         .def("multi_get", &PyTransactionDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
         .def("delete", &PyTransactionDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyTransactionDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
@@ -396,7 +415,8 @@ void bind_pyrex(py::module_& m) {
                                             Defaults to False.
         )doc", py::call_guard<py::gil_scoped_release>())
         .def("put", &PyRocksDB::put, py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair.", py::call_guard<py::gil_scoped_release>())
-        .def("get", &PyRocksDB::get, py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Retrieves a value, optionally at a shared Snapshot.")
+        .def("get", &point_get<PyRocksDB>, py::arg("key"), py::arg("read_options") = py::none(), py::arg("snapshot") = py::none(),
+             "Retrieves a value, optionally at a shared Snapshot. None options/snapshot use the ordinary read path; explicit objects use the validated general path.")
         .def("multi_get", &PyRocksDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
         .def("delete", &PyRocksDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyRocksDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())

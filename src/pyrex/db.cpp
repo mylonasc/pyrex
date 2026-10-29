@@ -79,7 +79,7 @@ std::shared_ptr<PyColumnFamilyHandle> PyRocksDB::require_cf(PyColumnFamilyHandle
 rocksdb::ReadOptions PyRocksDB::snapshot_read_options(std::shared_ptr<PyReadOptions> options,
                                                     const std::shared_ptr<PySnapshot>& snapshot) const {
     check_db_open();
-    auto opts = options ? options->options_ : default_read_options_->options_;
+    auto opts = (options ? options : default_read_options_)->native_options();
     if (snapshot) {
         if (snapshot->parent_.get() != this) {
             throw RocksDBException("Snapshot belongs to a different database instance.");
@@ -96,7 +96,7 @@ void PyRocksDB::close() {
         // arrow_mutex_ serializes snapshot/scan teardown with concurrent
         // scan creation and snapshot release; it is held until db_ is gone
         // so no scan path can touch a half-destroyed DB.
-        std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+        std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
         before_close_locked();
         for (PyArrowScan* scan : active_arrow_scans_) {
             scan->invalidate_for_db_close(db_);
@@ -128,7 +128,7 @@ void PyRocksDB::close() {
 }
 
 void PyRocksDB::put(const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     check_read_only();
 
@@ -140,14 +140,43 @@ void PyRocksDB::put(const py::bytes& key, const py::bytes& value, std::shared_pt
     if (!s.ok()) throw RocksDBException("Put failed: " + s.ToString());
 }
 
-py::object PyRocksDB::get_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
-                              std::shared_ptr<PyReadOptions> read_options, std::shared_ptr<PySnapshot> snapshot) {
+py::object PyRocksDB::get_fast_impl(const py::bytes& key) {
+    // Borrow the Python key buffer instead of copying it into a std::string.
+    // This is safe across the GIL release: the `key` argument handle keeps
+    // its Python bytes object alive for the whole call, bytes are immutable,
+    // even though other Python threads may run while this thread releases
+    // the GIL. Extract the pointer while holding the GIL.
+    rocksdb::Slice key_slice(static_cast<std::string_view>(key));
+    std::string value_str;
+    rocksdb::Status s;
+    {
+        py::gil_scoped_release release;
+        std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
+        if (is_closed_ || db_ == nullptr || default_cf_handle_ == nullptr) {
+            throw RocksDBException("Database is not open or has been closed.");
+        }
+        const auto& opts = default_read_options_->native_options();
+        s = db_->Get(opts, default_cf_handle_, key_slice, &value_str);
+    }
+    if (s.ok()) return py::bytes(value_str);
+    if (s.IsNotFound()) return py::none();
+    throw_rocksdb_status(s, "Get failed");
+}
+
+py::object PyRocksDB::get_safe_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
+                                    std::shared_ptr<PyReadOptions> read_options,
+                                    std::shared_ptr<PySnapshot> snapshot) {
+    // Preserved 0.6.0/0.7.0 implementation for snapshot/CF/custom-option
+    // reads: owned key copy, ReadOptions copy with snapshot pinning, and
+    // validated CF-handle resolution. Immutable native option templates
+    // make configuration capture race-free. Shared lifetime protection lets
+    // snapshot/CF readers overlap; close/CF-drop remain exclusive.
     std::string key_storage = key;
     std::string value_str;
     rocksdb::Status s;
     {
         py::gil_scoped_release release;
-        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
         auto opts = snapshot_read_options(read_options, snapshot);
         auto* raw_cf = cf ? require_cf(*cf)->cf_handle_ : get_default_cf_handle();
         s = db_->Get(opts, raw_cf, rocksdb::Slice(key_storage), &value_str);
@@ -155,6 +184,17 @@ py::object PyRocksDB::get_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
     if (s.ok()) return py::bytes(value_str);
     if (s.IsNotFound()) return py::none();
     throw_rocksdb_status(s, "Get failed");
+}
+
+py::object PyRocksDB::get_impl(PyColumnFamilyHandle* cf, const py::bytes& key,
+                              std::shared_ptr<PyReadOptions> read_options, std::shared_ptr<PySnapshot> snapshot) {
+    // Flexible dispatch (issue #36): the overwhelmingly common ordinary
+    // point read (default CF, default options, no explicit snapshot) uses
+    // the fast path; everything else keeps the previous safe implementation.
+    if (cf == nullptr && !read_options && !snapshot) {
+        return get_fast_impl(key);
+    }
+    return get_safe_impl(cf, key, std::move(read_options), std::move(snapshot));
 }
 
 py::object PyRocksDB::get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options,
@@ -179,7 +219,10 @@ py::list PyRocksDB::multi_get_impl(PyColumnFamilyHandle* cf, const py::sequence&
     std::vector<rocksdb::Status> statuses;
     {
         py::gil_scoped_release release;
-        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        // Shared (was exclusive): concurrent MultiGets now proceed in
+        // parallel; close/CF-drop hold the mutex exclusively. Body otherwise
+        // unchanged (owned key copies, ReadOptions copy, CF validation).
+        std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
         auto opts = snapshot_read_options(read_options, snapshot);
         auto* raw_cf = cf ? require_cf(*cf)->cf_handle_ : get_default_cf_handle();
         if (count) statuses = db_->MultiGet(opts, std::vector<rocksdb::ColumnFamilyHandle*>(count, raw_cf), slices, &values);
@@ -199,7 +242,7 @@ py::list PyRocksDB::multi_get(const py::sequence& keys, std::shared_ptr<PyReadOp
 }
 
 void PyRocksDB::del(const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     check_read_only();
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
@@ -209,7 +252,7 @@ void PyRocksDB::del(const py::bytes& key, std::shared_ptr<PyWriteOptions> write_
 }
 
 void PyRocksDB::write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write_options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     check_read_only();
     for (const auto& cf : batch.families_) require_cf(*cf);
@@ -220,7 +263,7 @@ void PyRocksDB::write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions> write
 
 void PyRocksDB::write_columnar_batch(const py::object& keys, const py::object& values, std::shared_ptr<PyWriteOptions> write_options, const std::string& on_null) {
     {
-        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
         check_db_open();
         check_read_only();
     }
@@ -240,12 +283,12 @@ void PyRocksDB::write_columnar_batch(const py::object& keys, const py::object& v
         return;
     }
 
-    const auto opts = write_options ? write_options->options_ : default_write_options_->options_;
     rocksdb::Status s;
     {
         py::gil_scoped_release release;
-        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
         check_db_open();
+        const auto opts = write_options ? write_options->options_ : default_write_options_->options_;
         rocksdb::WriteBatch batch;
         // The hot path stays in C++: Arrow offsets/data buffers can feed RocksDB slices directly.
         // This is especially useful for serialized column payloads where Python only submits one chunk.
@@ -261,9 +304,9 @@ void PyRocksDB::write_columnar_batch(const py::object& keys, const py::object& v
 
 std::shared_ptr<PyRocksDBIterator> PyRocksDB::new_iterator(std::shared_ptr<PyReadOptions> read_options) {
     py::gil_scoped_release release;
-    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     check_db_open();
-    const auto& opts = read_options ? read_options->options_ : default_read_options_->options_;
+    const auto& opts = (read_options ? read_options : default_read_options_)->native_options();
     rocksdb::Iterator* raw_iter = db_->NewIterator(opts, default_cf_handle_);
     {
         std::lock_guard<std::mutex> lock(active_iterators_mutex_);
@@ -274,11 +317,14 @@ std::shared_ptr<PyRocksDBIterator> PyRocksDB::new_iterator(std::shared_ptr<PyRea
 
 PyOptions PyRocksDB::get_options() const { return opened_options_; }
 
-std::shared_ptr<PyReadOptions> PyRocksDB::get_default_read_options() { return default_read_options_; }
+std::shared_ptr<PyReadOptions> PyRocksDB::get_default_read_options() {
+    std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
+    return default_read_options_;
+}
 
 void PyRocksDB::set_default_read_options(std::shared_ptr<PyReadOptions> opts) {
     if (!opts) throw RocksDBException("ReadOptions cannot be None.");
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     default_read_options_ = opts;
 }
 
@@ -286,7 +332,7 @@ std::shared_ptr<PyWriteOptions> PyRocksDB::get_default_write_options() { return 
 
 void PyRocksDB::set_default_write_options(std::shared_ptr<PyWriteOptions> opts) {
     if (!opts) throw RocksDBException("WriteOptions cannot be None.");
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     default_write_options_ = opts;
 }
 
@@ -352,13 +398,13 @@ std::shared_ptr<PyArrowScan> scan_arrow_impl(std::shared_ptr<PyRocksDB> self, st
 }  // namespace
 
 void PyRocksDB::unregister_scan(PyArrowScan* scan) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     active_arrow_scans_.erase(scan);
 }
 
 void PyRocksDB::detach_scan_resources(PyArrowScan* scan, bool mark_exhausted) {
     std::shared_ptr<PySnapshot> deferred;
-    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     std::lock_guard<std::mutex> scan_lock(scan->mutex_);
     deferred = scan->finish_locked(db_);
     if (mark_exhausted) {
@@ -369,7 +415,7 @@ void PyRocksDB::detach_scan_resources(PyArrowScan* scan, bool mark_exhausted) {
 }
 
 void PyRocksDB::detach_snapshot(PySnapshot* snapshot) {
-    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     std::lock_guard<std::mutex> snap_lock(snapshot->mutex_);
     if (!snapshot->released_ && snapshot->snapshot_ && db_) {
         db_->ReleaseSnapshot(snapshot->snapshot_);
@@ -381,7 +427,7 @@ void PyRocksDB::detach_snapshot(PySnapshot* snapshot) {
 std::shared_ptr<PySnapshot> PyRocksDB::create_snapshot() {
     py::gil_scoped_release release;
     std::shared_ptr<PySnapshot> snapshot;
-    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     check_db_open();
     const rocksdb::Snapshot* raw = db_->GetSnapshot();
     if (!raw) throw RocksDBException("create_snapshot failed: null snapshot returned.");
@@ -463,7 +509,7 @@ PyRocksDBExtended::PyRocksDBExtended(const std::string& path, PyOptions* py_opti
 }
 
 void PyRocksDBExtended::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value, std::shared_ptr<PyWriteOptions> write_options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     check_read_only();
     require_cf(cf);
@@ -485,7 +531,7 @@ py::list PyRocksDBExtended::multi_get_cf(PyColumnFamilyHandle& cf, const py::seq
 }
 
 void PyRocksDBExtended::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyWriteOptions> write_options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     check_read_only();
     require_cf(cf);
@@ -496,7 +542,7 @@ void PyRocksDBExtended::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key, s
 }
 
 std::vector<std::string> PyRocksDBExtended::list_column_families() {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     std::vector<std::string> names;
     for (const auto& pair : cf_handles_) {
@@ -506,7 +552,7 @@ std::vector<std::string> PyRocksDBExtended::list_column_families() {
 }
 
 std::shared_ptr<PyColumnFamilyHandle> PyRocksDBExtended::create_column_family(const std::string& name, PyOptions* cf_py_options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     check_read_only();
     if (cf_handles_.count(name)) {
@@ -523,7 +569,7 @@ std::shared_ptr<PyColumnFamilyHandle> PyRocksDBExtended::create_column_family(co
 }
 
 void PyRocksDBExtended::drop_column_family(PyColumnFamilyHandle& cf_handle) {
-    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     check_db_open();
     check_read_only();
     require_cf(cf_handle);
@@ -552,7 +598,7 @@ void PyRocksDBExtended::drop_column_family(PyColumnFamilyHandle& cf_handle) {
 }
 
 std::shared_ptr<PyColumnFamilyHandle> PyRocksDBExtended::get_column_family(const std::string& name) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     auto it = cf_handles_.find(name);
     return (it == cf_handles_.end()) ? nullptr : it->second;
@@ -564,11 +610,11 @@ std::shared_ptr<PyColumnFamilyHandle> PyRocksDBExtended::get_default_cf() {
 
 std::shared_ptr<PyRocksDBIterator> PyRocksDBExtended::new_cf_iterator(PyColumnFamilyHandle& cf_handle, std::shared_ptr<PyReadOptions> read_options) {
     py::gil_scoped_release release;
-    std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     check_db_open();
     require_cf(cf_handle);
 
-    const auto& opts = read_options ? read_options->options_ : default_read_options_->options_;
+    const auto& opts = (read_options ? read_options : default_read_options_)->native_options();
     rocksdb::Iterator* raw_iter = db_->NewIterator(opts, cf_handle.cf_handle_);
     {
         std::lock_guard<std::mutex> lock(active_iterators_mutex_);
@@ -583,7 +629,7 @@ std::shared_ptr<PyArrowScan> PyRocksDBExtended::scan_arrow_cf(PyColumnFamilyHand
                                                               std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
     std::shared_ptr<PyColumnFamilyHandle> cf;
     {
-        std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+        std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
         cf = require_cf(cf_handle);
     }
     return scan_arrow_impl(shared_from_this(), cf, std::move(prefix), std::move(start), std::move(stop), batch_size,

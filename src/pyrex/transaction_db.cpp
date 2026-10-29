@@ -94,7 +94,7 @@ void PyTransactionDB::check_cf_drop_locked() {
 }
 
 rocksdb::WriteOptions PyTransactionDB::copy_write_options(std::shared_ptr<PyWriteOptions> options) {
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     return options ? options->options_ : default_write_options_->options_;
 }
@@ -127,7 +127,7 @@ void PyTransactionDB::write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions>
     std::shared_lock<std::shared_mutex> lock(transaction_operations_mutex_);
     check_db_open();
     {
-        std::lock_guard<std::mutex> arrow_lock(arrow_mutex_);
+        std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
         for (const auto& cf : batch.families_) require_cf(*cf);
     }
     const auto opts = copy_write_options(write_options);
@@ -137,7 +137,7 @@ void PyTransactionDB::write(PyWriteBatch& batch, std::shared_ptr<PyWriteOptions>
 
 std::shared_ptr<PyTransaction> PyTransactionDB::begin_transaction(std::shared_ptr<PyWriteOptions> write_options, std::shared_ptr<PyTransactionOptions> txn_options) {
     std::shared_lock<std::shared_mutex> operations(transaction_operations_mutex_);
-    std::lock_guard<std::mutex> lock(arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     check_db_open();
     if (!txn_db_) throw RocksDBException("TransactionDB is not open or has been closed.");
     const auto& write_opts = write_options ? write_options->options_ : default_write_options_->options_;
@@ -158,7 +158,7 @@ void PyTransactionDB::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, con
                             std::shared_ptr<PyWriteOptions> options) {
     std::shared_lock<std::shared_mutex> operations(transaction_operations_mutex_);
     {
-        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
         require_cf(cf);
     }
     const auto opts = copy_write_options(options);
@@ -169,7 +169,7 @@ void PyTransactionDB::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, con
 void PyTransactionDB::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyWriteOptions> options) {
     std::shared_lock<std::shared_mutex> operations(transaction_operations_mutex_);
     {
-        std::lock_guard<std::mutex> lock(arrow_mutex_);
+        std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
         require_cf(cf);
     }
     const auto opts = copy_write_options(options);

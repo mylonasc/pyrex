@@ -50,7 +50,7 @@ PyTransaction::OperationGuard::OperationGuard(const PyTransaction& txn)
     : db_lock(txn.parent_db_->transaction_operations_mutex_), txn_lock(txn.operation_mutex_) {}
 
 void PyTransaction::check_cf(PyColumnFamilyHandle& cf) const {
-    std::lock_guard<std::mutex> lock(parent_db_->arrow_mutex_);
+    std::lock_guard<std::shared_mutex> lock(parent_db_->arrow_mutex_);
     parent_db_->require_cf(cf);
 }
 
@@ -121,7 +121,7 @@ void PyTransaction::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const
 
 py::object PyTransaction::get_cf(PyColumnFamilyHandle& cf, const py::bytes& key, std::shared_ptr<PyReadOptions> read_options) {
     std::string key_storage = key;
-    auto opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    auto opts = read_options ? read_options->native_options() : rocksdb::ReadOptions();
     std::string value;
     rocksdb::Status s;
     {
@@ -148,7 +148,7 @@ void PyTransaction::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
 py::object PyTransaction::get(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options) {
     std::string key_storage = key;
     std::string value_str;
-    rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    rocksdb::ReadOptions opts = read_options ? read_options->native_options() : rocksdb::ReadOptions();
     rocksdb::Status s;
     {
         py::gil_scoped_release release;
@@ -165,7 +165,7 @@ py::object PyTransaction::get(const py::bytes& key, std::shared_ptr<PyReadOption
 py::object PyTransaction::get_for_update(const py::bytes& key, std::shared_ptr<PyReadOptions> read_options, bool exclusive, bool do_validate, bool read_value) {
     std::string key_storage = key;
     std::string value_str;
-    rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    rocksdb::ReadOptions opts = read_options ? read_options->native_options() : rocksdb::ReadOptions();
     std::string* value = read_value ? &value_str : nullptr;
     rocksdb::Status s;
     {
@@ -193,7 +193,7 @@ void PyTransaction::write(PyWriteBatch& batch) {
     OperationGuard guard(*this);
     check_active();
     auto handler = [&] {
-        std::lock_guard<std::mutex> lock(parent_db_->arrow_mutex_);
+        std::lock_guard<std::shared_mutex> lock(parent_db_->arrow_mutex_);
         for (const auto& cf : batch.families_) parent_db_->require_cf(*cf);
         return TransactionWriteBatchHandler(txn_, parent_db_->cf_handles_);
     }();
@@ -251,7 +251,7 @@ std::shared_ptr<PyTransactionIterator> PyTransaction::new_iterator(std::shared_p
     py::gil_scoped_release release;
     OperationGuard guard(*this);
     check_active();
-    rocksdb::ReadOptions opts = read_options ? read_options->options_ : rocksdb::ReadOptions();
+    rocksdb::ReadOptions opts = read_options ? read_options->native_options() : rocksdb::ReadOptions();
     opts.snapshot = txn_->GetSnapshot();
     rocksdb::Iterator* raw_iter = txn_->GetIterator(opts);
     return std::make_shared<PyTransactionIterator>(raw_iter, shared_from_this());

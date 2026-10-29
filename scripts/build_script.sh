@@ -11,7 +11,7 @@ Usage: ./scripts/build_script.sh [--publish] [--testpypi] [--skip-tests]
 Build local pyrex-rocksdb wheels with cibuildwheel. Publishing is opt-in.
 
 Environment overrides:
-  PYREX_VERSION              Package version. Defaults to 0.7.0.
+  PYREX_VERSION              Package version. Defaults to 0.7.1.
   ROCKSDB_VERSION            RocksDB source version. Defaults to 10.7.5.
   LOCAL_VERSION_NAMING       Set true for local versions like +rocksdb1075. Defaults to false.
   PYREX_BUILD_CONFIG         cibuildwheel config file. Defaults to pyproject_dev.toml.
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 export ROCKSDB_VERSION="${ROCKSDB_VERSION:-10.7.5}"
-export PYREX_VERSION="${PYREX_VERSION:-0.7.0}"
+export PYREX_VERSION="${PYREX_VERSION:-0.7.1}"
 export LOCAL_VERSION_NAMING="${LOCAL_VERSION_NAMING:-false}"
 export HOST_CACHE_DIR="${HOST_CACHE_DIR:-$HOME/.cache/cibuildwheel/pyrex_builds}"
 

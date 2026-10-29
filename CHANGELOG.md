@@ -4,6 +4,37 @@ All notable changes to `pyrex-rocksdb` are documented here. This changelog
 is maintained incrementally from this point onward; earlier history is
 available via `git log`.
 
+## [0.7.1] - 2026-10-29
+
+### Added
+
+- Lightweight optional-argument dispatch and specialized default-CF read path
+  for #36, retaining the general options/snapshot/CF implementations and all
+  existing Python call forms. Ordinary reads borrow immutable key/options
+  storage and use the cached default CF under shared lifetime protection.
+- Distribution-reporting point-read benchmark with equal Python wrapper
+  overhead, rotated mode order, CPU pinning, hit/miss/size controls and
+  synthetic decode probes. See `benchmarks/point_reads.md` for controlled
+  same-toolchain measurements and `docs/source/point_reads.rst` for limits.
+  Warmed plain-DB ordinary hits measured 0.631 µs (0.4.1 source), 0.780 µs
+  (0.7.0 source) and 0.536 µs (candidate), retaining lifetime locking. This
+  recovery is workload-specific; general paths and misses are reported too.
+
+### Fixed
+
+- Remove the pre-lock raw DB-pointer check from the specialized read path.
+- Publish mutable ReadOptions flags atomically using immutable native
+  configurations, preventing concurrent flag changes from racing native
+  reads. Synchronize retrieval/replacement of the default options handle.
+- Ordinary DB reads/writes share lifetime protection, relying on RocksDB's
+  documented data-operation synchronization. Teardown, CF mutation and
+  snapshot release retain exclusive protection. Added bounded subprocess
+  race tests for close, CF drop, snapshot release, options and writers.
+- Correct earlier unsupported claims that restoring performance requires
+  unsafe operations, and that explicit `None` selects the general native
+  read path. Full recovery is a measurement question, not a proven safety
+  limit; historical PyPI-wheel versus local-build results did not isolate it.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added

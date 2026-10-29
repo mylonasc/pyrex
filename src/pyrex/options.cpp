@@ -1,12 +1,36 @@
 #include "options.hpp"
 
+#include <array>
+
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/table.h"
 
-bool PyReadOptions::get_fill_cache() const { return options_.fill_cache; }
-void PyReadOptions::set_fill_cache(bool value) { options_.fill_cache = value; }
-bool PyReadOptions::get_verify_checksums() const { return options_.verify_checksums; }
-void PyReadOptions::set_verify_checksums(bool value) { options_.verify_checksums = value; }
+const rocksdb::ReadOptions& PyReadOptions::native_options() const {
+    static const auto configurations = [] {
+        std::array<rocksdb::ReadOptions, 4> result;
+        for (size_t i = 0; i < result.size(); ++i) {
+            result[i].fill_cache = (i & kFillCache) != 0;
+            result[i].verify_checksums = (i & kVerifyChecksums) != 0;
+        }
+        return result;
+    }();
+    return configurations[flags_.load(std::memory_order_relaxed)];
+}
+
+bool PyReadOptions::get_fill_cache() const {
+    return (flags_.load(std::memory_order_relaxed) & kFillCache) != 0;
+}
+void PyReadOptions::set_fill_cache(bool value) {
+    if (value) flags_.fetch_or(kFillCache, std::memory_order_relaxed);
+    else flags_.fetch_and(static_cast<uint8_t>(~kFillCache), std::memory_order_relaxed);
+}
+bool PyReadOptions::get_verify_checksums() const {
+    return (flags_.load(std::memory_order_relaxed) & kVerifyChecksums) != 0;
+}
+void PyReadOptions::set_verify_checksums(bool value) {
+    if (value) flags_.fetch_or(kVerifyChecksums, std::memory_order_relaxed);
+    else flags_.fetch_and(static_cast<uint8_t>(~kVerifyChecksums), std::memory_order_relaxed);
+}
 
 bool PyWriteOptions::get_sync() const { return options_.sync; }
 void PyWriteOptions::set_sync(bool value) { options_.sync = value; }

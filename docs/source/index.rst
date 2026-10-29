@@ -22,6 +22,7 @@ for Arrow-compatible binary/string arrays.
    columnar_ingestion
    arrow_scans
    column_families
+   point_reads
    api 
 
 Indices and tables
