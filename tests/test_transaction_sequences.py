@@ -101,6 +101,19 @@ def test_unpinned_transaction_stays_unpinned(db):
         assert txn.snapshot_sequence_number is None
 
 
+def test_sequence_changes_only_when_snapshot_is_explicitly_replaced(db):
+    with db.transaction() as txn:
+        txn.set_snapshot()
+        assert txn.snapshot_sequence_number == 0
+        db.put(b"a", b"new")
+        assert txn.snapshot_sequence_number == 0
+        assert txn.get(b"a") is None
+        txn.set_snapshot()
+        assert txn.snapshot_sequence_number == db.latest_sequence_number
+        assert txn.snapshot_sequence_number > 0
+        assert txn.get(b"a") == b"new"
+
+
 def test_latest_sequence_tracks_only_committed_writes(db):
     with db.transaction() as txn:
         txn.set_snapshot()
@@ -148,3 +161,34 @@ def test_sequence_properties_are_read_only(db):
             txn.snapshot_sequence_number = 0
     with pytest.raises(AttributeError):
         db.latest_sequence_number = 0
+
+
+@pytest.mark.parametrize("completion", ["commit", "rollback", "close"])
+def test_accessors_racing_completion_are_lifetime_safe(tmp_path, completion):
+    # Start competing native operations together, without timing-based sleeps.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        for i in range(20):
+            with pyrex.TransactionDB(str(tmp_path / str(i))) as db:
+                txn = db.begin_transaction()
+                txn.set_snapshot()
+                start = threading.Barrier(2, timeout=10)
+
+                def read_sequences():
+                    start.wait()
+                    try:
+                        assert txn.snapshot_sequence_number == 0
+                    except pyrex.RocksDBException as exc:
+                        assert "no longer active" in str(exc)
+                    try:
+                        assert db.latest_sequence_number == 0
+                    except pyrex.RocksDBException as exc:
+                        assert completion == "close"
+                        assert "closed" in str(exc)
+
+                future = pool.submit(read_sequences)
+                start.wait()
+                if completion == "close":
+                    db.close()
+                else:
+                    getattr(txn, completion)()
+                future.result(timeout=10)

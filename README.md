@@ -135,6 +135,14 @@ with pyrex.TransactionDB("example_txn_db") as db:
         txn.rollback()
 ```
 
+For pinned read provenance, call `txn.set_snapshot()` (or begin with
+`TransactionOptions.set_snapshot=True`) and read `txn.snapshot_sequence_number`.
+It returns the actual pinned sequence, including zero, or `None` without a
+snapshot. `db.latest_sequence_number` reports the latest database sequence;
+concurrent commits advance it without advancing an existing transaction snapshot.
+Both properties are read-only, constant-time native lookups with no scanning or
+hashing. See the transaction documentation for lifetime and provenance semantics.
+
 `WriteOptions.disable_wal` is preserved for transaction writes and commits, but
 `disable_wal=True` is not fully durable across crashes. Transaction conflicts
 and lock timeouts are exposed through specific exception subclasses such as
