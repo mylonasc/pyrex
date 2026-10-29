@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Transactions &mdash; pyrex-rocksdb 0.6.0 documentation</title>
+  <title>Transactions &mdash; pyrex-rocksdb 0.7.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=8fa8b3e9"></script>
+      <script src="_static/documentation_options.js?v=fe7df9b0"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -54,6 +54,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#write-batch-inside-a-transaction">Write Batch Inside A Transaction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transaction-iterators">Transaction Iterators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#column-families-and-shared-read-views">Column Families and Shared Read Views</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#snapshot-sequence-provenance">Snapshot Sequence Provenance</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#read-for-update">Read For Update</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transaction-options">Transaction Options</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#write-options-and-durability">Write Options And Durability</a></li>
@@ -226,6 +227,51 @@ thread is using them in a native operation.</p>
 </div>
 <p>See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for bounds, byte limits, ownership and integration
 opportunities for higher-level systems such as GestaltDB.</p>
+</section>
+<section id="snapshot-sequence-provenance">
+<h2>Snapshot Sequence Provenance<a class="headerlink" href="#snapshot-sequence-provenance" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">Transaction.snapshot_sequence_number</span></code> is a read-only <code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">|</span> <span class="pre">None</span></code> property.
+It reports the sequence of the transaction’s actual pinned RocksDB snapshot,
+or <code class="docutils literal notranslate"><span class="pre">None</span></code> if the active transaction has no snapshot. Pin a snapshot with
+<code class="docutils literal notranslate"><span class="pre">txn.set_snapshot()</span></code> or <code class="docutils literal notranslate"><span class="pre">TransactionOptions.set_snapshot=True</span></code>. Sequence
+zero is valid, including for a snapshot of a new, empty database.</p>
+<p><code class="docutils literal notranslate"><span class="pre">TransactionDB.latest_sequence_number</span></code> is a read-only <code class="docutils literal notranslate"><span class="pre">int</span></code> property reporting
+the database’s latest sequence. Concurrent commits can advance it without
+changing an existing transaction snapshot. Never substitute this independently
+sampled value for the pinned snapshot sequence.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">pyrex</span><span class="o">.</span><span class="n">TransactionDB</span><span class="p">(</span><span class="s2">"example_txn_db"</span><span class="p">)</span> <span class="k">as</span> <span class="n">db</span><span class="p">:</span>
+    <span class="n">db</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">"k"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"old"</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">transaction</span><span class="p">()</span> <span class="k">as</span> <span class="n">reader</span><span class="p">:</span>
+        <span class="n">reader</span><span class="o">.</span><span class="n">set_snapshot</span><span class="p">()</span>
+        <span class="n">pinned_sequence</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">snapshot_sequence_number</span>
+        <span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">transaction</span><span class="p">()</span> <span class="k">as</span> <span class="n">writer</span><span class="p">:</span>
+            <span class="n">writer</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">"k"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"new"</span><span class="p">)</span>
+            <span class="n">writer</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+        <span class="k">assert</span> <span class="n">db</span><span class="o">.</span><span class="n">latest_sequence_number</span> <span class="o">&gt;</span> <span class="n">pinned_sequence</span>
+        <span class="k">assert</span> <span class="n">reader</span><span class="o">.</span><span class="n">snapshot_sequence_number</span> <span class="o">==</span> <span class="n">pinned_sequence</span>
+        <span class="k">assert</span> <span class="n">reader</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">b</span><span class="s2">"k"</span><span class="p">)</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">"old"</span>
+        <span class="c1"># Even iterators created after the commit use the pinned horizon.</span>
+        <span class="n">it</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">new_iterator</span><span class="p">()</span>
+        <span class="n">it</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="sa">b</span><span class="s2">"k"</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">it</span><span class="o">.</span><span class="n">value</span><span class="p">()</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">"old"</span>
+</pre></div>
+</div>
+<p>Point reads (including named column families) and transaction iterators use the
+reported snapshot, with transaction-local writes overlaid as usual. Calling
+<code class="docutils literal notranslate"><span class="pre">set_snapshot()</span></code> again explicitly replaces the pinned horizon; reading either
+property never acquires or resets a snapshot and never writes to the database.</p>
+<p>Both accessors are constant-time native lookups with the existing operation and
+lifetime locks. They do not scan or hash contents, and ordinary reads and
+transactions incur no provenance hashing overhead. Snapshot access raises
+<code class="docutils literal notranslate"><span class="pre">RocksDBException</span></code> after commit, rollback, or database closure; latest-sequence
+access raises after database closure.</p>
+<p>Sequences describe a horizon within a particular database, not a globally unique
+content identity. Downstream provenance schemes must also track database identity
+and, where needed, a content digest. A cached digest plus an unchanged latest
+sequence can avoid repeat scans under an appropriate downstream synchronization
+and database-identity contract; it does not replace the pinned snapshot sequence
+or provide historical-state restoration.</p>
 </section>
 <section id="read-for-update">
 <h2>Read For Update<a class="headerlink" href="#read-for-update" title="Link to this heading"></a></h2>
