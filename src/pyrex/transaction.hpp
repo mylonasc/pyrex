@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <shared_mutex>
 
@@ -57,6 +59,7 @@ public:
     void commit(std::shared_ptr<PyWriteOptions> write_options = nullptr);
     void rollback();
     void set_snapshot();
+    std::optional<uint64_t> snapshot_sequence_number() const;
     std::shared_ptr<PyTransactionIterator> new_iterator(std::shared_ptr<PyReadOptions> read_options = nullptr);
     bool is_active() const;
 };

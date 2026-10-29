@@ -113,6 +113,57 @@ thread is using them in a native operation.
 See :doc:`arrow_scans` for bounds, byte limits, ownership and integration
 opportunities for higher-level systems such as GestaltDB.
 
+Snapshot Sequence Provenance
+----------------------------
+
+``Transaction.snapshot_sequence_number`` is a read-only ``int | None`` property.
+It reports the sequence of the transaction's actual pinned RocksDB snapshot,
+or ``None`` if the active transaction has no snapshot. Pin a snapshot with
+``txn.set_snapshot()`` or ``TransactionOptions.set_snapshot=True``. Sequence
+zero is valid, including for a snapshot of a new, empty database.
+
+``TransactionDB.latest_sequence_number`` is a read-only ``int`` property reporting
+the database's latest sequence. Concurrent commits can advance it without
+changing an existing transaction snapshot. Never substitute this independently
+sampled value for the pinned snapshot sequence.
+
+.. code-block:: python
+
+   with pyrex.TransactionDB("example_txn_db") as db:
+       db.put(b"k", b"old")
+       with db.transaction() as reader:
+           reader.set_snapshot()
+           pinned_sequence = reader.snapshot_sequence_number
+           with db.transaction() as writer:
+               writer.put(b"k", b"new")
+               writer.commit()
+
+           assert db.latest_sequence_number > pinned_sequence
+           assert reader.snapshot_sequence_number == pinned_sequence
+           assert reader.get(b"k") == b"old"
+           # Even iterators created after the commit use the pinned horizon.
+           it = reader.new_iterator()
+           it.seek(b"k")
+           assert it.value() == b"old"
+
+Point reads (including named column families) and transaction iterators use the
+reported snapshot, with transaction-local writes overlaid as usual. Calling
+``set_snapshot()`` again explicitly replaces the pinned horizon; reading either
+property never acquires or resets a snapshot and never writes to the database.
+
+Both accessors are constant-time native lookups with the existing operation and
+lifetime locks. They do not scan or hash contents, and ordinary reads and
+transactions incur no provenance hashing overhead. Snapshot access raises
+``RocksDBException`` after commit, rollback, or database closure; latest-sequence
+access raises after database closure.
+
+Sequences describe a horizon within a particular database, not a globally unique
+content identity. Downstream provenance schemes must also track database identity
+and, where needed, a content digest. A cached digest plus an unchanged latest
+sequence can avoid repeat scans under an appropriate downstream synchronization
+and database-identity contract; it does not replace the pinned snapshot sequence
+or provide historical-state restoration.
+
 Read For Update
 ---------------
 
