@@ -4,7 +4,7 @@ All notable changes to `pyrex-rocksdb` are documented here. This changelog
 is maintained incrementally from this point onward; earlier history is
 available via `git log`.
 
-## [Unreleased]
+## [0.7.0] - 2026-10-29
 
 ### Added
 
