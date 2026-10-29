@@ -259,6 +259,7 @@ def test_read_after_close_does_not_count_failed_output(db):
 
 
 def test_concurrent_stats_reads_release_and_close(tmp_path):
+    pytest.importorskip("pyarrow")
     code = r'''
 import gc, threading, pyrex, pyarrow as pa
 from concurrent.futures import ThreadPoolExecutor

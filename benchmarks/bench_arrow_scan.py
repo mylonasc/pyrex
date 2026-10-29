@@ -224,8 +224,11 @@ def main():
         # batch-size sensitivity on the native scan
         print("batch-size sensitivity (native_scan_materialize):")
         for bs in (256, 1024, 4096, 65536):
-            elapsed, out = time_fn(bench_native_scan(db, bs, args.max_batch_bytes, prefix), args.repeat)
+            probe = bench_native_scan(db, bs, args.max_batch_bytes, prefix, args.collect_metrics)
+            elapsed, out = time_fn(probe, args.repeat)
             print(f"  batch_size={bs:6d}  {elapsed * 1000:9.1f} ms")
+            if args.collect_metrics:
+                print("    metrics_last_repeat=" + json.dumps(probe.last_scan.stats, sort_keys=True))
         print(f"versions: pyrex-scan stream schema struct<key: binary, value: binary>; "
               f"pyarrow={pa.__version__}; rows={args.rows}")
     finally:

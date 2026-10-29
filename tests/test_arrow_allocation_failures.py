@@ -49,6 +49,24 @@ with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
                 else:
                     assert scan.stats is None
                 del capsule, scan
+    # A failure after an earlier successful publication must retain its
+    # cumulative counters, without counting the failed second batch.
+    db.put(b'z', b'w')
+    for allocation in range(1, 16):
+        scan = db.scan_arrow(batch_size=1, collect_metrics=True)
+        capsule = scan.__arrow_c_stream__()
+        ptr = get_pointer(capsule, b'arrow_array_stream')
+        assert helper.fail_batch(ptr, 0) == 0
+        before = scan.stats
+        assert before['rows_emitted'] == 1 and before['live_buffer_bytes'] == 0
+        assert helper.fail_batch(ptr, allocation) != 0
+        after = scan.stats
+        assert after['rows_emitted'] == before['rows_emitted']
+        assert after['output_bytes_emitted'] == before['output_bytes_emitted']
+        assert after['buffer_capacity_bytes_emitted'] == before['buffer_capacity_bytes_emitted']
+        assert after['live_buffer_bytes'] == 0
+        scan.close()
+        del capsule, scan
 """
     env = dict(os.environ, PYREX_ALLOC_HELPER=str(library))
     # Sanitizer interceptors must load first when running an ASan build.

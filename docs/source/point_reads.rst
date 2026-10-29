@@ -1,5 +1,5 @@
 Point reads: specialized and general paths
-=========================================
+==========================================
 
 The binding has a specialized ordinary-read dispatch alongside the existing
 general implementation. The public call forms remain supported on
@@ -32,7 +32,7 @@ Other Python threads may run during the read. DB-open/pointer checks run
 only under lifecycle protection, including during races with ``close()``.
 
 General reads (retained)
------------------------
+------------------------
 
 Explicit options, snapshots and CFs retain the general implementation:
 owned key storage, copied read options for snapshot overrides, and
@@ -58,7 +58,7 @@ and retain their identity. Separate flag assignments are not a transaction;
 a concurrent reader may observe the state between two assignments.
 
 Lifetime protection versus data-operation synchronization
---------------------------------------------------------
+---------------------------------------------------------
 
 RocksDB itself supports concurrent reads and writes on one DB. Ordinary
 reads and writes therefore take shared lifecycle protection; they are not
@@ -77,7 +77,7 @@ write batches and iterators have their existing sharing/mutation contracts;
 do not concurrently mutate a write-options object or batch in use.
 
 Measurement and remaining opportunities
---------------------------------------
+---------------------------------------
 
 ``benchmarks/bench_point_read.py`` uses identical one-argument Python
 wrappers around cached callables for every mode. It verifies results before

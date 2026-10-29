@@ -19,7 +19,7 @@ Methods:
 * ``write_columnar_batch(keys, values, *, write_options=None, on_null="error") -> None``
 * ``new_iterator(read_options=None) -> PyRocksDBIterator``
 * ``create_snapshot() -> Snapshot``
-* ``scan_arrow(prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False) -> ArrowScan``
+* ``scan_arrow(prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False, collect_metrics=False) -> ArrowScan``
 * ``get_options() -> PyOptions``
 * ``close() -> None``
 
@@ -43,7 +43,7 @@ Methods:
 * ``drop_column_family(cf_handle) -> None``
 * ``get_column_family(name: str) -> ColumnFamilyHandle | None``
 * ``new_cf_iterator(cf_handle, read_options=None) -> PyRocksDBIterator``
-* ``scan_arrow_cf(cf_handle, prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False) -> ArrowScan``
+* ``scan_arrow_cf(cf_handle, prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False, collect_metrics=False) -> ArrowScan``
 * ``default_cf`` returns the default column-family handle.
 
 ArrowScan and Snapshot
@@ -53,7 +53,11 @@ ArrowScan and Snapshot
 and ``scan_arrow_cf()``. It exports the Arrow C Stream interface via
 ``__arrow_c_stream__`` (PyCapsule ``arrow_array_stream``) with schema
 ``struct<key: binary (non-null), value: binary (non-null)>`` and supports
-``close()``, ``is_closed``, ``sequence_number``, and context-manager use.
+``close()``, ``is_closed``, ``sequence_number``, ``stats``, and context-manager use.
+``stats`` is ``None`` by default; scans created with ``collect_metrics=True``
+provide a fresh dictionary of native output counters, phase times and requested
+buffer capacities. Accounting follows exported child-buffer releases and
+remains readable after stream or DB closure. It does not measure process RSS.
 
 ``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
 multiple scans. Methods: ``release()``, ``is_valid()``, ``sequence_number``.
@@ -97,7 +101,7 @@ Methods:
 * ``transaction(write_options=None, transaction_options=None) -> Transaction``
 * ``new_iterator(read_options=None) -> PyRocksDBIterator`` (committed state)
 * ``create_snapshot() -> Snapshot``
-* ``scan_arrow(prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False) -> ArrowScan`` (committed state; uncommitted transaction writes are not visible)
+* ``scan_arrow(prefix=None, start=None, stop=None, batch_size=65536, max_batch_bytes=8388608, read_options=None, snapshot=None, allow_overflow=False, collect_metrics=False) -> ArrowScan`` (committed state; uncommitted transaction writes are not visible)
 * ``get_options() -> PyOptions``
 * ``get_transaction_db_options() -> TransactionDBOptions``
 * ``close() -> None``

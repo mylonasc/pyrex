@@ -21,6 +21,7 @@ for Arrow-compatible binary/string arrays.
    transactions
    columnar_ingestion
    arrow_scans
+   arrow_reads_roadmap
    column_families
    point_reads
    api 
