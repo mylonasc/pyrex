@@ -219,6 +219,27 @@ void bind_pyrex(py::module_& m) {
         .def("close", &PyArrowScan::close, "Closes the scan early, releasing its iterator and snapshot resources. Already exported batches stay valid.", py::call_guard<py::gil_scoped_release>())
         .def_property_readonly("sequence_number", &PyArrowScan::sequence_number, "Sequence number of the read view this scan observes.")
         .def_property_readonly("is_closed", &PyArrowScan::is_closed, "True after close() or database closure.")
+        .def_property_readonly("stats", [](const PyArrowScan& scan) -> py::object {
+            const auto snapshot = scan.statistics();
+            if (!snapshot) return py::none();
+            const auto& s = *snapshot;
+            py::dict out;
+            out["get_next_calls"] = s.get_next_calls;
+            out["batches_emitted"] = s.batches_emitted;
+            out["rows_emitted"] = s.rows_emitted;
+            out["key_bytes_emitted"] = s.key_bytes_emitted;
+            out["value_bytes_emitted"] = s.value_bytes_emitted;
+            out["offset_bytes_emitted"] = s.offset_bytes_emitted;
+            out["output_bytes_emitted"] = s.output_bytes_emitted;
+            out["buffer_capacity_bytes_emitted"] = s.buffer_capacity_bytes_emitted;
+            out["allocation_slack_bytes_emitted"] = s.allocation_slack_bytes_emitted;
+            out["live_buffer_bytes"] = s.live_buffer_bytes;
+            out["peak_live_buffer_bytes"] = s.peak_live_buffer_bytes;
+            out["peak_staged_payload_bytes"] = s.peak_staged_payload_bytes;
+            out["gather_time_ns"] = s.gather_time_ns;
+            out["build_time_ns"] = s.build_time_ns;
+            return out;
+        }, "Coherent native counters/timings and output-buffer capacity; None unless collect_metrics=True. A fresh dict, readable after close.")
         .def("__enter__", [](PyArrowScan& scan) -> PyArrowScan& { return scan; })
         .def("__exit__", [](PyArrowScan& scan, py::object, py::object, py::object) { py::gil_scoped_release release; scan.close(); });
 
@@ -363,12 +384,12 @@ void bind_pyrex(py::module_& m) {
         .def("scan_arrow_cf", &PyTransactionDB::scan_arrow_cf, py::arg("cf_handle"), py::arg("prefix") = nullptr,
              py::arg("start") = nullptr, py::arg("stop") = nullptr, py::arg("batch_size") = 65536,
              py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
-             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false,
              "Scans committed CF records at a shared DB snapshot; excludes uncommitted transaction writes.")
         .def("create_snapshot", &PyTransactionDB::create_snapshot, "Pins a consistent read view shareable by scan_arrow streams.")
         .def("scan_arrow", &PyTransactionDB::scan_arrow, py::arg("prefix") = nullptr, py::arg("start") = nullptr,
              py::arg("stop") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
-             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, R"doc(
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false, R"doc(
             Scans the default column family natively into Arrow RecordBatches.
 
             Same contract as `PyRocksDB.scan_arrow()`: fixed schema
@@ -425,7 +446,7 @@ void bind_pyrex(py::module_& m) {
         .def("create_snapshot", &PyRocksDB::create_snapshot, "Pins a consistent read view shareable by scan_arrow streams.")
         .def("scan_arrow", &PyRocksDB::scan_arrow, py::arg("prefix") = nullptr, py::arg("start") = nullptr,
              py::arg("stop") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
-             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, R"doc(
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false, R"doc(
             Scans the default column family natively into Arrow RecordBatches.
 
             Args:
@@ -440,6 +461,8 @@ void bind_pyrex(py::module_& m) {
                     Without one, the scan pins its own view at creation.
                 allow_overflow (bool): If True, a single record larger than max_batch_bytes
                     is emitted alone instead of raising.
+                collect_metrics (bool): If True, enable native phase timings and
+                    output-buffer accounting in ArrowScan.stats. Defaults to False.
 
             Returns:
                 ArrowScan: single-consumer stream of struct<key: binary, value: binary>.
@@ -482,7 +505,7 @@ void bind_pyrex(py::module_& m) {
         .def("scan_arrow_cf", &PyRocksDBExtended::scan_arrow_cf, py::arg("cf_handle"), py::arg("prefix") = nullptr,
              py::arg("start") = nullptr, py::arg("stop") = nullptr, py::arg("batch_size") = 65536,
              py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
-             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, R"doc(
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false, R"doc(
             Scans a named column family natively into Arrow RecordBatches.
 
             Same contract as `scan_arrow()`; a snapshot created on this DB may

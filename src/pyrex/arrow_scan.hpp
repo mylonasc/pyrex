@@ -16,7 +16,9 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include <pybind11/pybind11.h>
 
@@ -27,6 +29,26 @@ namespace py = pybind11;
 
 class PyRocksDB;
 class PyReadOptions;
+struct ArrowScanMetricsState;
+
+// ABR-01: coherent, by-value snapshot. Buffer capacities are requested Arrow
+// data/offset allocation sizes, not malloc usable sizes or whole-process RSS.
+struct ArrowScanStatistics {
+    uint64_t get_next_calls = 0;
+    uint64_t batches_emitted = 0;
+    uint64_t rows_emitted = 0;
+    uint64_t key_bytes_emitted = 0;
+    uint64_t value_bytes_emitted = 0;
+    uint64_t offset_bytes_emitted = 0;
+    uint64_t output_bytes_emitted = 0;
+    uint64_t buffer_capacity_bytes_emitted = 0;
+    uint64_t allocation_slack_bytes_emitted = 0;
+    uint64_t live_buffer_bytes = 0;
+    uint64_t peak_live_buffer_bytes = 0;
+    uint64_t peak_staged_payload_bytes = 0;
+    uint64_t gather_time_ns = 0;
+    uint64_t build_time_ns = 0;
+};
 
 namespace rocksdb {
 class DB;
@@ -96,6 +118,7 @@ public:
         size_t batch_size = 65536;
         size_t max_batch_bytes = 8 * 1024 * 1024;
         bool allow_overflow = false;
+        bool collect_metrics = false;
     };
 
     // Factory path only: native initialization and parent registration are
@@ -120,6 +143,9 @@ public:
     void close();
     bool is_closed() const;
     uint64_t sequence_number() const;
+    // None when collection was not requested. Does not touch native DB/CF
+    // resources and remains readable after close, error and exhaustion.
+    std::optional<ArrowScanStatistics> statistics() const;
 
     const std::string& cf_name() const { return cf_name_; }
 
@@ -191,4 +217,7 @@ private:
     // batch is still emitted, the *next* get_next ends the stream.
     bool stop_reached_ = false;
     std::string last_error_;
+    // Shared with exported child buffers, so release accounting outlives the
+    // stream and the DB. No parent/scan lock is taken by buffer callbacks.
+    std::shared_ptr<ArrowScanMetricsState> metrics_;
 };

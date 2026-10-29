@@ -364,7 +364,7 @@ std::pair<bool, std::string> parse_bound(const py::object& obj, const char* name
 std::shared_ptr<PyArrowScan> scan_arrow_impl(std::shared_ptr<PyRocksDB> self, std::shared_ptr<PyColumnFamilyHandle> cf,
                                              py::object prefix, py::object start, py::object stop, size_t batch_size,
                                              size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
-                                             std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
+                                             std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
     if (batch_size < 1 || batch_size > kMaxBatchSize) {
         throw py::value_error("scan_arrow: batch_size must be in [1, " + std::to_string(kMaxBatchSize) + "]");
     }
@@ -388,6 +388,7 @@ std::shared_ptr<PyArrowScan> scan_arrow_impl(std::shared_ptr<PyRocksDB> self, st
     config.batch_size = batch_size;
     config.max_batch_bytes = max_batch_bytes;
     config.allow_overflow = allow_overflow;
+    config.collect_metrics = collect_metrics;
 
     // The constructor pins the snapshot, pushes bounds down and seeks; only
     // register with the parent once it is fully established.
@@ -444,9 +445,9 @@ std::shared_ptr<PySnapshot> PyRocksDB::create_snapshot() {
 
 std::shared_ptr<PyArrowScan> PyRocksDB::scan_arrow(py::object prefix, py::object start, py::object stop, size_t batch_size,
                                                    size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
-                                                   std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
+                                                   std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
     return scan_arrow_impl(shared_from_this(), nullptr, std::move(prefix), std::move(start), std::move(stop), batch_size,
-                           max_batch_bytes, read_options, snapshot, allow_overflow);
+                           max_batch_bytes, read_options, snapshot, allow_overflow, collect_metrics);
 }
 
 PyRocksDBExtended::PyRocksDBExtended(const std::string& path, PyOptions* py_options, bool read_only) {
@@ -626,12 +627,12 @@ std::shared_ptr<PyRocksDBIterator> PyRocksDBExtended::new_cf_iterator(PyColumnFa
 std::shared_ptr<PyArrowScan> PyRocksDBExtended::scan_arrow_cf(PyColumnFamilyHandle& cf_handle, py::object prefix, py::object start,
                                                               py::object stop, size_t batch_size, size_t max_batch_bytes,
                                                               std::shared_ptr<PyReadOptions> read_options,
-                                                              std::shared_ptr<PySnapshot> snapshot, bool allow_overflow) {
+                                                              std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
     std::shared_ptr<PyColumnFamilyHandle> cf;
     {
         std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
         cf = require_cf(cf_handle);
     }
     return scan_arrow_impl(shared_from_this(), cf, std::move(prefix), std::move(start), std::move(stop), batch_size,
-                           max_batch_bytes, read_options, snapshot, allow_overflow);
+                           max_batch_bytes, read_options, snapshot, allow_overflow, collect_metrics);
 }

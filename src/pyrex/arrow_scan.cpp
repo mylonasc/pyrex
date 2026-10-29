@@ -1,6 +1,7 @@
 #include "arrow_scan.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 
 #include "db.hpp"
@@ -12,7 +13,33 @@
 #include "rocksdb/iterator.h"
 #include "rocksdb/slice.h"
 
+struct ArrowScanMetricsState {
+    mutable std::mutex mutex;
+    ArrowScanStatistics totals;
+};
+
 namespace {
+
+// Batch-phase clocks and accounting are opt-in; disabled scans do not call
+// the clock or lock a metrics mutex. The caller keeps metrics alive.
+class PhaseTimer {
+public:
+    PhaseTimer(ArrowScanMetricsState* state, uint64_t ArrowScanStatistics::* field)
+        : state_(state), field_(field) {
+        if (state_) start_ = std::chrono::steady_clock::now();
+    }
+    ~PhaseTimer() {
+        if (!state_) return;
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - start_).count();
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        state_->totals.*field_ += static_cast<uint64_t>(elapsed);
+    }
+private:
+    ArrowScanMetricsState* state_;
+    uint64_t ArrowScanStatistics::* field_;
+    std::chrono::steady_clock::time_point start_{};
+};
 
 // Unsigned bytewise comparison, matching RocksDB's BytewiseComparator.
 int compare_bytes(const char* a_data, size_t a_size, const char* b_data, size_t b_size) {
@@ -51,6 +78,8 @@ struct ChildBuffers {
     void* offsets = nullptr;
     void* data = nullptr;
     const void** buffers = nullptr;
+    std::shared_ptr<ArrowScanMetricsState> metrics;
+    uint64_t tracked_capacity = 0;
 };
 
 void free_child_array(ArrowArray* array) {
@@ -60,6 +89,10 @@ void free_child_array(ArrowArray* array) {
         std::free(priv->offsets);
         std::free(priv->data);
         std::free(priv->buffers);
+        if (priv->metrics) {
+            std::lock_guard<std::mutex> lock(priv->metrics->mutex);
+            priv->metrics->totals.live_buffer_bytes -= priv->tracked_capacity;
+        }
         delete priv;
     }
     array->release = nullptr;
@@ -192,7 +225,8 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
       cf_handle_(std::move(cf_handle)),
       batch_size_(config.batch_size),
       max_batch_bytes_(config.max_batch_bytes),
-      allow_overflow_(config.allow_overflow) {
+      allow_overflow_(config.allow_overflow),
+      metrics_(config.collect_metrics ? std::make_shared<ArrowScanMetricsState>() : nullptr) {
     if (!parent_) throw RocksDBException("Cannot scan: null database.");
 
     // --- Effective bounds: intersection of [start, stop) and prefix range.
@@ -326,6 +360,12 @@ bool PyArrowScan::is_closed() const {
 
 uint64_t PyArrowScan::sequence_number() const { return snapshot_seq_; }
 
+std::optional<ArrowScanStatistics> PyArrowScan::statistics() const {
+    if (!metrics_) return std::nullopt;
+    std::lock_guard<std::mutex> lock(metrics_->mutex);
+    return metrics_->totals;
+}
+
 void PyArrowScan::invalidate_for_db_close(rocksdb::DB* db_raw) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto deferred = finish_locked(db_raw);
@@ -444,6 +484,10 @@ int PyArrowScan::fill_schema(ArrowSchema* out) {
 int PyArrowScan::fill_next(ArrowArray* out) {
     if (!out) return EINVAL;
     std::memset(out, 0, sizeof(*out));
+    if (metrics_) {
+        std::lock_guard<std::mutex> lock(metrics_->mutex);
+        ++metrics_->totals.get_next_calls;
+    }
 
     std::vector<std::string> keys;
     std::vector<std::string> values;
@@ -453,6 +497,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
+        PhaseTimer gather_timer(metrics_.get(), &ArrowScanStatistics::gather_time_ns);
         try {
             have_batch = gather_next_batch(keys, values);
             if (!have_batch) clean_end = true;  // exhausted or stop reached
@@ -466,6 +511,14 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         }
     }
 
+    if (metrics_) {
+        uint64_t staged = 0;
+        for (const auto& key : keys) staged += key.size();
+        for (const auto& value : values) staged += value.size();
+        std::lock_guard<std::mutex> lock(metrics_->mutex);
+        if (staged > metrics_->totals.peak_staged_payload_bytes)
+            metrics_->totals.peak_staged_payload_bytes = staged;
+    }
     if (!error.empty()) {
         // Deterministic failure: tear the scan down so a later get_next
         // keeps failing instead of masquerading as end-of-stream.
@@ -480,6 +533,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
     // Build owned Arrow buffers outside the scan lock; payloads already live
     // in `keys`/`values`, so this is a single memcpy per column.
+    PhaseTimer build_timer(metrics_.get(), &ArrowScanStatistics::build_time_ns);
     const int64_t n = static_cast<int64_t>(keys.size());
     uint64_t key_bytes = 0;
     uint64_t value_bytes = 0;
@@ -570,6 +624,33 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     priv->parent_buffers[0] = nullptr;
     priv->child_pointers[0] = priv->key_array;
     priv->child_pointers[1] = priv->value_array;
+
+    // Publish counters only for a fully constructed batch. Each child owns
+    // its own capacity accounting because consumers may detach/move children
+    // and release them independently of the parent ArrowArray.
+    if (metrics_) {
+        const uint64_t offset_bytes = (static_cast<uint64_t>(n) + 1) * 8;
+        const uint64_t key_capacity = (static_cast<uint64_t>(n) + 1) * 4 + (key_bytes ? key_bytes : 1);
+        const uint64_t value_capacity = (static_cast<uint64_t>(n) + 1) * 4 + (value_bytes ? value_bytes : 1);
+        const uint64_t capacity = key_capacity + value_capacity;
+        const uint64_t used = key_bytes + value_bytes + offset_bytes;
+        key_owned->metrics = metrics_;
+        value_owned->metrics = metrics_;
+        key_owned->tracked_capacity = key_capacity;
+        value_owned->tracked_capacity = value_capacity;
+        std::lock_guard<std::mutex> lock(metrics_->mutex);
+        auto& s = metrics_->totals;
+        ++s.batches_emitted;
+        s.rows_emitted += static_cast<uint64_t>(n);
+        s.key_bytes_emitted += key_bytes;
+        s.value_bytes_emitted += value_bytes;
+        s.offset_bytes_emitted += offset_bytes;
+        s.output_bytes_emitted += used;
+        s.buffer_capacity_bytes_emitted += capacity;
+        s.allocation_slack_bytes_emitted += capacity - used;
+        s.live_buffer_bytes += capacity;
+        if (s.live_buffer_bytes > s.peak_live_buffer_bytes) s.peak_live_buffer_bytes = s.live_buffer_bytes;
+    }
 
     out->length = n;
     out->null_count = 0;
