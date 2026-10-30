@@ -21,6 +21,7 @@ public:
     const int32_t* offsets32_ = nullptr;
     const int64_t* offsets64_ = nullptr;
     size_t length_ = 0;
+    size_t array_offset_ = 0;
     OffsetWidth offset_width_ = OffsetWidth::Fixed;
 
     std::string_view value(size_t index) const;

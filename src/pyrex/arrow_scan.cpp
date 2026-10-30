@@ -1,6 +1,7 @@
 #include "arrow_scan.hpp"
 
 #include <cerrno>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -107,6 +108,7 @@ void free_schema(ArrowSchema* schema) {
 }
 
 struct ChildBuffers {
+    void* validity = nullptr;
     void* offsets = nullptr;
     void* data = nullptr;
     const void** buffers = nullptr;
@@ -119,6 +121,7 @@ void free_child_array(ArrowArray* array) {
     auto* priv = static_cast<ChildBuffers*>(array->private_data);
     if (priv) {
         std::free(priv->offsets);
+        std::free(priv->validity);
         std::free(priv->data);
         std::free(priv->buffers);
         if (priv->metrics) {
@@ -185,7 +188,7 @@ void fill_binary_child(ArrowArray* child, int64_t n, ChildBuffers* owned) {
     child->null_count = 0;
     child->offset = 0;
     child->n_buffers = 3;
-    owned->buffers[0] = nullptr;  // no validity bitmap: columns are non-null
+    owned->buffers[0] = owned->validity;
     owned->buffers[1] = owned->offsets;
     owned->buffers[2] = owned->data;
     child->buffers = owned->buffers;
@@ -270,6 +273,8 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
       batch_size_(config.batch_size),
       max_batch_bytes_(config.max_batch_bytes),
       allow_overflow_(config.allow_overflow),
+      point_lookup_(config.point_lookup),
+      point_keys_(config.point_keys),
       metrics_(config.collect_metrics ? std::make_shared<ArrowScanMetricsState>() : nullptr) {
     if (!parent_) throw RocksDBException("Cannot scan: null database.");
 
@@ -354,6 +359,16 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
     try {
         rocksdb::ReadOptions opts = (read_options ? read_options : parent_->default_read_options_)->native_options();
         opts.snapshot = view;
+        if (point_lookup_) {
+            point_cf_ = cf_raw;
+            point_options_ = std::make_unique<rocksdb::ReadOptions>(opts);
+            parent_->active_arrow_scans_.insert(this);
+            if (shared_snapshot_) {
+                std::lock_guard<std::mutex> snap_lock(shared_snapshot_->mutex_);
+                ++shared_snapshot_->point_stream_pins_;
+            }
+            return;
+        }
         if (has_eff_stop_) {
             upper_bound_slice_ = rocksdb::Slice(upper_bound_storage_);
             opts.iterate_upper_bound = &upper_bound_slice_;
@@ -441,16 +456,34 @@ std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
         if (db_raw) db_raw->ReleaseSnapshot(owned_snapshot_);
         owned_snapshot_ = nullptr;
     }
+    if (point_options_) {
+        point_options_.reset();
+        point_cf_ = nullptr;
+        std::vector<std::string>().swap(point_keys_);
+        std::vector<std::string>().swap(pending_values_);
+        std::vector<uint8_t>().swap(pending_valid_);
+        if (shared_snapshot_) {
+            std::lock_guard<std::mutex> snap_lock(shared_snapshot_->mutex_);
+            --shared_snapshot_->point_stream_pins_;
+            if (shared_snapshot_->released_ && !shared_snapshot_->point_stream_pins_) {
+                if (db_raw && shared_snapshot_->snapshot_)
+                    db_raw->ReleaseSnapshot(shared_snapshot_->snapshot_);
+                shared_snapshot_->snapshot_ = nullptr;
+                parent_->active_snapshots_.erase(shared_snapshot_.get());
+            }
+        }
+    }
     // The last reference can call back into the parent. Destroy it only
     // AFTER the parent and scan locks have been released by the caller.
     return std::move(shared_snapshot_);
 }
 
 PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
-                                                      uint64_t& staged_payload_bytes) {
+                                                      uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid) {
     if (cancel_requested()) return GatherResult::Cancelled;
     if (closed_) throw RocksDBException("Arrow scan is closed.");
     if (exhausted_) return GatherResult::End;
+    if (point_lookup_) return gather_points(keys, values, staged_payload_bytes, valid);
     if (stop_reached_) {
         exhausted_ = true;
         return GatherResult::End;
@@ -514,6 +547,65 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
     return keys.empty() ? GatherResult::End : GatherResult::Batch;
 }
 
+PyArrowScan::GatherResult PyArrowScan::gather_points(std::vector<std::string>& keys,
+        std::vector<std::string>& values, uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid) {
+    if (!point_options_) throw RocksDBException("multi_get_arrow: database or stream is closed.");
+    uint64_t key_total = 0, value_total = 0;
+    GatherProgress progress(metrics_ ? &rows_gathered_ : nullptr, keys, values,
+                           metrics_ ? &staged_payload_bytes : nullptr, key_total, value_total);
+    while (point_position_ < point_keys_.size() && keys.size() < batch_size_) {
+        if ((keys.size() & (kCancellationPollRows - 1)) == 0) {
+            progress.flush();
+            if (cancel_requested()) return GatherResult::Cancelled;
+        }
+        if (pending_position_ == pending_values_.size()) {
+            // Amortize native calls, but cap one uninterruptible MultiGet at
+            // 256 records. Values can be large: output caps are not RSS caps.
+            const size_t count = std::min({size_t{256}, batch_size_ - keys.size(),
+                                          point_keys_.size() - point_position_});
+            std::vector<rocksdb::Slice> slices;
+            slices.reserve(count);
+            for (size_t i = 0; i < count; ++i) slices.emplace_back(point_keys_[point_position_ + i]);
+            pending_values_.clear();
+            auto statuses = parent_->db_->MultiGet(*point_options_,
+                std::vector<rocksdb::ColumnFamilyHandle*>(count, point_cf_), slices, &pending_values_);
+            if (metrics_) {
+                std::lock_guard<std::mutex> lock(metrics_->mutex);
+                ++metrics_->totals.point_lookup_calls;
+            }
+            pending_valid_.clear();
+            for (const auto& status : statuses) {
+                if (!status.ok() && !status.IsNotFound())
+                    throw RocksDBException("multi_get_arrow: " + status.ToString());
+                pending_valid_.push_back(status.ok());
+            }
+            pending_position_ = 0;
+            if (cancel_requested()) return GatherResult::Cancelled;
+        }
+        const auto& key = point_keys_[point_position_];
+        const auto& value = pending_values_[pending_position_];
+        const uint64_t n = keys.size() + 1;
+        const uint64_t prospective = key_total + key.size() + value_total + value.size()
+                                     + 8 * (n + 1) + (n + 7) / 8;
+        if (prospective > max_batch_bytes_) {
+            if (!keys.empty()) break;
+            if (!allow_overflow_)
+                throw RocksDBException("multi_get_arrow: single record exceeds max_batch_bytes.");
+        }
+        if (key_total + key.size() > INT32_MAX || value_total + value.size() > INT32_MAX)
+            throw RocksDBException("multi_get_arrow: record exceeds int32 Arrow offset range.");
+        keys.push_back(key);
+        key_total += key.size();
+        values.push_back(value);
+        value_total += value.size();
+        valid.push_back(pending_valid_[pending_position_]);
+        ++pending_position_;
+        ++point_position_;
+    }
+    if (cancel_requested()) return GatherResult::Cancelled;
+    return keys.empty() ? GatherResult::End : GatherResult::Batch;
+}
+
 int PyArrowScan::cancelled_next() {
     cancellation_observed_.store(true, std::memory_order_release);
     if (metrics_) {
@@ -543,6 +635,7 @@ int PyArrowScan::fill_schema(ArrowSchema* out) {
         key_schema->release = &free_schema;
         value_schema->format = dup_cstr("z");
         value_schema->name = dup_cstr("value");
+        if (point_lookup_) value_schema->flags = 2;  // ARROW_FLAG_NULLABLE
         value_schema->release = &free_schema;
 
         out->format = dup_cstr("+s");  // struct
@@ -567,6 +660,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
     std::vector<std::string> keys;
     std::vector<std::string> values;
+    std::vector<uint8_t> valid;
     bool clean_end = false;
     bool cancelled = false;
     uint64_t staged_payload_bytes = 0;
@@ -576,7 +670,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         std::unique_lock<std::mutex> lock(mutex_);
         PhaseTimer gather_timer(metrics_.get(), &ArrowScanStatistics::gather_time_ns);
         try {
-            const auto result = gather_next_batch(keys, values, staged_payload_bytes);
+            const auto result = gather_next_batch(keys, values, staged_payload_bytes, valid);
             clean_end = result == GatherResult::End;
             cancelled = result == GatherResult::Cancelled;
         } catch (const std::exception& e) {
@@ -650,6 +744,8 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
     key_owned->offsets = std::malloc(static_cast<size_t>((static_cast<uint64_t>(n) + 1) * 4));
     value_owned->offsets = std::malloc(static_cast<size_t>((static_cast<uint64_t>(n) + 1) * 4));
+    const uint64_t validity_bytes = point_lookup_ ? (static_cast<uint64_t>(n) + 7) / 8 : 0;
+    if (validity_bytes) value_owned->validity = std::calloc(static_cast<size_t>(validity_bytes), 1);
     // Arrow data buffers must be non-null even when the column payload is
     // empty (e.g. all values are empty bytes), so allocate a dummy byte.
     key_owned->data = std::malloc(key_bytes ? static_cast<size_t>(key_bytes) : 1);
@@ -661,13 +757,14 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     priv->key_array = new (std::nothrow) ArrowArray();
     priv->value_array = new (std::nothrow) ArrowArray();
 
-    if (!key_owned->offsets || !key_owned->data || !key_owned->buffers || !value_owned->offsets || !value_owned->data ||
+    if ((validity_bytes && !value_owned->validity) || !key_owned->offsets || !key_owned->data || !key_owned->buffers || !value_owned->offsets || !value_owned->data ||
         !value_owned->buffers || !priv->parent_buffers || !priv->child_pointers || !priv->key_array ||
         !priv->value_array) {
         std::free(key_owned->offsets);
         std::free(key_owned->data);
         std::free(key_owned->buffers);
         std::free(value_owned->offsets);
+        std::free(value_owned->validity);
         std::free(value_owned->data);
         std::free(value_owned->buffers);
         delete key_owned;
@@ -718,6 +815,11 @@ int PyArrowScan::fill_next(ArrowArray* out) {
             vd += values[static_cast<size_t>(i)].size();
         }
         vo[i + 1] = vo[i] + static_cast<int32_t>(values[static_cast<size_t>(i)].size());
+        if (point_lookup_) {
+            if (valid[static_cast<size_t>(i)])
+                static_cast<uint8_t*>(value_owned->validity)[i / 8] |= uint8_t{1} << (i % 8);
+            else ++priv->value_array->null_count;
+        }
     }
 
     // Publication decision: cancellation observed here discards the entire
@@ -731,9 +833,9 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     if (metrics_) {
         const uint64_t offset_bytes = (static_cast<uint64_t>(n) + 1) * 8;
         const uint64_t key_capacity = (static_cast<uint64_t>(n) + 1) * 4 + (key_bytes ? key_bytes : 1);
-        const uint64_t value_capacity = (static_cast<uint64_t>(n) + 1) * 4 + (value_bytes ? value_bytes : 1);
+        const uint64_t value_capacity = (static_cast<uint64_t>(n) + 1) * 4 + (value_bytes ? value_bytes : 1) + validity_bytes;
         const uint64_t capacity = key_capacity + value_capacity;
-        const uint64_t used = key_bytes + value_bytes + offset_bytes;
+        const uint64_t used = key_bytes + value_bytes + offset_bytes + validity_bytes;
         key_owned->metrics = metrics_;
         value_owned->metrics = metrics_;
         key_owned->tracked_capacity = key_capacity;
@@ -745,6 +847,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         s.key_bytes_emitted += key_bytes;
         s.value_bytes_emitted += value_bytes;
         s.offset_bytes_emitted += offset_bytes;
+        s.validity_bytes_emitted += validity_bytes;
         s.output_bytes_emitted += used;
         s.buffer_capacity_bytes_emitted += capacity;
         s.allocation_slack_bytes_emitted += capacity - used;

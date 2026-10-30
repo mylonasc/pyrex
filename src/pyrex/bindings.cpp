@@ -234,6 +234,8 @@ void bind_pyrex(py::module_& m) {
             out["key_bytes_emitted"] = s.key_bytes_emitted;
             out["value_bytes_emitted"] = s.value_bytes_emitted;
             out["offset_bytes_emitted"] = s.offset_bytes_emitted;
+            out["validity_bytes_emitted"] = s.validity_bytes_emitted;
+            out["point_lookup_calls"] = s.point_lookup_calls;
             out["output_bytes_emitted"] = s.output_bytes_emitted;
             out["buffer_capacity_bytes_emitted"] = s.buffer_capacity_bytes_emitted;
             out["allocation_slack_bytes_emitted"] = s.allocation_slack_bytes_emitted;
@@ -371,6 +373,13 @@ void bind_pyrex(py::module_& m) {
         .def("get", &point_get<PyTransactionDB>, py::arg("key"), py::arg("read_options") = py::none(), py::arg("snapshot") = py::none(),
              "Reads committed state, optionally at a shared Snapshot. None options/snapshot use the ordinary read path; explicit objects use the validated general path.")
         .def("multi_get", &PyTransactionDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
+        .def("multi_get_arrow", &PyTransactionDB::multi_get_arrow, py::arg("keys"), py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
+        .def("multi_get_arrow_cf", &PyTransactionDB::multi_get_arrow_cf, py::arg("cf_handle"), py::arg("keys"),
+             py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr,
+             py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def("delete", &PyTransactionDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyTransactionDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
         .def("begin_transaction", &PyTransactionDB::begin_transaction, py::arg("write_options") = nullptr, py::arg("transaction_options") = nullptr, "Begins a pessimistic transaction.")
@@ -443,6 +452,9 @@ void bind_pyrex(py::module_& m) {
         .def("get", &point_get<PyRocksDB>, py::arg("key"), py::arg("read_options") = py::none(), py::arg("snapshot") = py::none(),
              "Retrieves a value, optionally at a shared Snapshot. None options/snapshot use the ordinary read path; explicit objects use the validated general path.")
         .def("multi_get", &PyRocksDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
+        .def("multi_get_arrow", &PyRocksDB::multi_get_arrow, py::arg("keys"), py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def("delete", &PyRocksDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyRocksDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
         .def("write_columnar_batch", &PyRocksDB::write_columnar_batch, py::arg("keys"), py::arg("values"), py::kw_only(), py::arg("write_options") = nullptr, py::arg("on_null") = "error", "Writes columnar key/value arrays using a native RocksDB WriteBatch.")
@@ -501,6 +513,10 @@ void bind_pyrex(py::module_& m) {
         .def("put_cf", &PyRocksDBExtended::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair into a specific column family.", py::call_guard<py::gil_scoped_release>())
         .def("get_cf", &PyRocksDBExtended::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Retrieves a CF value, optionally at a shared Snapshot.")
         .def("multi_get_cf", &PyRocksDBExtended::multi_get_cf, py::arg("cf_handle"), py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr)
+        .def("multi_get_arrow_cf", &PyRocksDBExtended::multi_get_arrow_cf, py::arg("cf_handle"), py::arg("keys"),
+             py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr,
+             py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def("delete_cf", &PyRocksDBExtended::del_cf, py::arg("cf_handle"), py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key from a specific column family.", py::call_guard<py::gil_scoped_release>())
         .def("list_column_families", &PyRocksDBExtended::list_column_families, "Lists the names of all existing column families.")
         .def("create_column_family", &PyRocksDBExtended::create_column_family, py::arg("name"), py::arg("cf_options") = nullptr, "Creates a new column family.", py::call_guard<py::gil_scoped_release>())

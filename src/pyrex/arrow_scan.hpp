@@ -43,6 +43,8 @@ struct ArrowScanStatistics {
     uint64_t key_bytes_emitted = 0;
     uint64_t value_bytes_emitted = 0;
     uint64_t offset_bytes_emitted = 0;
+    uint64_t validity_bytes_emitted = 0;
+    uint64_t point_lookup_calls = 0;
     uint64_t output_bytes_emitted = 0;
     uint64_t buffer_capacity_bytes_emitted = 0;
     uint64_t allocation_slack_bytes_emitted = 0;
@@ -101,6 +103,7 @@ private:
     const rocksdb::Snapshot* snapshot_ = nullptr;
     mutable std::mutex mutex_;
     bool released_ = false;
+    size_t point_stream_pins_ = 0;
 
     void release_locked();
 };
@@ -122,6 +125,9 @@ public:
         size_t max_batch_bytes = 8 * 1024 * 1024;
         bool allow_overflow = false;
         bool collect_metrics = false;
+        // Owned native input; no Python references reach stream callbacks.
+        bool point_lookup = false;
+        std::vector<std::string> point_keys;
     };
 
     // Factory path only: native initialization and parent registration are
@@ -188,7 +194,9 @@ private:
     // overflow or lifecycle errors.
     enum class GatherResult { Batch, End, Cancelled };
     GatherResult gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
-                                   uint64_t& staged_payload_bytes);
+                                   uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid);
+    GatherResult gather_points(std::vector<std::string>& keys, std::vector<std::string>& values,
+                              uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid);
     int cancelled_next();
     // Releases iterator + owned snapshot. Caller holds mutex_ (via the
     // parent detach helper or invalidate_for_db_close); db_raw may be
@@ -212,6 +220,14 @@ private:
     size_t batch_size_;
     size_t max_batch_bytes_;
     bool allow_overflow_;
+    bool point_lookup_ = false;
+    std::vector<std::string> point_keys_;
+    size_t point_position_ = 0;
+    size_t pending_position_ = 0;
+    std::vector<std::string> pending_values_;
+    std::vector<uint8_t> pending_valid_;
+    rocksdb::ColumnFamilyHandle* point_cf_ = nullptr;
+    std::unique_ptr<rocksdb::ReadOptions> point_options_;
 
     rocksdb::Iterator* iter_ = nullptr;
     const rocksdb::Snapshot* owned_snapshot_ = nullptr;
