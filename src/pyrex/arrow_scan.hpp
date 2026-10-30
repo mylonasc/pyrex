@@ -114,6 +114,10 @@ private:
 
 class PyArrowScan : public std::enable_shared_from_this<PyArrowScan> {
 public:
+    struct Range {
+        std::optional<std::string> start;
+        std::optional<std::string> stop;
+    };
     struct Config {
         std::string prefix;
         bool has_prefix = false;
@@ -128,6 +132,8 @@ public:
         // Owned native input; no Python references reach stream callbacks.
         bool point_lookup = false;
         std::vector<std::string> point_keys;
+        bool multi_range = false;
+        std::vector<Range> ranges;
     };
 
     // Factory path only: native initialization and parent registration are
@@ -220,6 +226,9 @@ private:
     size_t batch_size_;
     size_t max_batch_bytes_;
     bool allow_overflow_;
+    bool multi_range_ = false;
+    std::vector<Range> ranges_;
+    size_t range_position_ = 0;
     bool point_lookup_ = false;
     std::vector<std::string> point_keys_;
     size_t point_position_ = 0;

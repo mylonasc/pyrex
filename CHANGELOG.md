@@ -8,6 +8,12 @@ available via `git log`.
 
 ### Added
 
+- ABR-05 (#42): `scan_arrow_ranges()` / `scan_arrow_ranges_cf()` stream an
+  ordered union of bytewise ranges and prefixes at one pinned snapshot.
+  Overlaps/duplicates are normalized; native seeks skip gaps without
+  full-scan materialization. Existing row/byte limits, cancellation, metrics
+  and owned-buffer lifetimes apply across range transitions.
+
 - ABR-04 (#41): `multi_get_arrow()` / `multi_get_arrow_cf()` provide lazy,
   owned Arrow point-read streams in input order, preserving duplicates and
   representing missing keys as nullable values. Native MultiGet groups are

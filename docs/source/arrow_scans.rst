@@ -336,7 +336,7 @@ test hooks. See ``benchmarks/arrow_cancellation.md`` for measured results and
 reproduction. They do not certify production/worst-case IO cancellation time.
 
 Arrow point lookups (ABR-04)
----------------------------
+----------------------------
 
 ``multi_get_arrow(keys, ...)`` complements list-returning ``multi_get`` on
 plain, extended and committed-state TransactionDB handles.
@@ -391,6 +391,39 @@ including detached value children, remain valid after input/stream/DB release.
 existing MultiGet plus Arrow reconstruction, checking an ordered digest that
 includes nulls/duplicates before and after warmed, alternating-order repeats.
 See ``benchmarks/arrow_points.md`` for measurements and limitations.
+
+Multi-range and multi-prefix unions (ABR-05)
+--------------------------------------------
+
+``scan_arrow_ranges(ranges=None, prefixes=None, ...)`` and extended/
+TransactionDB ``scan_arrow_ranges_cf(cf_handle, ...)`` select a bytewise
+**ordered union**, not caller order. Each range is ``(start, stop)`` with
+inclusive start, exclusive stop and ``None`` for an unbounded endpoint.
+Prefixes are bytes. Both arguments may be supplied; at least one must be a
+list/tuple (up to 65536 selectors per argument). Empty selector lists select
+no records; ``(None, None)`` or an empty prefix selects everything.
+
+Ranges are validated and copied at creation, sorted, and merged when touching
+or overlapping. Equal endpoints select nothing; reversed endpoints fail.
+Duplicate/overlapping ranges or prefixes never duplicate records. Binary
+prefixes ending in ``0xff`` use the same successor rules as ordinary scans.
+Output follows bytewise key order even if selectors are supplied out of order::
+
+    scan = db.scan_arrow_ranges(
+        ranges=[(b"z:", None), (b"a:", b"c:")],
+        prefixes=[b"b:", b"x:"], batch_size=4096,
+    )
+
+One native iterator and one creation-time snapshot serve the whole union.
+Native seeks skip gaps; a final upper bound is pushed down to RocksDB when
+bounded. Intermediate upper endpoints are checked natively before advancing
+to the next seek, so no full-scan materialization is needed. Row/byte limits,
+single-record overflow, metrics and cancellation apply continuously across
+transitions; a batch may contain rows from multiple ranges. Snapshot/CF
+identity and drop protection match ordinary scans. Output stays non-null
+binary key/value with independent owned batches. Existing scan signatures
+are unchanged. ``benchmarks/bench_arrow_ranges.py`` compares against separate
+scans sharing the same explicit snapshot and verifies ordered digests.
 
 Reference
 ---------

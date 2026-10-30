@@ -273,6 +273,8 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
       batch_size_(config.batch_size),
       max_batch_bytes_(config.max_batch_bytes),
       allow_overflow_(config.allow_overflow),
+      multi_range_(config.multi_range),
+      ranges_(config.ranges),
       point_lookup_(config.point_lookup),
       point_keys_(config.point_keys),
       metrics_(config.collect_metrics ? std::make_shared<ArrowScanMetricsState>() : nullptr) {
@@ -306,7 +308,15 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
         eff_stop_ = *hi;
         has_eff_stop_ = true;
     }
-    if (has_eff_stop_) upper_bound_storage_ = eff_stop_;
+    if (multi_range_ && !ranges_.empty()) {
+        has_eff_start_ = ranges_[0].start.has_value();
+        eff_start_ = ranges_[0].start.value_or("");
+        has_eff_stop_ = ranges_[0].stop.has_value();
+        eff_stop_ = ranges_[0].stop.value_or("");
+    }
+    const auto global_stop = multi_range_ && !ranges_.empty() ? ranges_.back().stop
+        : (has_eff_stop_ ? std::optional<std::string>(eff_stop_) : std::nullopt);
+    if (global_stop) upper_bound_storage_ = *global_stop;
 
     // Never wait for the GIL while holding the DB lifecycle lock.
     py::gil_scoped_release release;
@@ -369,7 +379,7 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
             }
             return;
         }
-        if (has_eff_stop_) {
+        if (global_stop) {
             upper_bound_slice_ = rocksdb::Slice(upper_bound_storage_);
             opts.iterate_upper_bound = &upper_bound_slice_;
         }
@@ -484,6 +494,7 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
     if (closed_) throw RocksDBException("Arrow scan is closed.");
     if (exhausted_) return GatherResult::End;
     if (point_lookup_) return gather_points(keys, values, staged_payload_bytes, valid);
+    if (multi_range_ && ranges_.empty()) return GatherResult::End;
     if (stop_reached_) {
         exhausted_ = true;
         return GatherResult::End;
@@ -502,16 +513,28 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
 
     bool hit_stop = false;
 
-    while (iter_->Valid() && keys.size() < batch_size_) {
+    while (keys.size() < batch_size_) {
         if ((keys.size() & (kCancellationPollRows - 1)) == 0) {
             progress.flush();
             if (cancel_requested()) return GatherResult::Cancelled;
         }
-        rocksdb::Slice key = iter_->key();
-        if (has_eff_stop_ && compare_bytes(key.data(), key.size(), eff_stop_.data(), eff_stop_.size()) >= 0) {
+        if (!iter_->Valid() || (has_eff_stop_ &&
+                compare_bytes(iter_->key().data(), iter_->key().size(), eff_stop_.data(), eff_stop_.size()) >= 0)) {
+            if (!iter_->status().ok())
+                throw RocksDBException("scan_arrow: iterator error: " + iter_->status().ToString());
+            if (multi_range_ && range_position_ + 1 < ranges_.size()) {
+                const auto& range = ranges_[++range_position_];
+                has_eff_stop_ = range.stop.has_value();
+                eff_stop_ = range.stop.value_or("");
+                // Only the first canonical range can have an unbounded start.
+                iter_->Seek(rocksdb::Slice(*range.start));
+                if (cancel_requested()) return GatherResult::Cancelled;
+                continue;
+            }
             hit_stop = true;
             break;
         }
+        rocksdb::Slice key = iter_->key();
         rocksdb::Slice value = iter_->value();
         const auto key_len = static_cast<uint64_t>(key.size());
         const auto value_len = static_cast<uint64_t>(value.size());
