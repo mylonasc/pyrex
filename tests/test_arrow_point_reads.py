@@ -2,6 +2,10 @@
 import ctypes as ct
 import errno
 import gc
+import os
+from pathlib import Path
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -9,6 +13,7 @@ import pyrex
 
 from test_arrow_scan_metrics import NativeStream, release_array
 from test_arrow_scan_cancellation import last_error
+from test_arrow_scan_cancellation import allocation_latch  # shared test-only fixture
 
 pa = pytest.importorskip("pyarrow")
 
@@ -215,3 +220,68 @@ for i in range(20):
 '''
     subprocess.run([sys.executable, "-c", f"PATH={str(tmp_path / 'race')!r}\n" + code],
                    check=True, timeout=30)
+
+
+@pytest.mark.parametrize("phase", ["gather", "build"])
+def test_point_cancel_inside_native_callback(allocation_latch, phase, tmp_path):
+    code = r'''
+import ctypes as ct, errno, os, time
+from concurrent.futures import ThreadPoolExecutor
+import pyrex
+from test_arrow_scan_metrics import ArrowArray, NativeStream
+helper = ct.CDLL(os.environ['PYREX_CANCEL_LATCH'])
+helper.paused_get_next.argtypes = [ct.c_void_p, ct.c_int, ct.c_size_t, ct.POINTER(ArrowArray)]
+helper.paused_get_next.restype = ct.c_int
+helper.allocation_paused.restype = ct.c_bool
+with pyrex.TransactionDB(PATH) as db:
+    db.put(b'k' * 19, b'v' * 64)
+    snap = db.create_snapshot()
+    scan = db.multi_get_arrow([b'k' * 19] * 10000, snapshot=snap, collect_metrics=True)
+    snap.release()
+    with NativeStream(scan) as stream, ThreadPoolExecutor(max_workers=1) as pool:
+        out = ArrowArray()
+        future = pool.submit(helper.paused_get_next, stream.pointer,
+                             700 if PHASE == 'gather' else -1,
+                             190000 if PHASE == 'build' else 0, ct.byref(out))
+        deadline = time.monotonic() + 10
+        while not helper.allocation_paused():
+            assert not future.done(), 'latch not reached'
+            assert time.monotonic() < deadline
+            time.sleep(.001)
+        assert scan.cancel()
+        helper.resume_allocation()
+        assert future.result() == errno.ECANCELED and not out.release
+        assert scan.stats['rows_emitted'] == scan.stats['live_buffer_bytes'] == 0
+        assert scan.stats['point_lookup_calls'] > 0
+'''
+    prefix = (f"import sys\nsys.path.insert(0, {str(Path(__file__).parent)!r})\n"
+              f"PATH={str(tmp_path / 'latch')!r}\nPHASE={phase!r}\n")
+    env = dict(os.environ, PYREX_CANCEL_LATCH=str(allocation_latch))
+    env["LD_PRELOAD"] = ":".join(filter(None, [env.get("LD_PRELOAD"), str(allocation_latch)]))
+    subprocess.run([sys.executable, "-c", prefix + code], env=env, check=True, timeout=30)
+
+
+@pytest.mark.parametrize("offsets", [[0, -1], [1, 0], [0, 10]])
+def test_malformed_offsets_rejected_without_native_access(db, offsets):
+    import array
+    class Malformed:
+        type = "binary"
+        null_count = 0
+        offset = 0
+        def __len__(self):
+            return 1
+        def buffers(self):
+            return (None, memoryview(array.array("i", offsets)), memoryview(b"k"))
+    with pytest.raises(ValueError, match="invalid Arrow offsets"):
+        db.multi_get_arrow(Malformed())
+
+
+def test_arrow_points_benchmark_smoke(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "benchmarks/bench_arrow_points.py"
+    result = subprocess.run([sys.executable, str(script), "--rows", "100", "--repeat", "2",
+                             "--work-dir", str(tmp_path)], check=True, capture_output=True,
+                            text=True, timeout=30)
+    import json
+    report = json.loads(result.stdout)
+    assert len(report["ordered_digest"]) == 64
+    assert all(len(samples) == 2 for samples in report["samples_ns"].values())

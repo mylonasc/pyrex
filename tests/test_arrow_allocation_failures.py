@@ -31,8 +31,16 @@ for name in ('fail_schema', 'fail_batch'):
 get_pointer = ctypes.pythonapi.PyCapsule_GetPointer
 get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 get_pointer.restype = ctypes.c_void_p
+helper.fail_point_bitmap.argtypes = [ctypes.c_void_p]
+helper.fail_point_bitmap.restype = ctypes.c_int
 with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
     db.put(b'k', b'v')
+    points = db.multi_get_arrow([b'k'] * 10000, collect_metrics=True)
+    capsule = points.__arrow_c_stream__()
+    assert helper.fail_point_bitmap(get_pointer(capsule, b'arrow_array_stream')) != 0
+    assert points.stats['rows_emitted'] == points.stats['live_buffer_bytes'] == 0
+    points.close()
+    del capsule, points
     for collect_metrics in (False, True):
         for callback, count in ((helper.fail_schema, 9), (helper.fail_batch, 15)):
             for allocation in range(1, count + 1):

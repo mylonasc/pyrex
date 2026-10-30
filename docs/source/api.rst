@@ -68,6 +68,14 @@ by the stream returns ``ECANCELED`` / ``scan_arrow: cancelled``, not successful
 exhaustion; already committed batches remain valid. Use ``close()`` for
 deterministic resource release, including idle scans that will not be pulled.
 
+``multi_get_arrow(keys, batch_size=65536, max_batch_bytes=8388608,
+read_options=None, snapshot=None, allow_overflow=False, collect_metrics=False)``
+returns the same single-consumer ``ArrowScan`` lifecycle object, with nullable
+``value`` for missing keys. Extended/TransactionDB also expose
+``multi_get_arrow_cf(cf_handle, keys, ...)``. These methods preserve input
+order and duplicates; existing ``multi_get`` methods still return lists.
+See :doc:`arrow_scans` for input validation, snapshot and memory contracts.
+
 ``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
 multiple scans. Methods: ``release()``, ``is_valid()``, ``sequence_number``.
 
