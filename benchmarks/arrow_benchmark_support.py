@@ -79,6 +79,7 @@ class OrderedDigest:
         for part in self.parts:
             combined.update(part.digest())
         return {"sha256": combined.hexdigest(), "rows": self.rows,
+                "digest_scheme": "ABR-02/v1/four-sha256-streams-native-u64",
                 "key_bytes": self.key_bytes, "value_bytes": self.value_bytes,
                 "length_encoding": sys.byteorder + "-endian-uint64"}
 
@@ -101,10 +102,12 @@ def scopes(rows, workloads, prefix):
             item = {"name": name, "prefix_hex": None, "start_hex": None, "stop_hex": None}
         elif name == "prefix":
             item = {"name": name, "prefix_hex": prefix.encode().hex(), "start_hex": None, "stop_hex": None}
-        else:
+        elif name == "range":
             item = {"name": name, "prefix_hex": None,
                     "start_hex": (b"sensor/" + f"{sensor_rows // 4:012d}".encode()).hex(),
                     "stop_hex": (b"sensor/" + f"{sensor_rows * 3 // 4:012d}".encode()).hex()}
+        else:
+            raise ValueError("unknown workload: " + name)
         result.append(item)
     return result
 
@@ -122,6 +125,11 @@ def selected(key, limits):
 
 def iterator_records(db, read_options, limits):
     iterator = db.new_iterator(read_options)
+    seek_iterator(iterator, limits)
+    yield from records_from_iterator(iterator, limits)
+
+
+def seek_iterator(iterator, limits):
     lower = limits["start"]
     if limits["prefix"] is not None:
         lower = max(lower or b"", limits["prefix"])
@@ -129,6 +137,9 @@ def iterator_records(db, read_options, limits):
         iterator.seek_to_first()
     else:
         iterator.seek(lower)
+
+
+def records_from_iterator(iterator, limits):
     while iterator.valid():
         key = iterator.key()
         if limits["stop"] is not None and key >= limits["stop"]:
@@ -174,11 +185,13 @@ def version(name):
 
 def environment():
     cpu_model = None
-    if Path("/proc/cpuinfo").exists():
+    try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():
             if line.startswith("model name"):
                 cpu_model = line.partition(":")[2].strip()
                 break
+    except OSError:
+        pass
     return {
         "pid": os.getpid(), "python": platform.python_version(),
         "platform": platform.platform(), "byteorder": sys.byteorder,
@@ -201,7 +214,8 @@ def peak_rss_bytes():
 
 
 def current_rss_bytes():
-    if not Path("/proc/self/statm").exists():
+    try:
+        resident_pages = int(Path("/proc/self/statm").read_text().split()[1])
+        return resident_pages * os.sysconf("SC_PAGE_SIZE")
+    except OSError:
         return None
-    resident_pages = int(Path("/proc/self/statm").read_text().split()[1])
-    return resident_pages * os.sysconf("SC_PAGE_SIZE")
