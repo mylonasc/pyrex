@@ -241,6 +241,26 @@ for repeat in range(10):
     subprocess.run([sys.executable, "-c", prefix + code], check=True, timeout=30)
 
 
+def test_no_request_overhead_probe_reports_samples_without_cancelling(tmp_path):
+    pytest.importorskip("pyarrow")
+    script = Path(__file__).resolve().parents[1] / "benchmarks/bench_arrow_cancel_overhead.py"
+    result = subprocess.run([sys.executable, str(script), "--rows", "1000", "--repeat", "2",
+                             "--batch-sizes", "32", "--work-dir", str(tmp_path)],
+                            capture_output=True, text=True, check=True, timeout=30)
+    report = json.loads(result.stdout)
+    assert report["cancellation_requests"].startswith("none")
+    assert len(report["results"]) == 2
+    for sample in report["results"]:
+        assert len(sample["samples_ns"]) == 2
+        assert sample["min_ns"] <= sample["median_ns"] <= sample["max_ns"]
+        stats = sample["native_stats_last_repeat"]
+        if sample["collect_metrics"]:
+            assert stats["rows_gathered"] == stats["rows_emitted"] == 1000
+            assert stats["cancelled_calls"] == stats["live_buffer_bytes"] == 0
+        else:
+            assert stats is None
+
+
 @pytest.fixture(scope="module")
 def allocation_latch(tmp_path_factory):
     if sys.platform != "linux" or platform.libc_ver()[0] != "glibc":
