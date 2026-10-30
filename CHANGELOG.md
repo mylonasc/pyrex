@@ -8,6 +8,14 @@ available via `git log`.
 
 ### Added
 
+- ABR-04 (#41): `multi_get_arrow()` / `multi_get_arrow_cf()` provide lazy,
+  owned Arrow point-read streams in input order, preserving duplicates and
+  representing missing keys as nullable values. Native MultiGet groups are
+  capped at 256 keys; row/byte limits, snapshots, cancellation and opt-in
+  metrics reuse the scan lifecycle. Existing list-returning APIs are unchanged.
+  Binary Arrow inputs are copied without per-key Python conversion; sliced
+  offsets are validated (also fixing sliced columnar writes).
+
 - ABR-03 (#40): atomic `ArrowScan.cancel()` requests with explicit admission
   results and a read-only `cancel_requested` flag. Native gather and buffer
   copying poll every 256 rows; observed cancellation discards unpublished

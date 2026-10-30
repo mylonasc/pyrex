@@ -51,7 +51,7 @@ Feature index
      - Snapshot-consistent Arrow batched point lookups
      - P1
      - ABR-01, ABR-03
-     - Planned
+     - Implemented on stacked feature branch; review pending
    * - `ABR-05 <https://github.com/mylonasc/pyrex/issues/42>`_
      - Multi-range/multi-prefix scans at one horizon
      - P2

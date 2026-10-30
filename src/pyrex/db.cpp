@@ -398,6 +398,47 @@ std::shared_ptr<PyArrowScan> scan_arrow_impl(std::shared_ptr<PyRocksDB> self, st
 
 }  // namespace
 
+namespace {
+std::shared_ptr<PyArrowScan> point_arrow_impl(std::shared_ptr<PyRocksDB> self,
+        std::shared_ptr<PyColumnFamilyHandle> cf, py::object keys, size_t batch_size,
+        size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+        std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
+    if (batch_size < 1 || batch_size > kMaxBatchSize || max_batch_bytes < 1 || max_batch_bytes > kMaxBatchBytes)
+        throw py::value_error("multi_get_arrow: invalid batch_size or max_batch_bytes");
+    if (py::len(keys) > 65536) throw py::value_error("multi_get_arrow accepts at most 65536 keys per stream");
+    if (py::hasattr(keys, "type")) {
+        const std::string type = py::str(keys.attr("type"));
+        if (type != "binary" && type != "large_binary")
+            throw py::type_error("multi_get_arrow keys must be binary or large_binary");
+    }
+    auto column = extract_byte_column(keys, "keys");
+    PyArrowScan::Config config;
+    config.point_lookup = true;
+    config.batch_size = batch_size;
+    config.max_batch_bytes = max_batch_bytes;
+    config.allow_overflow = allow_overflow;
+    config.collect_metrics = collect_metrics;
+    config.point_keys.reserve(column.length_);
+    for (size_t i = 0; i < column.length_; ++i) config.point_keys.emplace_back(column.value(i));
+    return std::make_shared<PyArrowScan>(self, cf, config, snapshot, read_options);
+}
+}  // namespace
+
+std::shared_ptr<PyArrowScan> PyRocksDB::multi_get_arrow(py::object keys, size_t batch_size,
+        size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+        std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
+    return point_arrow_impl(shared_from_this(), nullptr, keys, batch_size, max_batch_bytes,
+                            read_options, snapshot, allow_overflow, collect_metrics);
+}
+
+std::shared_ptr<PyArrowScan> PyRocksDBExtended::multi_get_arrow_cf(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object keys, size_t batch_size, size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+        std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
+    if (!cf) throw py::value_error("cf_handle must not be None");
+    return point_arrow_impl(shared_from_this(), cf, keys, batch_size, max_batch_bytes,
+                            read_options, snapshot, allow_overflow, collect_metrics);
+}
+
 void PyRocksDB::unregister_scan(PyArrowScan* scan) {
     std::lock_guard<std::shared_mutex> lock(arrow_mutex_);
     active_arrow_scans_.erase(scan);
@@ -418,7 +459,9 @@ void PyRocksDB::detach_scan_resources(PyArrowScan* scan, bool mark_exhausted) {
 void PyRocksDB::detach_snapshot(PySnapshot* snapshot) {
     std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     std::lock_guard<std::mutex> snap_lock(snapshot->mutex_);
-    if (!snapshot->released_ && snapshot->snapshot_ && db_) {
+    snapshot->released_ = true;
+    if (snapshot->point_stream_pins_) return;  // existing point streams retain their view
+    if (snapshot->snapshot_ && db_) {
         db_->ReleaseSnapshot(snapshot->snapshot_);
     }
     snapshot->release_locked();

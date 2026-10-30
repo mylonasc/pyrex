@@ -50,6 +50,9 @@ ByteColumn extract_arrow_array(const py::object& input, const char* name) {
 
     std::string type_name = py::str(input.attr("type"));
     column.offset_width_ = arrow_offset_width(type_name, name);
+    const auto offset = input.attr("offset").cast<int64_t>();
+    if (offset < 0) throw py::value_error(std::string(name) + " has a negative offset");
+    column.array_offset_ = static_cast<size_t>(offset);
 
     // Arrow/Polars callers already keep variable-width bytes in contiguous buffers;
     // reading offsets here avoids per-row Python bytes materialization before RocksDB copies into WriteBatch.
@@ -68,15 +71,33 @@ ByteColumn extract_arrow_array(const py::object& input, const char* name) {
 
     column.data_ = static_cast<const char*>(data_info.ptr);
     if (column.offset_width_ == ByteColumn::OffsetWidth::Int32) {
-        if (offsets_info.size * offsets_info.itemsize < static_cast<ssize_t>((column.length_ + 1) * sizeof(int32_t))) {
+        if (column.array_offset_ > static_cast<size_t>(offsets_info.size * offsets_info.itemsize) / sizeof(int32_t) ||
+            column.length_ + 1 > static_cast<size_t>(offsets_info.size * offsets_info.itemsize) / sizeof(int32_t) - column.array_offset_) {
             throw py::value_error(std::string(name) + " Arrow offsets buffer is too small");
         }
-        column.offsets32_ = static_cast<const int32_t*>(offsets_info.ptr);
+        if (reinterpret_cast<uintptr_t>(offsets_info.ptr) % alignof(int32_t))
+            throw py::value_error(std::string(name) + " offsets must be aligned");
+        column.offsets32_ = static_cast<const int32_t*>(offsets_info.ptr) + column.array_offset_;
     } else {
-        if (offsets_info.size * offsets_info.itemsize < static_cast<ssize_t>((column.length_ + 1) * sizeof(int64_t))) {
+        if (column.array_offset_ > static_cast<size_t>(offsets_info.size * offsets_info.itemsize) / sizeof(int64_t) ||
+            column.length_ + 1 > static_cast<size_t>(offsets_info.size * offsets_info.itemsize) / sizeof(int64_t) - column.array_offset_) {
             throw py::value_error(std::string(name) + " Arrow offsets buffer is too small");
         }
-        column.offsets64_ = static_cast<const int64_t*>(offsets_info.ptr);
+        if (reinterpret_cast<uintptr_t>(offsets_info.ptr) % alignof(int64_t))
+            throw py::value_error(std::string(name) + " offsets must be aligned");
+        column.offsets64_ = static_cast<const int64_t*>(offsets_info.ptr) + column.array_offset_;
+    }
+
+    if (offsets_info.ndim != 1 || offsets_info.strides[0] != offsets_info.itemsize ||
+        data_info.ndim != 1 || data_info.strides[0] != data_info.itemsize)
+        throw py::value_error(std::string(name) + " buffers must be contiguous");
+    int64_t previous = -1;
+    for (size_t i = 0; i <= column.length_; ++i) {
+        const int64_t current = column.offset_width_ == ByteColumn::OffsetWidth::Int32
+            ? column.offsets32_[i] : column.offsets64_[i];
+        if (current < 0 || current < previous || current > data_info.size * data_info.itemsize)
+            throw py::value_error(std::string(name) + " has invalid Arrow offsets");
+        previous = current;
     }
 
     return column;
