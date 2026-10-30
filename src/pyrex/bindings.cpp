@@ -239,6 +239,7 @@ void bind_pyrex(py::module_& m) {
             out["offset_bytes_emitted"] = s.offset_bytes_emitted;
             out["validity_bytes_emitted"] = s.validity_bytes_emitted;
             out["point_lookup_calls"] = s.point_lookup_calls;
+            out["value_bytes_copied_to_output"] = s.value_bytes_copied_to_output;
             out["output_bytes_emitted"] = s.output_bytes_emitted;
             out["buffer_capacity_bytes_emitted"] = s.buffer_capacity_bytes_emitted;
             out["allocation_slack_bytes_emitted"] = s.allocation_slack_bytes_emitted;

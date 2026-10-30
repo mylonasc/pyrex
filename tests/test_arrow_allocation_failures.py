@@ -33,6 +33,7 @@ get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 get_pointer.restype = ctypes.c_void_p
 helper.fail_point_bitmap.argtypes = [ctypes.c_void_p]
 helper.fail_point_bitmap.restype = ctypes.c_int
+helper.allocation_count.restype = ctypes.c_int
 with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
     db.put(b'k', b'v')
     points = db.multi_get_arrow([b'k'] * 10000, collect_metrics=True)
@@ -42,7 +43,16 @@ with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
     points.close()
     del capsule, points
     for collect_metrics in (False, True):
-        for callback, count in ((helper.fail_schema, 9), (helper.fail_batch, 15)):
+        for callback in (helper.fail_schema, helper.fail_batch):
+            # Count a successful callback, then fail every actual allocation,
+            # including realloc growth/shrink of the contiguous value builder.
+            probe = db.scan_arrow(batch_size=1, collect_metrics=collect_metrics)
+            capsule = probe.__arrow_c_stream__()
+            assert callback(get_pointer(capsule, b'arrow_array_stream'), 0) == 0
+            count = helper.allocation_count()
+            assert count >= 9
+            probe.close()
+            del capsule, probe
             for allocation in range(1, count + 1):
                 scan = db.scan_arrow(batch_size=1, collect_metrics=collect_metrics)
                 capsule = scan.__arrow_c_stream__()
@@ -60,7 +70,15 @@ with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
     # A failure after an earlier successful publication must retain its
     # cumulative counters, without counting the failed second batch.
     db.put(b'z', b'w')
-    for allocation in range(1, 16):
+    probe = db.scan_arrow(batch_size=1, collect_metrics=True)
+    capsule = probe.__arrow_c_stream__()
+    ptr = get_pointer(capsule, b'arrow_array_stream')
+    assert helper.fail_batch(ptr, 0) == 0
+    assert helper.fail_batch(ptr, 0) == 0
+    count = helper.allocation_count()
+    probe.close()
+    del capsule, probe
+    for allocation in range(1, count + 1):
         scan = db.scan_arrow(batch_size=1, collect_metrics=True)
         capsule = scan.__arrow_c_stream__()
         ptr = get_pointer(capsule, b'arrow_array_stream')

@@ -66,7 +66,7 @@ Feature index
      - Measured native builder/buffer-copy optimization
      - P2
      - ABR-01, ABR-02
-     - Planned
+     - Implemented on stacked feature branch; review pending
    * - `ABR-08 <https://github.com/mylonasc/pyrex/issues/45>`_
      - Transaction-local Arrow scans with read-your-writes
      - P2

@@ -19,6 +19,39 @@ struct ArrowScanMetricsState {
     ArrowScanStatistics totals;
 };
 
+// One value payload buffer per attempted scan batch, never reused after
+// publication. Gather copies RocksDB slices directly here; successful output
+// adopts the malloc/realloc allocation instead of copying each value again.
+// Keys retain the compatible string staging path; point-prefetch is separate.
+struct ArrowValueStaging {
+    char* data = nullptr;
+    size_t used = 0;
+    size_t capacity = 0;
+    std::vector<int32_t> offsets{0};
+    ~ArrowValueStaging() { std::free(data); }
+    void append(const rocksdb::Slice& value, size_t limit) {
+        const size_t needed = used + value.size();  // checked against INT32_MAX by caller
+        offsets.push_back(static_cast<int32_t>(needed));
+        if (needed > capacity) {
+            const size_t requested = std::max(needed, std::min(limit, capacity ? capacity * 2 : size_t{256}));
+            void* next = std::realloc(data, requested);
+            if (!next) throw std::bad_alloc();
+            data = static_cast<char*>(next);
+            capacity = requested;
+        }
+        if (value.size()) std::memcpy(data + used, value.data(), value.size());
+        used = needed;
+    }
+    void* release_exact() {
+        // Shrink before adoption to preserve exact requested output capacity.
+        // realloc may move/copy internally; this is not a zero-copy claim.
+        void* result = std::realloc(data, used ? used : 1);
+        if (!result) return nullptr;  // old allocation stays locally owned
+        data = nullptr;
+        return result;
+    }
+};
+
 namespace {
 
 constexpr size_t kCancellationPollRows = 256;
@@ -29,16 +62,16 @@ class GatherProgress {
 public:
     GatherProgress(std::atomic<uint64_t>* total, const std::vector<std::string>& keys,
                    const std::vector<std::string>& values, uint64_t* staged,
-                   const uint64_t& key_bytes, const uint64_t& value_bytes)
+                   const uint64_t& key_bytes, const uint64_t& value_bytes, bool keys_only = false)
         : total_(total), keys_(keys), values_(values), staged_(staged),
-          key_bytes_(key_bytes), value_bytes_(value_bytes) {}
+          key_bytes_(key_bytes), value_bytes_(value_bytes), keys_only_(keys_only) {}
     ~GatherProgress() {
         flush();
         if (staged_) *staged_ = key_bytes_ + value_bytes_;
     }
     void flush() {
         if (!total_) return;
-        const auto count = keys_.size() < values_.size() ? keys_.size() : values_.size();
+        const auto count = keys_only_ ? keys_.size() : std::min(keys_.size(), values_.size());
         if (count > recorded_)
             total_->fetch_add(static_cast<uint64_t>(count - recorded_), std::memory_order_relaxed);
         recorded_ = count;
@@ -51,6 +84,7 @@ private:
     uint64_t* staged_;
     const uint64_t& key_bytes_;
     const uint64_t& value_bytes_;
+    bool keys_only_;
 };
 
 // Batch-phase clocks and accounting are opt-in; disabled scans do not call
@@ -459,6 +493,7 @@ py::dict PyArrowScan::configuration() const {
     result["total_order_seek"] = true;
     result["column_family"] = cf_name_;
     result["value_nullable"] = point_lookup_;
+    result["value_staging_layout"] = point_lookup_ ? "strings" : "contiguous";
     return result;
 }
 
@@ -513,7 +548,8 @@ std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
 }
 
 PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
-                                                      uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid) {
+                                                      uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid,
+                                                      ArrowValueStaging& staged_values) {
     if (cancel_requested()) return GatherResult::Cancelled;
     if (closed_) throw RocksDBException("Arrow scan is closed.");
     if (exhausted_) return GatherResult::End;
@@ -530,10 +566,10 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
     uint64_t key_total = 0;
     uint64_t value_total = 0;
     GatherProgress progress(metrics_ ? &rows_gathered_ : nullptr, keys, values,
-                            metrics_ ? &staged_payload_bytes : nullptr, key_total, value_total);
+                            metrics_ ? &staged_payload_bytes : nullptr, key_total, value_total, true);
     // Reserve one batch worth of row slots; payloads stream into the strings.
     keys.reserve(batch_size_ < 1024 ? batch_size_ : 1024);
-    values.reserve(batch_size_ < 1024 ? batch_size_ : 1024);
+    staged_values.offsets.reserve(std::min(batch_size_, size_t{1024}) + 1);
 
     bool hit_stop = false;
 
@@ -578,10 +614,10 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
                                    " payload bytes exceeds max_batch_bytes=" + std::to_string(max_batch_bytes_) +
                                    "; raise max_batch_bytes or pass allow_overflow=True.");
         }
+        staged_values.append(value, max_batch_bytes_);
+        value_total += value_len;
         keys.emplace_back(key.data(), key.size());
         key_total += key_len;
-        values.emplace_back(value.data(), value.size());
-        value_total += value_len;
         iter_->Next();
     }
 
@@ -708,6 +744,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     std::vector<std::string> keys;
     std::vector<std::string> values;
     std::vector<uint8_t> valid;
+    ArrowValueStaging staged_values;
     bool clean_end = false;
     bool cancelled = false;
     uint64_t staged_payload_bytes = 0;
@@ -717,7 +754,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         std::unique_lock<std::mutex> lock(mutex_);
         PhaseTimer gather_timer(metrics_.get(), &ArrowScanStatistics::gather_time_ns);
         try {
-            const auto result = gather_next_batch(keys, values, staged_payload_bytes, valid);
+            const auto result = gather_next_batch(keys, values, staged_payload_bytes, valid, staged_values);
             clean_end = result == GatherResult::End;
             cancelled = result == GatherResult::Cancelled;
         } catch (const std::exception& e) {
@@ -758,12 +795,12 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     PhaseTimer build_timer(metrics_.get(), &ArrowScanStatistics::build_time_ns);
     const int64_t n = static_cast<int64_t>(keys.size());
     uint64_t key_bytes = 0;
-    uint64_t value_bytes = 0;
+    uint64_t value_bytes = point_lookup_ ? 0 : staged_values.used;
     for (size_t i = 0; i < keys.size(); ++i) {
         if ((i & (kCancellationPollRows - 1)) == 0 && cancel_requested())
             return cancelled_next();
         key_bytes += keys[i].size();
-        value_bytes += values[i].size();
+        if (point_lookup_) value_bytes += values[i].size();
     }
 
     auto* priv = new (std::nothrow) BatchBuffers();
@@ -796,7 +833,8 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     // Arrow data buffers must be non-null even when the column payload is
     // empty (e.g. all values are empty bytes), so allocate a dummy byte.
     key_owned->data = std::malloc(key_bytes ? static_cast<size_t>(key_bytes) : 1);
-    value_owned->data = std::malloc(value_bytes ? static_cast<size_t>(value_bytes) : 1);
+    value_owned->data = point_lookup_ ? std::malloc(value_bytes ? static_cast<size_t>(value_bytes) : 1)
+                                      : staged_values.release_exact();
     key_owned->buffers = static_cast<const void**>(std::malloc(3 * sizeof(void*)));
     value_owned->buffers = static_cast<const void**>(std::malloc(3 * sizeof(void*)));
     priv->parent_buffers = static_cast<const void**>(std::malloc(sizeof(void*)));
@@ -857,11 +895,15 @@ int PyArrowScan::fill_next(ArrowArray* out) {
             kd += keys[static_cast<size_t>(i)].size();
         }
         ko[i + 1] = ko[i] + static_cast<int32_t>(keys[static_cast<size_t>(i)].size());
-        if (!values[static_cast<size_t>(i)].empty()) {
-            std::memcpy(vd, values[static_cast<size_t>(i)].data(), values[static_cast<size_t>(i)].size());
-            vd += values[static_cast<size_t>(i)].size();
+        if (point_lookup_) {
+            if (!values[static_cast<size_t>(i)].empty()) {
+                std::memcpy(vd, values[static_cast<size_t>(i)].data(), values[static_cast<size_t>(i)].size());
+                vd += values[static_cast<size_t>(i)].size();
+            }
+            vo[i + 1] = vo[i] + static_cast<int32_t>(values[static_cast<size_t>(i)].size());
+        } else {
+            vo[i + 1] = staged_values.offsets[static_cast<size_t>(i) + 1];
         }
-        vo[i + 1] = vo[i] + static_cast<int32_t>(values[static_cast<size_t>(i)].size());
         if (point_lookup_) {
             if (valid[static_cast<size_t>(i)])
                 static_cast<uint8_t*>(value_owned->validity)[i / 8] |= uint8_t{1} << (i % 8);
@@ -893,6 +935,7 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         s.rows_emitted += static_cast<uint64_t>(n);
         s.key_bytes_emitted += key_bytes;
         s.value_bytes_emitted += value_bytes;
+        if (point_lookup_) s.value_bytes_copied_to_output += value_bytes;
         s.offset_bytes_emitted += offset_bytes;
         s.validity_bytes_emitted += validity_bytes;
         s.output_bytes_emitted += used;

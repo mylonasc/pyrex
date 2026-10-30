@@ -461,6 +461,27 @@ validated ``Snapshot`` objects through the public scan arguments. Capability
 not to the supported explicit ``snapshot=`` argument. No mutable/buffer-bearing
 control is borrowed from caller storage.
 
+Contiguous value builder (ABR-07)
+--------------------------------
+
+Scan and range-union streams gather value payloads directly into one native
+contiguous buffer per attempted batch. Successful output adopts that buffer;
+it is never reused while retained by a consumer. Key staging and point-lookup
+prefetch retain their existing string representation. This is not zero-copy
+RocksDB storage: gathering still copies, and realloc growth/shrink may copy
+internally. Row/byte/int32 checks precede gathering; requested output capacity
+is shrunk to the exact payload size (or one dummy byte for an empty column).
+Growth/shrink failure terminates the attempt without publishing partial output.
+
+``configuration["value_staging_layout"]`` reports ``contiguous`` or ``strings``.
+``stats["value_bytes_copied_to_output"]`` counts explicit value copies into
+successfully published output buffers: zero for adoption, equal to emitted
+value payload for point streams. It excludes allocator-internal copies and
+failed attempts. Payload staging metrics retain their meaning; they do not
+include vector/string metadata, allocator overhead or spare growth capacity.
+See ``benchmarks/arrow_builder.md`` for before/after distributions, capacity
+accounting, failure injection and extension-ASan validation.
+
 Reference
 ---------
 
