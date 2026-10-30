@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Batched Arrow Scans &mdash; pyrex-rocksdb 0.7.0 documentation</title>
+  <title>Batched Arrow Scans &mdash; pyrex-rocksdb 0.7.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=fe7df9b0"></script>
+      <script src="_static/documentation_options.js?v=5a057da9"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -22,7 +22,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Column Family Usage Example" href="column_families.html" />
+    <link rel="next" title="Arrow Buffer Reads Roadmap" href="arrow_reads_roadmap.html" />
     <link rel="prev" title="Columnar Batch Ingestion" href="columnar_ingestion.html" /> 
 </head>
 
@@ -53,6 +53,7 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Batched Arrow Scans</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#scan-bounds">Scan bounds</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#batch-sizing">Batch sizing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#native-metrics-abr-01">Native metrics (ABR-01)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#snapshots">Snapshots</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#column-families">Column families</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#transactiondb">TransactionDB</a></li>
@@ -62,7 +63,9 @@
 <li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_reads_roadmap.html">Arrow Buffer Reads Roadmap</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 </ul>
 
@@ -140,6 +143,104 @@ overflow int32 offsets fail explicitly; the schema never changes mid-stream.</p>
 </ul>
 <p>These caps bound producer batch memory, not whole-process RSS: the block
 cache, pinned snapshot history, and consumer-retained batches are additional.</p>
+</section>
+<section id="native-metrics-abr-01">
+<h2>Native metrics (ABR-01)<a class="headerlink" href="#native-metrics-abr-01" title="Link to this heading"></a></h2>
+<p>Pass <code class="docutils literal notranslate"><span class="pre">collect_metrics=True</span></code> to <code class="docutils literal notranslate"><span class="pre">scan_arrow</span></code> / <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf</span></code> on plain,
+extended or transactional DBs to enable native counters and phase timings:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">scan</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">4096</span><span class="p">,</span> <span class="n">collect_metrics</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">reader</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">scan</span><span class="p">)</span>
+<span class="n">table</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">read_all</span><span class="p">()</span>
+<span class="n">reader</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">scan</span><span class="o">.</span><span class="n">stats</span><span class="p">)</span>    <span class="c1"># output buffers are still retained by table</span>
+<span class="k">del</span> <span class="n">table</span>
+<span class="c1"># A fresh scan.stats snapshot reflects buffers released by the consumer.</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code> is a read-only property returning a fresh dictionary
+snapshot (mutating that dictionary does not change the counters). Without
+opt-in it returns <code class="docutils literal notranslate"><span class="pre">None</span></code>, including after close. Disabled scans allocate
+no metrics state and query no phase clocks. No new Python objects are
+created per scanned row for metrics.</p>
+<table class="docutils align-default" id="id1">
+<caption><span class="caption-text">Stats fields (integer counts, bytes or nanoseconds)</span><a class="headerlink" href="#id1" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 34.0%" />
+<col style="width: 66.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">get_next_calls</span></code></p></td>
+<td><p>Native C Stream get_next calls with a valid output pointer, including
+clean exhaustion and failures; not Python calls or RocksDB IO count.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rows_emitted</span></code>, <code class="docutils literal notranslate"><span class="pre">batches_emitted</span></code></p></td>
+<td><p>Successfully constructed/published output only; no partial batch on
+allocation, size-limit, lifecycle or iterator errors.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">key_bytes_emitted</span></code>, <code class="docutils literal notranslate"><span class="pre">value_bytes_emitted</span></code></p></td>
+<td><p>Raw KV payload bytes in successful output, not compressed storage IO.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">offset_bytes_emitted</span></code></p></td>
+<td><p>Both int32 offset buffers: <code class="docutils literal notranslate"><span class="pre">8</span> <span class="pre">*</span> <span class="pre">(rows</span> <span class="pre">+</span> <span class="pre">1)</span></code> for each emitted batch.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">output_bytes_emitted</span></code></p></td>
+<td><p>Key bytes + value bytes + offset bytes, cumulatively.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">buffer_capacity_bytes_emitted</span></code></p></td>
+<td><p>Requested data/offset allocation sizes for successful output. A zero
+payload column still allocates one dummy byte. Excludes C metadata,
+pointer arrays, allocator rounding/overhead and RocksDB resources.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">allocation_slack_bytes_emitted</span></code></p></td>
+<td><p>Cumulative requested capacity minus logical output bytes; with the
+current exact-size builder, this is the empty-column dummy bytes.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">live_buffer_bytes</span></code>, <code class="docutils literal notranslate"><span class="pre">peak_live_buffer_bytes</span></code></p></td>
+<td><p>Outstanding and peak requested output capacity, following actual
+Arrow child release callbacks, including consumer-retained output.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">peak_staged_payload_bytes</span></code></p></td>
+<td><p>Largest logical key+value payload held by one gather attempt, including
+failed attempts. Not string/vector allocated capacity or staging RSS.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gather_time_ns</span></code></p></td>
+<td><p>Cumulative native gather/iterator work under the scan mutex, including
+failed/end attempts; excludes waiting to acquire that mutex.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">build_time_ns</span></code></p></td>
+<td><p>Cumulative native output sizing/allocation/copy/descriptor/publication
+phases, including failed builds. Does not include consumer compute.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Counters start at zero before the first batch and remain readable after
+exhaustion, early close, errors and DB closure. Metrics snapshots are taken
+under a separate native mutex and never touch a closed DB. Active phase
+times are added when that phase ends; an in-flight call may finish publishing
+an already gathered owned batch while another thread closes the scan.</p>
+<p>Exported child buffers share independent accounting state: closing a stream
+or DB does <strong>not</strong> subtract buffers still owned by consumers. Moving/detaching
+one Arrow child and releasing it later subtracts only that child’s capacity.
+If consumers retain multiple batches, the live high-water mark can exceed
+<code class="docutils literal notranslate"><span class="pre">max_batch_bytes</span></code>. The cap remains a per-batch output-used-byte limit
+(subject to explicit singleton overflow), not a producer/consumer RSS bound.
+<code class="docutils literal notranslate"><span class="pre">output_bytes_emitted</span></code> also need not equal PyArrow <code class="docutils literal notranslate"><span class="pre">table.nbytes</span></code>: this
+counter includes the initial offset slot for each column of every batch.</p>
+<p>Phase clocks are diagnostic, not application wall time: they exclude scan
+establishment, native resource teardown, Python boundary overhead, and payload
+decoding/consumer operations. Snapshot history, RocksDB cache/storage IO,
+staging allocation slack and allocator metadata are not measured by output
+capacity counters. Broader resource experiments are tracked in ABR-02.</p>
+<p><code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_scan.py</span> <span class="pre">--collect-metrics</span></code> prints these counters for
+the last repeat of each native mode. Its best-of wall time may refer to a
+different repeat; do not conflate the two. The default invocation remains
+usable against historical versions without <code class="docutils literal notranslate"><span class="pre">collect_metrics</span></code> support.
+See <a class="reference internal" href="arrow_reads_roadmap.html"><span class="doc">Arrow Buffer Reads Roadmap</span></a> for the indexed remaining features.</p>
 </section>
 <section id="snapshots">
 <h2>Snapshots<a class="headerlink" href="#snapshots" title="Link to this heading"></a></h2>
@@ -254,7 +355,7 @@ in PyRex.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.scan_arrow(prefix=None,</span> <span class="pre">start=None,</span> <span class="pre">stop=None,</span> <span class="pre">batch_size=65536,</span>
 <span class="pre">max_batch_bytes=8388608,</span> <span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span>
-<span class="pre">allow_overflow=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code></p></li>
+<span class="pre">allow_overflow=False,</span> <span class="pre">collect_metrics=False)</span> <span class="pre">-&gt;</span> <span class="pre">ArrowScan</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended.scan_arrow_cf(cf_handle,</span> <span class="pre">...)</span></code> — same keyword contract.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">TransactionDB.scan_arrow(...)</span></code> — same keyword contract on the default
 column family; observes committed state (open-transaction writes excluded).</p></li>
@@ -266,7 +367,8 @@ column family; observes committed state (open-transaction writes excluded).</p><
 <li><p><code class="docutils literal notranslate"><span class="pre">PyRocksDB.create_snapshot()</span> <span class="pre">-&gt;</span> <span class="pre">Snapshot</span></code> (also on <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code>;
 snapshots are per-instance and never shared across DB objects)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Snapshot.release()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.sequence_number</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.close()</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.close()</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code>,
+<code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code></p></li>
 </ul>
 <p>See <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_scan.py</span></code> for the reproducible comparison of
 Python iterators vs. native scans, and <code class="docutils literal notranslate"><span class="pre">examples_simple/arrow_scan.py</span></code> for
@@ -279,7 +381,7 @@ a minimal end-to-end example.</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="columnar_ingestion.html" class="btn btn-neutral float-left" title="Columnar Batch Ingestion" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="column_families.html" class="btn btn-neutral float-right" title="Column Family Usage Example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="arrow_reads_roadmap.html" class="btn btn-neutral float-right" title="Arrow Buffer Reads Roadmap" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

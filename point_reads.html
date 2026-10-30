@@ -1,0 +1,224 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Point reads: specialized and general paths &mdash; pyrex-rocksdb 0.7.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=5a057da9"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="prev" title="Column Family Usage Example" href="column_families.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_scans.html">Batched Arrow Scans</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_reads_roadmap.html">Arrow Buffer Reads Roadmap</a></li>
+<li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Point reads: specialized and general paths</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#specialized-ordinary-reads">Specialized ordinary reads</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#general-reads-retained">General reads (retained)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#safe-mutable-read-options">Safe mutable read options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#lifetime-protection-versus-data-operation-synchronization">Lifetime protection versus data-operation synchronization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#measurement-and-remaining-opportunities">Measurement and remaining opportunities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#references">References</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Point reads: specialized and general paths</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/point_reads.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="point-reads-specialized-and-general-paths">
+<h1>Point reads: specialized and general paths<a class="headerlink" href="#point-reads-specialized-and-general-paths" title="Link to this heading"></a></h1>
+<p>The binding has a specialized ordinary-read dispatch alongside the existing
+general implementation. The public call forms remain supported on
+<code class="docutils literal notranslate"><span class="pre">PyRocksDB</span></code>, <code class="docutils literal notranslate"><span class="pre">PyRocksDBExtended</span></code> and <code class="docutils literal notranslate"><span class="pre">TransactionDB</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+<span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">)</span>
+<span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">read_options</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="n">db</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">read_options</span><span class="o">=</span><span class="n">options</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">)</span>
+<span class="n">db</span><span class="o">.</span><span class="n">get_cf</span><span class="p">(</span><span class="n">cf</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">read_options</span><span class="o">=</span><span class="n">options</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="specialized-ordinary-reads">
+<h2>Specialized ordinary reads<a class="headerlink" href="#specialized-ordinary-reads" title="Link to this heading"></a></h2>
+<p>The binding checks optional arguments as borrowed Python handles and converts
+them to native shared ownership only when real objects are supplied. It avoids
+shared-pointer conversion of <code class="docutils literal notranslate"><span class="pre">None</span></code> on ordinary calls without changing
+argument names, defaults or positional/keyword support. A one-key overload
+was tested but rejected: it improved ordinary reads at the expense of
+explicit-options/snapshot calls, due to failed-overload dispatch.</p>
+<p>The ordinary native read is selected when the CF is implicit and both
+options and snapshot are <code class="docutils literal notranslate"><span class="pre">None</span></code>. Explicit <code class="docutils literal notranslate"><span class="pre">None</span></code> therefore still takes
+the ordinary native path, just as omitting the optional arguments does.</p>
+<p>This path borrows the immutable Python bytes key, uses the cached default
+CF handle and borrows an immutable native read configuration. The argument
+keeps the key alive; its pointer is extracted before releasing the GIL.
+Other Python threads may run during the read. DB-open/pointer checks run
+only under lifecycle protection, including during races with <code class="docutils literal notranslate"><span class="pre">close()</span></code>.</p>
+</section>
+<section id="general-reads-retained">
+<h2>General reads (retained)<a class="headerlink" href="#general-reads-retained" title="Link to this heading"></a></h2>
+<p>Explicit options, snapshots and CFs retain the general implementation:
+owned key storage, copied read options for snapshot overrides, and
+snapshot/CF validation. An explicitly released or foreign snapshot, or a
+dropped/foreign CF handle, still raises <code class="docutils literal notranslate"><span class="pre">RocksDBException</span></code>. No validation
+is bypassed to improve latency. General reads also use shared lifetime
+protection through the native operation.</p>
+</section>
+<section id="safe-mutable-read-options">
+<h2>Safe mutable read options<a class="headerlink" href="#safe-mutable-read-options" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ReadOptions</span></code> currently exposes two mutable booleans, <code class="docutils literal notranslate"><span class="pre">fill_cache</span></code> and
+<code class="docutils literal notranslate"><span class="pre">verify_checksums</span></code>. Their combinations select four immutable native
+configurations. Setters update an atomic flag word; each read selects one
+complete configuration with one atomic load. Changing a flag cannot modify
+an options object already borrowed by an in-flight native read.</p>
+<p>This applies to DB reads, MultiGet, scans, iterators and transaction reads.
+Snapshot/bounds overrides modify a local copy, never the immutable template.
+Replacing <code class="docutils literal notranslate"><span class="pre">db.default_read_options</span></code> is protected by the lifecycle lock,
+as is retrieving its Python-visible handle. Existing handles remain mutable
+and retain their identity. Separate flag assignments are not a transaction;
+a concurrent reader may observe the state between two assignments.</p>
+</section>
+<section id="lifetime-protection-versus-data-operation-synchronization">
+<h2>Lifetime protection versus data-operation synchronization<a class="headerlink" href="#lifetime-protection-versus-data-operation-synchronization" title="Link to this heading"></a></h2>
+<p>RocksDB itself supports concurrent reads and writes on one DB. Ordinary
+reads and writes therefore take shared lifecycle protection; they are not
+serialized against each other by an exclusive binding mutex.</p>
+<p>Close, CF creation/destruction, snapshot release and scan bookkeeping keep
+exclusive access. The lock remains held throughout each native operation,
+not merely while looking up raw pointers: DB/CF/snapshot resources must
+remain alive. Lock order remains lifecycle lock, then scan/snapshot mutex.
+Read locks are released before reacquiring the GIL, avoiding lock/GIL
+inversion with Python option setters. Transaction-local operations retain
+their separate operation/transaction locks and commit/rollback semantics.</p>
+<p>This is not a declaration of free-threaded Python support. <code class="docutils literal notranslate"><span class="pre">WriteOptions</span></code>,
+write batches and iterators have their existing sharing/mutation contracts;
+do not concurrently mutate a write-options object or batch in use.</p>
+</section>
+<section id="measurement-and-remaining-opportunities">
+<h2>Measurement and remaining opportunities<a class="headerlink" href="#measurement-and-remaining-opportunities" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">benchmarks/bench_point_read.py</span></code> uses identical one-argument Python
+wrappers around cached callables for every mode. It verifies results before
+timing, rotates mode order, records sample distributions/module paths and
+supports CPU pinning, long keys, larger values, misses and decode controls.
+Decode-only/decoded-read probes are synthetic, not GestaltDB measurements.
+See <code class="docutils literal notranslate"><span class="pre">benchmarks/point_reads.md</span></code> in the repository for measured results.</p>
+<p>Compare source builds of both historical revisions and the candidate using
+the same interpreter, pybind11, compiler/flags, compression libraries and
+RocksDB archive. Comparing an older PyPI wheel with a local build does not
+isolate the remaining cost of code or safety. Earlier claims that the full
+remaining gap was unavoidable lifecycle overhead were unsupported.</p>
+<p>No result here establishes an unavoidable performance floor. Operation
+leases/deferred reclamation could replace the shared mutex if separately
+proved and measured. RocksDB’s <code class="docutils literal notranslate"><span class="pre">PinnableSlice</span></code> is also a candidate to
+avoid the intermediate value copy, but the pin must be released before DB
+teardown. Simply holding the lifecycle lock while reacquiring the GIL to
+create Python bytes can deadlock with setters; that requires a deliberate
+lifetime/lock design, not a mechanical replacement of <code class="docutils literal notranslate"><span class="pre">std::string</span></code>.
+Neither experiment is needed to adopt the safe binding optimizations here.</p>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/facebook/rocksdb/wiki/Basic-Operations#concurrency">RocksDB concurrency</a></p></li>
+<li><p><a class="reference external" href="https://github.com/facebook/rocksdb/wiki/Basic-Operations#slice">RocksDB Slice lifetime</a></p></li>
+<li><p><a class="reference external" href="https://github.com/facebook/rocksdb/wiki/Basic-Operations#reads">RocksDB reads and PinnableSlice</a></p></li>
+<li><p><a class="reference external" href="https://github.com/facebook/rocksdb/blob/v10.7.5/include/rocksdb/db.h">RocksDB 10.7.5 DB API</a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="column_families.html" class="btn btn-neutral float-left" title="Column Family Usage Example" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

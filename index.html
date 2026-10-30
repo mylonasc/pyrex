@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pyrex-rocksdb documentation &mdash; pyrex-rocksdb 0.7.0 documentation</title>
+  <title>pyrex-rocksdb documentation &mdash; pyrex-rocksdb 0.7.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=fe7df9b0"></script>
+      <script src="_static/documentation_options.js?v=5a057da9"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -50,7 +50,9 @@
 <li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
 <li class="toctree-l1"><a class="reference internal" href="arrow_scans.html">Batched Arrow Scans</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_reads_roadmap.html">Arrow Buffer Reads Roadmap</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 </ul>
 
@@ -126,6 +128,7 @@ for Arrow-compatible binary/string arrays.</p>
 <li class="toctree-l1"><a class="reference internal" href="arrow_scans.html">Batched Arrow Scans</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#scan-bounds">Scan bounds</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#batch-sizing">Batch sizing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#native-metrics-abr-01">Native metrics (ABR-01)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#snapshots">Snapshots</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#column-families">Column families</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#transactiondb">TransactionDB</a></li>
@@ -135,7 +138,23 @@ for Arrow-compatible binary/string arrays.</p>
 <li class="toctree-l2"><a class="reference internal" href="arrow_scans.html#reference">Reference</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_reads_roadmap.html">Arrow Buffer Reads Roadmap</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="arrow_reads_roadmap.html#delivered-baseline">Delivered baseline</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_reads_roadmap.html#feature-index">Feature index</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_reads_roadmap.html#why-abr-01-first">Why ABR-01 first</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_reads_roadmap.html#scope-boundaries">Scope boundaries</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="point_reads.html#specialized-ordinary-reads">Specialized ordinary reads</a></li>
+<li class="toctree-l2"><a class="reference internal" href="point_reads.html#general-reads-retained">General reads (retained)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="point_reads.html#safe-mutable-read-options">Safe mutable read options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="point_reads.html#lifetime-protection-versus-data-operation-synchronization">Lifetime protection versus data-operation synchronization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="point_reads.html#measurement-and-remaining-opportunities">Measurement and remaining opportunities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="point_reads.html#references">References</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api.html#pyrocksdb">PyRocksDB</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api.html#pyrocksdbextended">PyRocksDBExtended</a></li>

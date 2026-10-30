@@ -1,0 +1,234 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arrow Buffer Reads Roadmap &mdash; pyrex-rocksdb 0.7.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=5a057da9"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Column Family Usage Example" href="column_families.html" />
+    <link rel="prev" title="Batched Arrow Scans" href="arrow_scans.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_scans.html">Batched Arrow Scans</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Arrow Buffer Reads Roadmap</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#delivered-baseline">Delivered baseline</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#feature-index">Feature index</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#why-abr-01-first">Why ABR-01 first</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#scope-boundaries">Scope boundaries</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Arrow Buffer Reads Roadmap</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/arrow_reads_roadmap.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="arrow-buffer-reads-roadmap">
+<h1>Arrow Buffer Reads Roadmap<a class="headerlink" href="#arrow-buffer-reads-roadmap" title="Link to this heading"></a></h1>
+<p>The parent request is <a class="reference external" href="https://github.com/mylonasc/pyrex/issues/31">#31</a>.
+ABR identifiers are stable feature names, not release-version promises.
+Priority is a delivery order: <strong>P0</strong> first, then <strong>P1</strong>, then <strong>P2</strong>. Dependencies
+are explicit delivery/validation gates and are also recorded with GitHub’s
+native blocked-by and sub-issue relationships.</p>
+<section id="delivered-baseline">
+<h2>Delivered baseline<a class="headerlink" href="#delivered-baseline" title="Link to this heading"></a></h2>
+<p>Through 0.7.1, native Arrow C Streams already support lazy bounded batches,
+full/prefix/range scans, owned binary output, named column families, shared
+pinned snapshots and committed-state TransactionDB reads. Existing iterator
+APIs remain supported. <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get_cf</span></code> return Python lists;
+they are <strong>not</strong> an Arrow point-materialization API. TransactionDB scans
+observe committed state, <strong>not</strong> transaction-local read-your-writes.</p>
+<p>The original design text and unchecked boxes in #31 are historical, not a
+current feature-availability matrix. These follow-ups cover remaining work.</p>
+</section>
+<section id="feature-index">
+<h2>Feature index<a class="headerlink" href="#feature-index" title="Link to this heading"></a></h2>
+<table class="docutils align-default" id="id2">
+<caption><span class="caption-text">Remaining features and dependencies</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 12.0%" />
+<col style="width: 42.0%" />
+<col style="width: 10.0%" />
+<col style="width: 20.0%" />
+<col style="width: 16.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Index</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Priority</p></th>
+<th class="head"><p>Depends on</p></th>
+<th class="head"><p>Status</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/38">ABR-01</a></p></td>
+<td><p>Opt-in native metrics and Arrow buffer accounting</p></td>
+<td><p>P0</p></td>
+<td><p>None</p></td>
+<td><p>Implemented on feature branch; review pending</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/39">ABR-02</a></p></td>
+<td><p>Reproducible scale, memory and interoperability benchmarks</p></td>
+<td><p>P1</p></td>
+<td><p>ABR-01</p></td>
+<td><p>Planned</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/40">ABR-03</a></p></td>
+<td><p>Cooperative in-flight cancellation and C Stream errors</p></td>
+<td><p>P1</p></td>
+<td><p>ABR-01</p></td>
+<td><p>Planned</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/41">ABR-04</a></p></td>
+<td><p>Snapshot-consistent Arrow batched point lookups</p></td>
+<td><p>P1</p></td>
+<td><p>ABR-01, ABR-03</p></td>
+<td><p>Planned</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/42">ABR-05</a></p></td>
+<td><p>Multi-range/multi-prefix scans at one horizon</p></td>
+<td><p>P2</p></td>
+<td><p>ABR-01, ABR-03</p></td>
+<td><p>Planned</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/43">ABR-06</a></p></td>
+<td><p>Validated scan controls and capability contract</p></td>
+<td><p>P2</p></td>
+<td><p>ABR-01</p></td>
+<td><p>Planned</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/44">ABR-07</a></p></td>
+<td><p>Measured native builder/buffer-copy optimization</p></td>
+<td><p>P2</p></td>
+<td><p>ABR-01, ABR-02</p></td>
+<td><p>Planned</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/45">ABR-08</a></p></td>
+<td><p>Transaction-local Arrow scans with read-your-writes</p></td>
+<td><p>P2</p></td>
+<td><p>ABR-01, ABR-03</p></td>
+<td><p>Planned</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="why-abr-01-first">
+<h2>Why ABR-01 first<a class="headerlink" href="#why-abr-01-first" title="Link to this heading"></a></h2>
+<p>Before tuning buffer builders or introducing new streaming sources, measure
+what the current producer emits, what it allocates, how long native phases
+take, and what consumers retain. The highest-priority feature adds that
+observability without changing the default path’s timing collection or
+requiring PyArrow/Polars in core PyRex. See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for its public
+<code class="docutils literal notranslate"><span class="pre">collect_metrics=True</span></code> / <code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code> contract.</p>
+<p>ABR-01 does not replace the existing benchmark or implement ABR-02’s
+large-scale, fresh-process memory experiments. Its integration simply makes
+native counters available to those future measurements. Likewise, existing
+<code class="docutils literal notranslate"><span class="pre">close()</span></code> is not ABR-03’s in-gather cancellation request.</p>
+</section>
+<section id="scope-boundaries">
+<h2>Scope boundaries<a class="headerlink" href="#scope-boundaries" title="Link to this heading"></a></h2>
+<p>Every feature retains binary schema/ordering, shared-horizon validation,
+owned-output lifetimes and explicit error handling. Graph predicates,
+payload decoding, temporal publication and reasoning remain application
+responsibilities; raw KV Arrow output is not a decoded graph relation.</p>
+<p>Optional optimizations are adopted only with correctness tests and measured
+benefits. No batch-cap or buffer-counter result is a whole-process RSS bound.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="arrow_scans.html" class="btn btn-neutral float-left" title="Batched Arrow Scans" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="column_families.html" class="btn btn-neutral float-right" title="Column Family Usage Example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
