@@ -462,7 +462,7 @@ not to the supported explicit ``snapshot=`` argument. No mutable/buffer-bearing
 control is borrowed from caller storage.
 
 Contiguous value builder (ABR-07)
---------------------------------
+-------------------------------------
 
 Scan and range-union streams gather value payloads directly into one native
 contiguous buffer per attempted batch. Successful output adopts that buffer;
