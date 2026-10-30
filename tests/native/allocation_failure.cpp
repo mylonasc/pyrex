@@ -4,13 +4,18 @@
 
 extern "C" void* __libc_malloc(size_t);
 extern "C" void* __libc_calloc(size_t, size_t);
+extern "C" void* __libc_realloc(void*, size_t);
 static thread_local int countdown = -1;
+static thread_local int seen = 0;
+static thread_local int last_count = 0;
 static thread_local size_t failed_calloc_size = 0;
 static bool fail_now() {
+    ++seen;
     if (countdown < 1) return false;
     return --countdown == 0;
 }
 extern "C" void* malloc(size_t n) { return fail_now() ? nullptr : __libc_malloc(n); }
+extern "C" void* realloc(void* p, size_t n) { return fail_now() ? nullptr : __libc_realloc(p, n); }
 extern "C" void* calloc(size_t n, size_t size) {
     if (failed_calloc_size && n * size == failed_calloc_size) {
         failed_calloc_size = 0;
@@ -22,7 +27,9 @@ extern "C" void* calloc(size_t n, size_t size) {
 extern "C" int fail_schema(ArrowArrayStream* stream, int allocation) {
     ArrowSchema out{};
     countdown = allocation;
+    seen = 0;
     int status = stream->get_schema(stream, &out);
+    last_count = seen;
     countdown = -1;
     if (out.release) out.release(&out);
     return status;
@@ -30,11 +37,15 @@ extern "C" int fail_schema(ArrowArrayStream* stream, int allocation) {
 extern "C" int fail_batch(ArrowArrayStream* stream, int allocation) {
     ArrowArray out{};
     countdown = allocation;
+    seen = 0;
     int status = stream->get_next(stream, &out);
+    last_count = seen;
     countdown = -1;
     if (out.release) out.release(&out);
     return status;
 }
+
+extern "C" int allocation_count() { return last_count; }
 
 extern "C" int fail_point_bitmap(ArrowArrayStream* stream) {
     ArrowArray out{};

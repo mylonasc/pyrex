@@ -31,6 +31,7 @@ namespace py = pybind11;
 class PyRocksDB;
 class PyReadOptions;
 struct ArrowScanMetricsState;
+struct ArrowValueStaging;
 
 // ABR-01: coherent, by-value snapshot. Buffer capacities are requested Arrow
 // data/offset allocation sizes, not malloc usable sizes or whole-process RSS.
@@ -45,6 +46,7 @@ struct ArrowScanStatistics {
     uint64_t offset_bytes_emitted = 0;
     uint64_t validity_bytes_emitted = 0;
     uint64_t point_lookup_calls = 0;
+    uint64_t value_bytes_copied_to_output = 0;
     uint64_t output_bytes_emitted = 0;
     uint64_t buffer_capacity_bytes_emitted = 0;
     uint64_t allocation_slack_bytes_emitted = 0;
@@ -201,7 +203,8 @@ private:
     // overflow or lifecycle errors.
     enum class GatherResult { Batch, End, Cancelled };
     GatherResult gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
-                                   uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid);
+                                   uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid,
+                                   ArrowValueStaging& staged_values);
     GatherResult gather_points(std::vector<std::string>& keys, std::vector<std::string>& values,
                               uint64_t& staged_payload_bytes, std::vector<uint8_t>& valid);
     int cancelled_next();

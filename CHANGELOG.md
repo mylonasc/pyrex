@@ -8,6 +8,13 @@ available via `git log`.
 
 ### Added
 
+- ABR-07 (#44): scan/range-union values now gather directly into a contiguous
+  native buffer adopted by owned Arrow output, removing per-value payload
+  strings and the explicit second value copy. Keys and point prefetch retain
+  their compatible staging paths. Requested output capacity remains exact;
+  realloc growth/shrink failures use tested terminal cleanup. New published
+  `value_bytes_copied_to_output` metrics distinguish adoption from copying.
+
 - ABR-06 (#43): versioned per-DB `arrow_capabilities()` and per-stream
   `configuration` snapshots describe actual schemas, limits, ordering,
   snapshot scope, cancellation and controls. `ReadOptions.readahead_size`
