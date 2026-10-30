@@ -86,6 +86,14 @@ created per scanned row for metrics.
    * - ``rows_emitted``, ``batches_emitted``
      - Successfully constructed/published output only; no partial batch on
        allocation, size-limit, lifecycle or iterator errors.
+   * - ``rows_gathered``
+     - Complete key/value records copied to staging, including discarded or
+       failed batches. Live progress is published every 256 rows and at the
+       end of an attempt; it can lag by one 256-row polling window.
+   * - ``cancelled_calls``
+     - get_next calls entering the ECANCELED path, including repeat attempts
+       after cancellation. Not the number of cancel requests; cleanup can
+       still be in progress when the counter becomes visible.
    * - ``key_bytes_emitted``, ``value_bytes_emitted``
      - Raw KV payload bytes in successful output, not compressed storage IO.
    * - ``offset_bytes_emitted``
@@ -255,6 +263,78 @@ application payloads (JSON, MessagePack, term encodings, graph relations)
 stays with the caller; predicate filtering and graph semantics do not belong
 in PyRex.
 
+Cooperative cancellation (ABR-03)
+---------------------------------
+
+``ArrowScan.cancel()`` makes an atomic request without acquiring the scan,
+lifecycle or metrics mutex. ``cancel_requested`` is an atomic read-only flag.
+This permits a control thread to request termination while a consumer is
+inside a long native gather. The request method itself does not wait for
+that gather to finish::
+
+    scan = db.scan_arrow(batch_size=65536, collect_metrics=True)
+    reader = pa.RecordBatchReader.from_stream(scan)
+    # Another thread may already be consuming reader.
+    accepted = scan.cancel()
+    # The consumer receives a cancellation error at a native checkpoint.
+    # Close the reader/scan in its finally block, especially if it stops pulling.
+
+Admission and completion are explicit:
+
+* True means this call accepted the first request. Repeating the request
+  returns False; ``cancel_requested`` remains True after cleanup.
+* After a clean EOF has been committed, after close, or after a terminal
+  native error, the request returns False without relabeling that result.
+  Merely returning the last data batch is not yet committing clean EOF.
+* Accepted cancellation observed by get_next returns platform
+  ``errno.ECANCELED`` with the stable diagnostic ``scan_arrow: cancelled``.
+  Repeated pulls return cancellation errors, never an empty successful scan.
+  Arrow consumers surface their own error types (PyArrow commonly raises
+  ``OSError``); non-Python C Stream consumers have the same error channel.
+* A complete batch whose final publication decision precedes a racing
+  request may still return successfully. No partially built batch is returned;
+  unpublished buffers are freed through their normal Arrow release path.
+  A following get_next observes the accepted request instead of clean EOF.
+  An independent native failure can also terminate a call before cancellation
+  is observed; failures are never converted to successful exhaustion.
+
+Native gathering, output sizing and buffer-copy loops check every **256
+records**, plus batch/EOF/publication boundaries. There is no per-row Python
+work or per-row metrics lock. A single blocking RocksDB call, allocator call
+or large memcpy is not forcibly interrupted. End-to-end responsiveness is
+also subject to scheduling and Python GIL availability: a consumer that
+holds the GIL for its whole callback prevents another Python thread from
+entering the request method. PyArrow and the raw-CDLL tests release it.
+
+``cancel()`` is a request, **not** synchronous close. If no get_next is active,
+the iterator/snapshot can remain pinned until a later pull observes the
+request, or until ``close()`` / stream release / DB teardown. An active CF
+therefore remains protected from drop after a request alone. Cleanup is
+idempotent; cancellation of one stream does not cancel other streams sharing
+its DB snapshot. Previously exported batches and detached Arrow children
+remain valid after cancellation, stream release, CF drop or DB closure.
+
+``close()`` retains its existing deterministic behavior and can wait for a
+native operation. ``is_closed`` takes the scan mutex as before; use the
+atomic request flag, not that property, on a latency-sensitive control path.
+Do not change the stream's single-consumer contract by issuing concurrent
+get_next calls from multiple consumers.
+
+Opt-in ``stats`` adds gathered progress and cancelled-call counts, alongside
+the existing used/capacity/retention and native-phase metrics. Emitted counters
+include only successfully committed output, not a discarded gather/build.
+Failed/cancelled build time can include its local failure cleanup; it is not
+a universal cancellation latency or a whole-operation timer.
+
+``benchmarks/bench_arrow_cancel_overhead.py`` reports the no-request polling
+path with/without metrics, including every repeat. It is runnable against
+ABR-01 and ABR-03 artifacts for same-toolchain comparisons. Controlled latency
+tests pause an actual native allocation during gather/build and save JSON
+with request duration, resumed completion time and gathered progress; these
+are bounded subprocess tests with **no performance thresholds** or production
+test hooks. See ``benchmarks/arrow_cancellation.md`` for measured results and
+reproduction. They do not certify production/worst-case IO cancellation time.
+
 Reference
 ---------
 
@@ -273,7 +353,7 @@ Reference
   snapshots are per-instance and never shared across DB objects)
 * ``Snapshot.release()``, ``Snapshot.is_valid()``, ``Snapshot.sequence_number``
 * ``ArrowScan.close()``, ``ArrowScan.is_closed``, ``ArrowScan.sequence_number``,
-  ``ArrowScan.stats``
+  ``ArrowScan.stats``, ``ArrowScan.cancel()``, ``ArrowScan.cancel_requested``
 
 See ``benchmarks/bench_arrow_scan.py`` for the reproducible comparison of
 Python iterators vs. native scans, and ``examples_simple/arrow_scan.py`` for

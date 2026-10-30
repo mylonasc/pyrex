@@ -53,11 +53,20 @@ ArrowScan and Snapshot
 and ``scan_arrow_cf()``. It exports the Arrow C Stream interface via
 ``__arrow_c_stream__`` (PyCapsule ``arrow_array_stream``) with schema
 ``struct<key: binary (non-null), value: binary (non-null)>`` and supports
-``close()``, ``is_closed``, ``sequence_number``, ``stats``, and context-manager use.
+``close()``, ``cancel()``, ``cancel_requested``, ``is_closed``,
+``sequence_number``, ``stats``, and context-manager use.
 ``stats`` is ``None`` by default; scans created with ``collect_metrics=True``
 provide a fresh dictionary of native output counters, phase times and requested
 buffer capacities. Accounting follows exported child-buffer releases and
 remains readable after stream or DB closure. It does not measure process RSS.
+
+``cancel() -> bool`` requests cooperative cancellation without waiting for the
+scan/lifecycle mutex. It returns True once if accepted, False after an earlier
+request or terminal close/error/EOF. ``cancel_requested`` records whether a
+request was accepted and remains True after cancellation cleanup. Observation
+by the stream returns ``ECANCELED`` / ``scan_arrow: cancelled``, not successful
+exhaustion; already committed batches remain valid. Use ``close()`` for
+deterministic resource release, including idle scans that will not be pulled.
 
 ``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
 multiple scans. Methods: ``release()``, ``is_valid()``, ``sequence_number``.
