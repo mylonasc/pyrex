@@ -62,6 +62,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#lifecycle-and-safety">Lifecycle and safety</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#cooperative-cancellation-abr-03">Cooperative cancellation (ABR-03)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#arrow-point-lookups-abr-04">Arrow point lookups (ABR-04)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#multi-range-and-multi-prefix-unions-abr-05">Multi-range and multi-prefix unions (ABR-05)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
 </ul>
 </li>
@@ -480,6 +481,37 @@ including detached value children, remain valid after input/stream/DB release.</
 existing MultiGet plus Arrow reconstruction, checking an ordered digest that
 includes nulls/duplicates before and after warmed, alternating-order repeats.
 See <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_points.md</span></code> for measurements and limitations.</p>
+</section>
+<section id="multi-range-and-multi-prefix-unions-abr-05">
+<h2>Multi-range and multi-prefix unions (ABR-05)<a class="headerlink" href="#multi-range-and-multi-prefix-unions-abr-05" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">scan_arrow_ranges(ranges=None,</span> <span class="pre">prefixes=None,</span> <span class="pre">...)</span></code> and extended/
+TransactionDB <code class="docutils literal notranslate"><span class="pre">scan_arrow_ranges_cf(cf_handle,</span> <span class="pre">...)</span></code> select a bytewise
+<strong>ordered union</strong>, not caller order. Each range is <code class="docutils literal notranslate"><span class="pre">(start,</span> <span class="pre">stop)</span></code> with
+inclusive start, exclusive stop and <code class="docutils literal notranslate"><span class="pre">None</span></code> for an unbounded endpoint.
+Prefixes are bytes. Both arguments may be supplied; at least one must be a
+list/tuple (up to 65536 selectors per argument). Empty selector lists select
+no records; <code class="docutils literal notranslate"><span class="pre">(None,</span> <span class="pre">None)</span></code> or an empty prefix selects everything.</p>
+<p>Ranges are validated and copied at creation, sorted, and merged when touching
+or overlapping. Equal endpoints select nothing; reversed endpoints fail.
+Duplicate/overlapping ranges or prefixes never duplicate records. Binary
+prefixes ending in <code class="docutils literal notranslate"><span class="pre">0xff</span></code> use the same successor rules as ordinary scans.
+Output follows bytewise key order even if selectors are supplied out of order:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">scan</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow_ranges</span><span class="p">(</span>
+    <span class="n">ranges</span><span class="o">=</span><span class="p">[(</span><span class="sa">b</span><span class="s2">"z:"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="p">(</span><span class="sa">b</span><span class="s2">"a:"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"c:"</span><span class="p">)],</span>
+    <span class="n">prefixes</span><span class="o">=</span><span class="p">[</span><span class="sa">b</span><span class="s2">"b:"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"x:"</span><span class="p">],</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4096</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>One native iterator and one creation-time snapshot serve the whole union.
+Native seeks skip gaps; a final upper bound is pushed down to RocksDB when
+bounded. Intermediate upper endpoints are checked natively before advancing
+to the next seek, so no full-scan materialization is needed. Row/byte limits,
+single-record overflow, metrics and cancellation apply continuously across
+transitions; a batch may contain rows from multiple ranges. Snapshot/CF
+identity and drop protection match ordinary scans. Output stays non-null
+binary key/value with independent owned batches. Existing scan signatures
+are unchanged. <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_ranges.py</span></code> compares against separate
+scans sharing the same explicit snapshot and verifies ordered digests.</p>
 </section>
 <section id="reference">
 <h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>
