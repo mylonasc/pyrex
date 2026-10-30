@@ -336,7 +336,7 @@ test hooks. See ``benchmarks/arrow_cancellation.md`` for measured results and
 reproduction. They do not certify production/worst-case IO cancellation time.
 
 Arrow point lookups (ABR-04)
----------------------------
+----------------------------
 
 ``multi_get_arrow(keys, ...)`` complements list-returning ``multi_get`` on
 plain, extended and committed-state TransactionDB handles.
