@@ -64,6 +64,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#arrow-point-lookups-abr-04">Arrow point lookups (ABR-04)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#multi-range-and-multi-prefix-unions-abr-05">Multi-range and multi-prefix unions (ABR-05)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#capability-and-configuration-contract-abr-06">Capability and configuration contract (ABR-06)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#contiguous-value-builder-abr-07">Contiguous value builder (ABR-07)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
 </ul>
 </li>
@@ -545,6 +546,25 @@ validated <code class="docutils literal notranslate"><span class="pre">Snapshot<
 <code class="docutils literal notranslate"><span class="pre">unsupported_controls</span></code> refers to these unsupported ReadOptions attributes,
 not to the supported explicit <code class="docutils literal notranslate"><span class="pre">snapshot=</span></code> argument. No mutable/buffer-bearing
 control is borrowed from caller storage.</p>
+</section>
+<section id="contiguous-value-builder-abr-07">
+<h2>Contiguous value builder (ABR-07)<a class="headerlink" href="#contiguous-value-builder-abr-07" title="Link to this heading"></a></h2>
+<p>Scan and range-union streams gather value payloads directly into one native
+contiguous buffer per attempted batch. Successful output adopts that buffer;
+it is never reused while retained by a consumer. Key staging and point-lookup
+prefetch retain their existing string representation. This is not zero-copy
+RocksDB storage: gathering still copies, and realloc growth/shrink may copy
+internally. Row/byte/int32 checks precede gathering; requested output capacity
+is shrunk to the exact payload size (or one dummy byte for an empty column).
+Growth/shrink failure terminates the attempt without publishing partial output.</p>
+<p><code class="docutils literal notranslate"><span class="pre">configuration[&quot;value_staging_layout&quot;]</span></code> reports <code class="docutils literal notranslate"><span class="pre">contiguous</span></code> or <code class="docutils literal notranslate"><span class="pre">strings</span></code>.
+<code class="docutils literal notranslate"><span class="pre">stats[&quot;value_bytes_copied_to_output&quot;]</span></code> counts explicit value copies into
+successfully published output buffers: zero for adoption, equal to emitted
+value payload for point streams. It excludes allocator-internal copies and
+failed attempts. Payload staging metrics retain their meaning; they do not
+include vector/string metadata, allocator overhead or spare growth capacity.
+See <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_builder.md</span></code> for before/after distributions, capacity
+accounting, failure injection and extension-ASan validation.</p>
 </section>
 <section id="reference">
 <h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>
