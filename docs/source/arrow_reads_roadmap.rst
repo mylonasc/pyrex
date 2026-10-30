@@ -18,12 +18,13 @@ they are **not** an Arrow point-materialization API. TransactionDB scans
 observe committed state, **not** transaction-local read-your-writes.
 
 The original design text and unchecked boxes in #31 are historical, not a
-current feature-availability matrix. These follow-ups cover remaining work.
+current feature-availability matrix. All indexed follow-ups below are merged
+into ``main`` and remain unreleased; the 0.7.1 baseline above is unchanged.
 
 Feature index
 -------------
 
-.. list-table:: Remaining features and dependencies
+.. list-table:: Merged features and dependencies
    :header-rows: 1
    :widths: 12 42 10 20 16
 
@@ -36,53 +37,50 @@ Feature index
      - Opt-in native metrics and Arrow buffer accounting
      - P0
      - None
-     - Implemented on feature branch; review pending
+     - Merged; unreleased
    * - `ABR-02 <https://github.com/mylonasc/pyrex/issues/39>`_
      - Reproducible scale, memory and interoperability benchmarks
      - P1
      - ABR-01
-     - Implemented on stacked feature branch; review pending
+     - Merged; unreleased
    * - `ABR-03 <https://github.com/mylonasc/pyrex/issues/40>`_
      - Cooperative in-flight cancellation and C Stream errors
      - P1
      - ABR-01
-     - Implemented on feature branch; review pending
+     - Merged; unreleased
    * - `ABR-04 <https://github.com/mylonasc/pyrex/issues/41>`_
      - Snapshot-consistent Arrow batched point lookups
      - P1
      - ABR-01, ABR-03
-     - Implemented on stacked feature branch; review pending
+     - Merged; unreleased
    * - `ABR-05 <https://github.com/mylonasc/pyrex/issues/42>`_
      - Multi-range/multi-prefix scans at one horizon
      - P2
      - ABR-01, ABR-03
-     - Implemented on stacked feature branch; review pending
+     - Merged; unreleased
    * - `ABR-06 <https://github.com/mylonasc/pyrex/issues/43>`_
      - Validated scan controls and capability contract
      - P2
      - ABR-01
-     - Implemented on stacked feature branch; review pending
+     - Merged; unreleased
    * - `ABR-07 <https://github.com/mylonasc/pyrex/issues/44>`_
      - Measured native builder/buffer-copy optimization
      - P2
      - ABR-01, ABR-02
-     - Implemented on stacked feature branch; review pending
+     - Merged; unreleased
    * - `ABR-08 <https://github.com/mylonasc/pyrex/issues/45>`_
      - Transaction-local Arrow scans with read-your-writes
      - P2
      - ABR-01, ABR-03
-     - Implemented on stacked feature branch; review pending
+     - Merged; unreleased
 
 Why ABR-01 first
 ----------------
 
-Implementation checkpoint: all indexed features have review branches.
+Merge checkpoint (2026-10-30): all indexed features are merged into ``main``.
 PRs #46 (ABR-01), #47 (ABR-02), #48 (ABR-03), #49 (ABR-04), #50 (ABR-05),
-#51 (ABR-06), #52 (ABR-07) and #53 (ABR-08) are **not** claims of merged or
-released availability. Review/merge follows the dependency graph; #47 remains
-draft until its #46 base merges. The later implementation stack proceeds
-#48 → #49 → #50 → #51 → #52 → #53, and ABR-07 additionally retains its ABR-02
-delivery gate. No feature release is published by these branches.
+#51 (ABR-06), #52 (ABR-07) and #53 (ABR-08) were merged in dependency order,
+preserving commit ancestry. No feature release or version bump was published.
 ``benchmarks/arrow_integration.md`` records cumulative native/sanitizer
 validation and the independent ABR-02 runner's 216-worker matrix plus
 18-worker 1M profile against the final native implementation.

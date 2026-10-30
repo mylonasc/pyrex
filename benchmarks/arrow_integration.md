@@ -1,14 +1,17 @@
 # Cumulative ABR-01–08 integration checkpoint
 
-All indexed features have implementation/review PRs (#46–#53); this is not a
-claim that they are merged/released. ABR-02 (#47) remains an independent draft
-stack on ABR-01 until that base merges. The later source stack ends at ABR-08.
-No automatic merge, version bump or package publication was performed.
+All indexed features were merged into `main` through PRs #46–#53 on
+2026-10-30, in dependency order and with commit ancestry preserved. ABR-02's
+independent benchmark branch is now included alongside the later source stack.
+No version bump or package publication was performed; features remain unreleased.
 
 ## Native validation
 
-Final cumulative full suite: **561 passed, 2 skipped**. Extension-ASan full
-suite: **549 passed, 14 skipped**, no ASan errors. GCC ASan instruments the
+Merged full suite, including ABR-02 tests: **585 passed, 2 skipped**.
+Extension-ASan full suite: **573 passed, 14 skipped**, no ASan errors.
+The earlier pre-merge source stack passed 561/2 and 549/14 respectively.
+Native source/build configuration matches the validated ABR-08 artifacts;
+the merged suite reuses those exact normal/ASan artifacts. GCC ASan instruments the
 extension, not the portable RocksDB archive; leak detection is disabled.
 Allocator-interposition tests run separately, not under ASan; generic bounded
 completion/close races do run under ASan. Sphinx HTML passes with warnings as
