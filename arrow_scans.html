@@ -61,6 +61,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#column-family-integration-opportunities">Column-family integration opportunities</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#lifecycle-and-safety">Lifecycle and safety</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#cooperative-cancellation-abr-03">Cooperative cancellation (ABR-03)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#arrow-point-lookups-abr-04">Arrow point lookups (ABR-04)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
 </ul>
 </li>
@@ -428,6 +429,57 @@ with request duration, resumed completion time and gathered progress; these
 are bounded subprocess tests with <strong>no performance thresholds</strong> or production
 test hooks. See <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_cancellation.md</span></code> for measured results and
 reproduction. They do not certify production/worst-case IO cancellation time.</p>
+</section>
+<section id="arrow-point-lookups-abr-04">
+<h2>Arrow point lookups (ABR-04)<a class="headerlink" href="#arrow-point-lookups-abr-04" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">multi_get_arrow(keys,</span> <span class="pre">...)</span></code> complements list-returning <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> on
+plain, extended and committed-state TransactionDB handles.
+<code class="docutils literal notranslate"><span class="pre">multi_get_arrow_cf(cf_handle,</span> <span class="pre">keys,</span> <span class="pre">...)</span></code> selects a validated named CF on
+extended/TransactionDB handles. Both return an <code class="docutils literal notranslate"><span class="pre">ArrowScan</span></code> with the existing
+single-export, cancellation, close, context-manager and metrics APIs:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">keys</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="sa">b</span><span class="s2">"second"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"absent"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"first"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"second"</span><span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">binary</span><span class="p">())</span>
+<span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">multi_get_arrow</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> <span class="n">collect_metrics</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">points</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">points</span><span class="p">)</span> <span class="k">as</span> <span class="n">reader</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">read_all</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Output is fixed <code class="docutils literal notranslate"><span class="pre">struct&lt;key:</span> <span class="pre">binary</span> <span class="pre">not</span> <span class="pre">null,</span> <span class="pre">value:</span> <span class="pre">binary</span> <span class="pre">nullable&gt;</span></code> with
+int32 offsets. Rows follow <strong>input order</strong>, including duplicates. Missing keys
+produce a null value; a stored empty value produces valid <code class="docutils literal notranslate"><span class="pre">b&quot;&quot;</span></code>. Empty keys
+are valid. Empty input returns this same schema with no native lookup calls.
+No graph/application payload decoding is performed.</p>
+<p>Input is a bytes list/tuple or a contiguous Arrow <code class="docutils literal notranslate"><span class="pre">binary</span></code>/<code class="docutils literal notranslate"><span class="pre">large_binary</span></code>
+array, including slices, with at most <strong>65536 keys per stream</strong>. Null input
+keys and string/numeric/chunked arrays are rejected, not coerced. Native-owned
+input copies are taken before returning; destroying or mutating the caller’s
+buffers afterward cannot change the stream. Arrow buffer offsets, lengths,
+alignment and monotonicity are validated before dereferencing payloads.
+No Python bytes object is created per output row or per Arrow input key.</p>
+<p>The view is pinned at creation, not on first consumption. Explicit snapshots
+must belong to the same DB and be unreleased. Releasing a caller’s snapshot
+handle prevents new uses but defers native snapshot destruction while existing
+point streams need it. CF identity/drop protection matches scan streams.
+TransactionDB reads committed state only, not an active transaction’s writes.</p>
+<p>Row/byte limits and singleton overflow have the same defaults/ranges as
+<code class="docutils literal notranslate"><span class="pre">scan_arrow</span></code>. The output-byte cap includes both offset buffers, key/value
+payloads and the value validity bitmap (one bit per row, rounded up). Dummy
+data bytes for empty columns count toward requested capacity/slack, not used
+bytes. Limits are <strong>not an RSS bound</strong>: all input keys are owned, and each
+native MultiGet can stage up to 256 values before their sizes are known.
+Prefetched values can span multiple output batches. <code class="docutils literal notranslate"><span class="pre">peak_staged_payload_bytes</span></code>
+measures selected output staging, not the input copy or prefetched values.</p>
+<p><code class="docutils literal notranslate"><span class="pre">point_lookup_calls</span></code> counts native MultiGet calls, each with at most 256
+keys and no more than the remaining batch rows. <code class="docutils literal notranslate"><span class="pre">validity_bytes_emitted</span></code>
+counts published value bitmaps; it is zero for ordinary non-null scan streams.
+<code class="docutils literal notranslate"><span class="pre">output_bytes_emitted</span></code> and requested/live capacity include these bitmaps.
+Gather time includes MultiGet work; the other metrics retain their scan meaning.
+Polling and stable cancellation diagnostics are shared with scan streams;
+one MultiGet call cannot be forcibly interrupted. Already returned buffers,
+including detached value children, remain valid after input/stream/DB release.</p>
+<p><code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_points.py</span></code> compares native point streams against
+existing MultiGet plus Arrow reconstruction, checking an ordered digest that
+includes nulls/duplicates before and after warmed, alternating-order repeats.
+See <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_points.md</span></code> for measurements and limitations.</p>
 </section>
 <section id="reference">
 <h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>

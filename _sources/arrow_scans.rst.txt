@@ -335,6 +335,63 @@ are bounded subprocess tests with **no performance thresholds** or production
 test hooks. See ``benchmarks/arrow_cancellation.md`` for measured results and
 reproduction. They do not certify production/worst-case IO cancellation time.
 
+Arrow point lookups (ABR-04)
+----------------------------
+
+``multi_get_arrow(keys, ...)`` complements list-returning ``multi_get`` on
+plain, extended and committed-state TransactionDB handles.
+``multi_get_arrow_cf(cf_handle, keys, ...)`` selects a validated named CF on
+extended/TransactionDB handles. Both return an ``ArrowScan`` with the existing
+single-export, cancellation, close, context-manager and metrics APIs::
+
+    keys = pa.array([b"second", b"absent", b"first", b"second"], type=pa.binary())
+    with db.multi_get_arrow(keys, batch_size=256, collect_metrics=True) as points:
+        with pa.RecordBatchReader.from_stream(points) as reader:
+            result = reader.read_all()
+
+Output is fixed ``struct<key: binary not null, value: binary nullable>`` with
+int32 offsets. Rows follow **input order**, including duplicates. Missing keys
+produce a null value; a stored empty value produces valid ``b""``. Empty keys
+are valid. Empty input returns this same schema with no native lookup calls.
+No graph/application payload decoding is performed.
+
+Input is a bytes list/tuple or a contiguous Arrow ``binary``/``large_binary``
+array, including slices, with at most **65536 keys per stream**. Null input
+keys and string/numeric/chunked arrays are rejected, not coerced. Native-owned
+input copies are taken before returning; destroying or mutating the caller's
+buffers afterward cannot change the stream. Arrow buffer offsets, lengths,
+alignment and monotonicity are validated before dereferencing payloads.
+No Python bytes object is created per output row or per Arrow input key.
+
+The view is pinned at creation, not on first consumption. Explicit snapshots
+must belong to the same DB and be unreleased. Releasing a caller's snapshot
+handle prevents new uses but defers native snapshot destruction while existing
+point streams need it. CF identity/drop protection matches scan streams.
+TransactionDB reads committed state only, not an active transaction's writes.
+
+Row/byte limits and singleton overflow have the same defaults/ranges as
+``scan_arrow``. The output-byte cap includes both offset buffers, key/value
+payloads and the value validity bitmap (one bit per row, rounded up). Dummy
+data bytes for empty columns count toward requested capacity/slack, not used
+bytes. Limits are **not an RSS bound**: all input keys are owned, and each
+native MultiGet can stage up to 256 values before their sizes are known.
+Prefetched values can span multiple output batches. ``peak_staged_payload_bytes``
+measures selected output staging, not the input copy or prefetched values.
+
+``point_lookup_calls`` counts native MultiGet calls, each with at most 256
+keys and no more than the remaining batch rows. ``validity_bytes_emitted``
+counts published value bitmaps; it is zero for ordinary non-null scan streams.
+``output_bytes_emitted`` and requested/live capacity include these bitmaps.
+Gather time includes MultiGet work; the other metrics retain their scan meaning.
+Polling and stable cancellation diagnostics are shared with scan streams;
+one MultiGet call cannot be forcibly interrupted. Already returned buffers,
+including detached value children, remain valid after input/stream/DB release.
+
+``benchmarks/bench_arrow_points.py`` compares native point streams against
+existing MultiGet plus Arrow reconstruction, checking an ordered digest that
+includes nulls/duplicates before and after warmed, alternating-order repeats.
+See ``benchmarks/arrow_points.md`` for measurements and limitations.
+
 Reference
 ---------
 

@@ -157,6 +157,13 @@ request was accepted and remains True after cancellation cleanup. Observation
 by the stream returns <code class="docutils literal notranslate"><span class="pre">ECANCELED</span></code> / <code class="docutils literal notranslate"><span class="pre">scan_arrow:</span> <span class="pre">cancelled</span></code>, not successful
 exhaustion; already committed batches remain valid. Use <code class="docutils literal notranslate"><span class="pre">close()</span></code> for
 deterministic resource release, including idle scans that will not be pulled.</p>
+<p><code class="docutils literal notranslate"><span class="pre">multi_get_arrow(keys,</span> <span class="pre">batch_size=65536,</span> <span class="pre">max_batch_bytes=8388608,</span>
+<span class="pre">read_options=None,</span> <span class="pre">snapshot=None,</span> <span class="pre">allow_overflow=False,</span> <span class="pre">collect_metrics=False)</span></code>
+returns the same single-consumer <code class="docutils literal notranslate"><span class="pre">ArrowScan</span></code> lifecycle object, with nullable
+<code class="docutils literal notranslate"><span class="pre">value</span></code> for missing keys. Extended/TransactionDB also expose
+<code class="docutils literal notranslate"><span class="pre">multi_get_arrow_cf(cf_handle,</span> <span class="pre">keys,</span> <span class="pre">...)</span></code>. These methods preserve input
+order and duplicates; existing <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> methods still return lists.
+See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for input validation, snapshot and memory contracts.</p>
 <p><code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> is a pinned read view from <code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> shareable by
 multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
 <p>The same snapshot also pins <code class="docutils literal notranslate"><span class="pre">get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> and their CF variants.
