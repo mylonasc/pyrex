@@ -143,6 +143,104 @@ def test_cancel_closes_only_its_own_cf_and_shared_snapshot_resources(kind, tmp_p
         snapshot.release()
 
 
+@pytest.mark.parametrize("kind", ["PyRocksDB", "PyRocksDBExtended", "TransactionDB"])
+def test_cancel_racing_eof_has_one_unambiguous_winner(kind, tmp_path):
+    code = r'''
+import errno, threading
+from concurrent.futures import ThreadPoolExecutor
+import pyrex
+from test_arrow_scan_metrics import NativeStream, release_array
+db = getattr(pyrex, KIND)(PATH)
+db.put(b'k', b'v')
+for _ in range(30):
+    scan = db.scan_arrow(batch_size=1, collect_metrics=True)
+    with NativeStream(scan) as stream:
+        status, first = stream.next()
+        assert status == 0 and first.length == 1
+        release_array(first)
+        gate = threading.Barrier(2)
+        def end():
+            gate.wait()
+            return stream.next()
+        def cancel():
+            gate.wait()
+            return scan.cancel()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            end_job = pool.submit(end)
+            cancel_job = pool.submit(cancel)
+            status, out = end_job.result()
+            accepted = cancel_job.result()
+        assert not out.release
+        assert status == (errno.ECANCELED if accepted else 0)
+        assert scan.cancel_requested is accepted
+        assert scan.stats['cancelled_calls'] == int(accepted)
+        assert scan.stats['rows_emitted'] == 1
+db.close()
+'''
+    prefix = f"import sys\nsys.path.insert(0, {str(Path(__file__).parent)!r})\nKIND={kind!r}\nPATH={str(tmp_path / 'eof')!r}\n"
+    subprocess.run([sys.executable, "-c", prefix + code], check=True, timeout=30)
+
+
+@pytest.mark.parametrize("kind", ["PyRocksDB", "PyRocksDBExtended", "TransactionDB"])
+@pytest.mark.parametrize("action", ["close", "drop"])
+def test_cancel_racing_db_close_or_cf_drop(kind, action, tmp_path):
+    if kind == "PyRocksDB" and action == "drop":
+        pytest.skip("plain DB has no CF API")
+    code = r'''
+import errno, threading
+from concurrent.futures import ThreadPoolExecutor
+import pyrex
+from test_arrow_scan_metrics import NativeStream, release_array
+for repeat in range(10):
+    db = getattr(pyrex, KIND)(PATH + str(repeat))
+    cf = db.create_column_family('race') if ACTION == 'drop' else None
+    for i in range(100):
+        key = f'k{i:06d}'.encode()
+        if cf is None: db.put(key, b'v')
+        else: db.put_cf(cf, key, b'v')
+    scan = (db.scan_arrow(collect_metrics=True) if cf is None else
+            db.scan_arrow_cf(cf, collect_metrics=True))
+    with NativeStream(scan) as stream:
+        gate = threading.Barrier(3)
+        def pull():
+            gate.wait()
+            return stream.next()
+        def cancel():
+            gate.wait()
+            return scan.cancel()
+        def mutate():
+            gate.wait()
+            if ACTION == 'close': db.close()
+            else:
+                try: db.drop_column_family(cf)
+                except pyrex.RocksDBException as exc:
+                    assert 'active Arrow scan' in str(exc)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            pulling, cancelling, mutation = [pool.submit(fn) for fn in (pull, cancel, mutate)]
+            status, out = pulling.result()
+            accepted = cancelling.result()
+            mutation.result()
+        try:
+            if status == 0:
+                # A publication decision may precede a racing request/close,
+                # but a full data batch is the only successful possibility.
+                assert out.release and out.length == 100
+            else:
+                assert not out.release and status in (errno.ECANCELED, errno.EIO)
+            assert scan.stats['rows_emitted'] in (0, 100)
+            assert scan.stats['rows_emitted'] == (100 if status == 0 else 0)
+        finally:
+            release_array(out)
+        scan.close()
+    if cf is not None and cf.is_valid(): db.drop_column_family(cf)
+    db.close()
+    assert scan.stats['live_buffer_bytes'] == 0
+'''
+    prefix = (f"import sys\nsys.path.insert(0, {str(Path(__file__).parent)!r})\n"
+              f"KIND={kind!r}\nACTION={action!r}\nPATH={str(tmp_path / 'race')!r}\n")
+    subprocess.run([sys.executable, "-c", prefix + code], check=True, timeout=30)
+
+
 @pytest.fixture(scope="module")
 def allocation_latch(tmp_path_factory):
     if sys.platform != "linux" or platform.libc_ver()[0] != "glibc":
