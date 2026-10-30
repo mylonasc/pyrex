@@ -60,6 +60,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#write-options-and-durability">Write Options And Durability</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#retryable-errors">Retryable Errors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#complete-example">Complete Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#transaction-local-arrow-scans-abr-08">Transaction-local Arrow scans (ABR-08)</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
@@ -410,6 +411,55 @@ subclasses so callers can decide whether to retry.</p>
 </pre></div>
 </div>
 </div>
+</section>
+<section id="transaction-local-arrow-scans-abr-08">
+<h2>Transaction-local Arrow scans (ABR-08)<a class="headerlink" href="#transaction-local-arrow-scans-abr-08" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">Transaction.scan_arrow</span></code> and <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf</span></code> are distinct from committed
+<code class="docutils literal notranslate"><span class="pre">TransactionDB.scan_arrow</span></code>. They include the transaction’s own writes and
+deletes, without exposing another transaction’s uncommitted changes:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+
+<span class="k">with</span> <span class="n">db</span><span class="o">.</span><span class="n">transaction</span><span class="p">()</span> <span class="k">as</span> <span class="n">txn</span><span class="p">:</span>
+    <span class="n">txn</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="sa">b</span><span class="s2">"private"</span><span class="p">,</span> <span class="sa">b</span><span class="s2">"value"</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">txn</span><span class="o">.</span><span class="n">scan_arrow</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">4096</span><span class="p">)</span> <span class="k">as</span> <span class="n">scan</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">scan</span><span class="p">)</span> <span class="k">as</span> <span class="n">reader</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">read_all</span><span class="p">()</span>
+    <span class="n">txn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+<span class="c1"># result owns its buffers and remains valid after transaction/DB closure.</span>
+</pre></div>
+</div>
+<p>The scan schema, prefix/range intersection, bytewise comparator, row/used-byte
+limits, overflow policy, owned buffers, opt-in metrics and cooperative
+cancellation are the same as DB scans. Named-CF handles are validated against
+the parent DB by identity. Transaction Arrow methods do not accept a DB
+<code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> argument, and do not add transaction-local points/multi-range APIs.
+<code class="docutils literal notranslate"><span class="pre">txn.arrow_capabilities()</span></code> reports this narrower API and visibility contract;
+<code class="docutils literal notranslate"><span class="pre">scan.configuration[&quot;source&quot;]</span></code> is <code class="docutils literal notranslate"><span class="pre">transaction_scan</span></code>.</p>
+<p>Consistency is explicit. If the transaction has a snapshot, the scan uses that
+committed horizon. Otherwise it pins a DB snapshot at scan creation. Its own
+write batch is <strong>frozen</strong> while any transaction Arrow stream retains native
+resources: puts/deletes (including CF variants), write batches, get-for-update,
+snapshot reset, commit and rollback raise an active-Arrow-scan error. Ordinary
+gets/iterators remain allowed and native gathers serialize with transaction
+operations. Without a transaction snapshot, ordinary point gets can observe
+later committed writes while the Arrow view remains pinned.</p>
+<p>Exhaustion, explicit scan/reader close, observed cancellation or terminal scan
+error releases the freeze. Merely returning the last data batch or requesting
+cancellation on an idle stream does not. Close all streams before completing
+the transaction; nest their contexts inside the transaction context so its
+automatic rollback is not blocked. Multiple scans each keep the freeze until
+their resources are released. To share one committed horizon across them,
+set the transaction snapshot before constructing them.</p>
+<p><code class="docutils literal notranslate"><span class="pre">sequence_number</span></code> identifies only the committed snapshot horizon, not the
+transaction’s private write-batch generation or an application visibility
+marker. DB close serializes with transaction operations and invalidates native
+Arrow iterators <strong>before</strong> deleting their transaction/write batch. Existing
+CF-drop protection while transactions are active remains in place. A full
+batch already committed before a racing close/cancel may return; its owned
+buffers remain valid after rollback/commit/DB close. No partially built output
+is successful. <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_transaction_arrow.py</span></code> compares the native
+stream with transaction-local iterator plus Arrow reconstruction at the same
+transaction snapshot, not with committed-state DB scans.</p>
 </section>
 </section>
 

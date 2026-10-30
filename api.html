@@ -169,6 +169,11 @@ class. <code class="docutils literal notranslate"><span class="pre">stream.confi
 Both return independent dictionaries and remain readable after close.
 <code class="docutils literal notranslate"><span class="pre">ReadOptions.readahead_size</span></code> is a captured iterator-only hint, 0..1 GiB;
 point reads ignore it. See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for unsupported-control policy.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Transaction.scan_arrow(...)</span></code> / <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf(cf_handle,</span> <span class="pre">...)</span></code> use the
+same scan options except <code class="docutils literal notranslate"><span class="pre">snapshot=</span></code>: they use the transaction snapshot or
+pin a committed horizon at creation, and include private writes/deletes.
+<code class="docutils literal notranslate"><span class="pre">Transaction.arrow_capabilities()</span></code> reports their frozen-mutation policy.
+See <a class="reference internal" href="transactions.html"><span class="doc">Transactions</span></a> before consuming streams while completing a transaction.</p>
 <p><code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> is a pinned read view from <code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> shareable by
 multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
 <p>The same snapshot also pins <code class="docutils literal notranslate"><span class="pre">get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> and their CF variants.
