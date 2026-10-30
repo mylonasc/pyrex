@@ -71,7 +71,7 @@ Feature index
      - Transaction-local Arrow scans with read-your-writes
      - P2
      - ABR-01, ABR-03
-     - Planned
+     - Implemented on stacked feature branch; review pending
 
 Why ABR-01 first
 ----------------

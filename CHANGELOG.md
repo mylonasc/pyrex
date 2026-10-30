@@ -8,6 +8,14 @@ available via `git log`.
 
 ### Added
 
+- ABR-08 (#45): explicit `Transaction.scan_arrow()` / `scan_arrow_cf()` expose
+  transaction-local writes/deletes through stable, snapshot-pinned native
+  Arrow streams. Active native scans reject transaction mutation, snapshot
+  reset, commit and rollback until cleanup; reads remain available. Native
+  gathers serialize with transaction operations, and DB close destroys Arrow
+  iterators before transaction write batches. Committed TransactionDB scans
+  remain distinct and unchanged.
+
 - ABR-07 (#44): scan/range-union values now gather directly into a contiguous
   native buffer adopted by owned Arrow output, removing per-value payload
   strings and the explicit second value copy. Keys and point prefetch retain

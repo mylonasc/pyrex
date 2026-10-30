@@ -228,6 +228,45 @@ def test_db_close_before_export_invalidates_transaction_iterator(tmp_path):
     scan.close()
 
 
+@pytest.mark.parametrize("action", ["commit", "rollback", "close"])
+def test_uncontrolled_pull_completion_races_under_sanitizers(tmp_path, action):
+    code = r'''
+from concurrent.futures import ThreadPoolExecutor
+import threading, pyrex, pyarrow as pa
+for repeat in range(20):
+    db = pyrex.TransactionDB(PATH + str(repeat))
+    txn = db.begin_transaction()
+    for i in range(100): txn.put(f'k{i:04d}'.encode(), b'v')
+    scan = txn.scan_arrow(batch_size=3, collect_metrics=True)
+    reader = pa.RecordBatchReader.from_stream(scan)
+    gate = threading.Barrier(2)
+    def pull():
+        gate.wait()
+        try:
+            result = reader.read_all()
+            assert result.num_rows == 100
+        except (OSError, pa.ArrowException):
+            assert ACTION == 'close'
+        finally:
+            reader.close()
+    def finish():
+        gate.wait()
+        try:
+            (db.close if ACTION == 'close' else getattr(txn, ACTION))()
+        except pyrex.RocksDBException as exc:
+            assert ACTION != 'close' and 'active Arrow scans' in str(exc)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a, b = pool.submit(pull), pool.submit(finish)
+        a.result(); b.result()
+    scan.close()
+    if txn.is_active: txn.rollback()
+    db.close()
+    assert scan.stats['live_buffer_bytes'] == 0
+'''
+    subprocess.run([sys.executable, "-c", f"PATH={str(tmp_path / 'unguarded')!r}\nACTION={action!r}\n" + code],
+                   check=True, timeout=30)
+
+
 def test_transaction_benchmark_smoke(tmp_path):
     import json
     script = Path(__file__).resolve().parents[1] / "benchmarks/bench_transaction_arrow.py"
