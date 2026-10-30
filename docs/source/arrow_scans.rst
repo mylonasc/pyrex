@@ -54,6 +54,91 @@ Batch sizing
 These caps bound producer batch memory, not whole-process RSS: the block
 cache, pinned snapshot history, and consumer-retained batches are additional.
 
+Native metrics (ABR-01)
+-----------------------
+
+Pass ``collect_metrics=True`` to ``scan_arrow`` / ``scan_arrow_cf`` on plain,
+extended or transactional DBs to enable native counters and phase timings::
+
+    scan = db.scan_arrow(batch_size=4096, collect_metrics=True)
+    reader = pa.RecordBatchReader.from_stream(scan)
+    table = reader.read_all()
+    reader.close()
+    print(scan.stats)    # output buffers are still retained by table
+    del table
+    # A fresh scan.stats snapshot reflects buffers released by the consumer.
+
+``ArrowScan.stats`` is a read-only property returning a fresh dictionary
+snapshot (mutating that dictionary does not change the counters). Without
+opt-in it returns ``None``, including after close. Disabled scans allocate
+no metrics state and query no phase clocks. No new Python objects are
+created per scanned row for metrics.
+
+.. list-table:: Stats fields (integer counts, bytes or nanoseconds)
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Field
+     - Meaning
+   * - ``get_next_calls``
+     - Native C Stream get_next calls with a valid output pointer, including
+       clean exhaustion and failures; not Python calls or RocksDB IO count.
+   * - ``rows_emitted``, ``batches_emitted``
+     - Successfully constructed/published output only; no partial batch on
+       allocation, size-limit, lifecycle or iterator errors.
+   * - ``key_bytes_emitted``, ``value_bytes_emitted``
+     - Raw KV payload bytes in successful output, not compressed storage IO.
+   * - ``offset_bytes_emitted``
+     - Both int32 offset buffers: ``8 * (rows + 1)`` for each emitted batch.
+   * - ``output_bytes_emitted``
+     - Key bytes + value bytes + offset bytes, cumulatively.
+   * - ``buffer_capacity_bytes_emitted``
+     - Requested data/offset allocation sizes for successful output. A zero
+       payload column still allocates one dummy byte. Excludes C metadata,
+       pointer arrays, allocator rounding/overhead and RocksDB resources.
+   * - ``allocation_slack_bytes_emitted``
+     - Cumulative requested capacity minus logical output bytes; with the
+       current exact-size builder, this is the empty-column dummy bytes.
+   * - ``live_buffer_bytes``, ``peak_live_buffer_bytes``
+     - Outstanding and peak requested output capacity, following actual
+       Arrow child release callbacks, including consumer-retained output.
+   * - ``peak_staged_payload_bytes``
+     - Largest logical key+value payload held by one gather attempt, including
+       failed attempts. Not string/vector allocated capacity or staging RSS.
+   * - ``gather_time_ns``
+     - Cumulative native gather/iterator work under the scan mutex, including
+       failed/end attempts; excludes waiting to acquire that mutex.
+   * - ``build_time_ns``
+     - Cumulative native output sizing/allocation/copy/descriptor/publication
+       phases, including failed builds. Does not include consumer compute.
+
+Counters start at zero before the first batch and remain readable after
+exhaustion, early close, errors and DB closure. Metrics snapshots are taken
+under a separate native mutex and never touch a closed DB. Active phase
+times are added when that phase ends; an in-flight call may finish publishing
+an already gathered owned batch while another thread closes the scan.
+
+Exported child buffers share independent accounting state: closing a stream
+or DB does **not** subtract buffers still owned by consumers. Moving/detaching
+one Arrow child and releasing it later subtracts only that child's capacity.
+If consumers retain multiple batches, the live high-water mark can exceed
+``max_batch_bytes``. The cap remains a per-batch output-used-byte limit
+(subject to explicit singleton overflow), not a producer/consumer RSS bound.
+``output_bytes_emitted`` also need not equal PyArrow ``table.nbytes``: this
+counter includes the initial offset slot for each column of every batch.
+
+Phase clocks are diagnostic, not application wall time: they exclude scan
+establishment, native resource teardown, Python boundary overhead, and payload
+decoding/consumer operations. Snapshot history, RocksDB cache/storage IO,
+staging allocation slack and allocator metadata are not measured by output
+capacity counters. Broader resource experiments are tracked in ABR-02.
+
+``benchmarks/bench_arrow_scan.py --collect-metrics`` prints these counters for
+the last repeat of each native mode. Its best-of wall time may refer to a
+different repeat; do not conflate the two. The default invocation remains
+usable against historical versions without ``collect_metrics`` support.
+See :doc:`arrow_reads_roadmap` for the indexed remaining features.
+
 Snapshots
 ---------
 
@@ -175,7 +260,7 @@ Reference
 
 * ``PyRocksDB.scan_arrow(prefix=None, start=None, stop=None, batch_size=65536,
   max_batch_bytes=8388608, read_options=None, snapshot=None,
-  allow_overflow=False) -> ArrowScan``
+  allow_overflow=False, collect_metrics=False) -> ArrowScan``
 * ``PyRocksDBExtended.scan_arrow_cf(cf_handle, ...)`` — same keyword contract.
 * ``TransactionDB.scan_arrow(...)`` — same keyword contract on the default
   column family; observes committed state (open-transaction writes excluded).
@@ -187,7 +272,8 @@ Reference
 * ``PyRocksDB.create_snapshot() -> Snapshot`` (also on ``TransactionDB``;
   snapshots are per-instance and never shared across DB objects)
 * ``Snapshot.release()``, ``Snapshot.is_valid()``, ``Snapshot.sequence_number``
-* ``ArrowScan.close()``, ``ArrowScan.is_closed``, ``ArrowScan.sequence_number``
+* ``ArrowScan.close()``, ``ArrowScan.is_closed``, ``ArrowScan.sequence_number``,
+  ``ArrowScan.stats``
 
 See ``benchmarks/bench_arrow_scan.py`` for the reproducible comparison of
 Python iterators vs. native scans, and ``examples_simple/arrow_scan.py`` for

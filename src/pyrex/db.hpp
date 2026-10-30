@@ -108,7 +108,8 @@ public:
     std::shared_ptr<PyArrowScan> scan_arrow(py::object prefix = py::none(), py::object start = py::none(), py::object stop = py::none(),
                                             size_t batch_size = 65536, size_t max_batch_bytes = 8 * 1024 * 1024,
                                             std::shared_ptr<PyReadOptions> read_options = nullptr,
-                                            std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false);
+                                            std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false,
+                                            bool collect_metrics = false);
     PyOptions get_options() const;
     std::shared_ptr<PyReadOptions> get_default_read_options();
     void set_default_read_options(std::shared_ptr<PyReadOptions> opts);
@@ -148,5 +149,6 @@ public:
                                                py::object stop = py::none(), size_t batch_size = 65536,
                                                size_t max_batch_bytes = 8 * 1024 * 1024,
                                                std::shared_ptr<PyReadOptions> read_options = nullptr,
-                                               std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false);
+                                                std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false,
+                                                bool collect_metrics = false);
 };

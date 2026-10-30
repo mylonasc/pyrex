@@ -33,15 +33,40 @@ get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 get_pointer.restype = ctypes.c_void_p
 with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
     db.put(b'k', b'v')
-    for callback, count in ((helper.fail_schema, 9), (helper.fail_batch, 15)):
-        for allocation in range(1, count + 1):
-            scan = db.scan_arrow(batch_size=1)
-            capsule = scan.__arrow_c_stream__()
-            ptr = get_pointer(capsule, b'arrow_array_stream')
-            status = callback(ptr, allocation)
-            assert status != 0, (callback, allocation)
-            scan.close()
-            del capsule, scan
+    for collect_metrics in (False, True):
+        for callback, count in ((helper.fail_schema, 9), (helper.fail_batch, 15)):
+            for allocation in range(1, count + 1):
+                scan = db.scan_arrow(batch_size=1, collect_metrics=collect_metrics)
+                capsule = scan.__arrow_c_stream__()
+                ptr = get_pointer(capsule, b'arrow_array_stream')
+                status = callback(ptr, allocation)
+                assert status != 0, (callback, allocation)
+                scan.close()
+                if collect_metrics:
+                    assert scan.stats['rows_emitted'] == 0
+                    assert scan.stats['live_buffer_bytes'] == 0
+                    assert scan.stats['buffer_capacity_bytes_emitted'] == 0
+                else:
+                    assert scan.stats is None
+                del capsule, scan
+    # A failure after an earlier successful publication must retain its
+    # cumulative counters, without counting the failed second batch.
+    db.put(b'z', b'w')
+    for allocation in range(1, 16):
+        scan = db.scan_arrow(batch_size=1, collect_metrics=True)
+        capsule = scan.__arrow_c_stream__()
+        ptr = get_pointer(capsule, b'arrow_array_stream')
+        assert helper.fail_batch(ptr, 0) == 0
+        before = scan.stats
+        assert before['rows_emitted'] == 1 and before['live_buffer_bytes'] == 0
+        assert helper.fail_batch(ptr, allocation) != 0
+        after = scan.stats
+        assert after['rows_emitted'] == before['rows_emitted']
+        assert after['output_bytes_emitted'] == before['output_bytes_emitted']
+        assert after['buffer_capacity_bytes_emitted'] == before['buffer_capacity_bytes_emitted']
+        assert after['live_buffer_bytes'] == 0
+        scan.close()
+        del capsule, scan
 """
     env = dict(os.environ, PYREX_ALLOC_HELPER=str(library))
     # Sanitizer interceptors must load first when running an ASan build.

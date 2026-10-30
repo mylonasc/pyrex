@@ -4,6 +4,17 @@ All notable changes to `pyrex-rocksdb` are documented here. This changelog
 is maintained incrementally from this point onward; earlier history is
 available via `git log`.
 
+## [Unreleased]
+
+### Added
+
+- ABR-01 (#38): opt-in `collect_metrics=True` for native default/CF Arrow
+  scans, including TransactionDB. `ArrowScan.stats` reports coherent output
+  counters, requested buffer capacity/slack, retained-buffer high-water
+  marks, staged payload size and native gather/build time. Independent
+  Arrow child releases update accounting even after stream/DB closure.
+  Default scans do not allocate metrics state or collect phase timings.
+
 ## [0.7.1] - 2026-10-29
 
 ### Added

@@ -18,6 +18,7 @@ Streaming consumption and full materialization are labeled separately: a
 import argparse
 import gc
 import hashlib
+import json
 import os
 import resource
 import shutil
@@ -132,22 +133,28 @@ def bench_python_iter_arrow(db, prefix=None):
     return run
 
 
-def bench_native_scan(db, batch_size, max_batch_bytes, prefix=None):
+def bench_native_scan(db, batch_size, max_batch_bytes, prefix=None, collect_metrics=False):
     def run():
-        reader = pa.RecordBatchReader.from_stream(
-            db.scan_arrow(prefix=prefix, batch_size=batch_size, max_batch_bytes=max_batch_bytes)
-        )
+        options = {"prefix": prefix, "batch_size": batch_size, "max_batch_bytes": max_batch_bytes}
+        if collect_metrics:
+            options["collect_metrics"] = True
+        scan = db.scan_arrow(**options)
+        reader = pa.RecordBatchReader.from_stream(scan)
+        run.last_scan = scan
         return reader.read_all()
 
     return run
 
 
-def bench_native_scan_compute(db, batch_size, max_batch_bytes, prefix=None):
+def bench_native_scan_compute(db, batch_size, max_batch_bytes, prefix=None, collect_metrics=False):
     # streaming: per-batch Arrow compute, no full materialization
     def run():
-        reader = pa.RecordBatchReader.from_stream(
-            db.scan_arrow(prefix=prefix, batch_size=batch_size, max_batch_bytes=max_batch_bytes)
-        )
+        options = {"prefix": prefix, "batch_size": batch_size, "max_batch_bytes": max_batch_bytes}
+        if collect_metrics:
+            options["collect_metrics"] = True
+        scan = db.scan_arrow(**options)
+        reader = pa.RecordBatchReader.from_stream(scan)
+        run.last_scan = scan
         total_len = 0
         batches = 0
         rows = 0
@@ -168,6 +175,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--max-batch-bytes", type=int, default=8 * 1024 * 1024)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--collect-metrics", action="store_true", help="ABR-01 native scan counters/timings (opt-in)")
     parser.add_argument("--prefix", type=str, default=None, help="selective prefix scan, e.g. sensor/")
     args = parser.parse_args()
 
@@ -185,8 +193,8 @@ def main():
         modes = [
             ("python_iter_collect", bench_python_iter(db, prefix)),
             ("python_iter_then_arrow", bench_python_iter_arrow(db, prefix)),
-            ("native_scan_materialize", bench_native_scan(db, args.batch_size, args.max_batch_bytes, prefix)),
-            ("native_scan_compute", bench_native_scan_compute(db, args.batch_size, args.max_batch_bytes, prefix)),
+            ("native_scan_materialize", bench_native_scan(db, args.batch_size, args.max_batch_bytes, prefix, args.collect_metrics)),
+            ("native_scan_compute", bench_native_scan_compute(db, args.batch_size, args.max_batch_bytes, prefix, args.collect_metrics)),
         ]
         for name, fn in modes:
             rss_before = rss_mb()
@@ -209,11 +217,18 @@ def main():
                 f"{name:28s} best_of_{args.repeat}={elapsed * 1000:9.1f} ms  {rps:>16s}  "
                 f"rows={rows}{extra}  cumulative_process_peak_rss_delta={rss_after - rss_before:.1f} MB"
             )
+            if args.collect_metrics and hasattr(fn, "last_scan"):
+                # time_fn reports best-of wall time but retains the last
+                # output: do not label these phase times as the best repeat.
+                print("  metrics_last_repeat=" + json.dumps(fn.last_scan.stats, sort_keys=True))
         # batch-size sensitivity on the native scan
         print("batch-size sensitivity (native_scan_materialize):")
         for bs in (256, 1024, 4096, 65536):
-            elapsed, out = time_fn(bench_native_scan(db, bs, args.max_batch_bytes, prefix), args.repeat)
+            probe = bench_native_scan(db, bs, args.max_batch_bytes, prefix, args.collect_metrics)
+            elapsed, out = time_fn(probe, args.repeat)
             print(f"  batch_size={bs:6d}  {elapsed * 1000:9.1f} ms")
+            if args.collect_metrics:
+                print("    metrics_last_repeat=" + json.dumps(probe.last_scan.stats, sort_keys=True))
         print(f"versions: pyrex-scan stream schema struct<key: binary, value: binary>; "
               f"pyarrow={pa.__version__}; rows={args.rows}")
     finally:
