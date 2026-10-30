@@ -8,6 +8,15 @@ available via `git log`.
 
 ### Added
 
+- ABR-03 (#40): atomic `ArrowScan.cancel()` requests with explicit admission
+  results and a read-only `cancel_requested` flag. Native gather and buffer
+  copying poll every 256 rows; observed cancellation discards unpublished
+  output and returns C Stream `ECANCELED` with a stable diagnostic, never
+  false clean exhaustion. Existing `close()` remains the deterministic
+  resource-release API. Opt-in stats add gathered progress and cancelled
+  callback counts, with test-only native allocation latches validating
+  in-flight cancellation without production test hooks.
+
 - ABR-02 (#39): an optional `--isolated` Arrow benchmark runner alongside the
   existing quick comparison. Seed datasets in a separate process; run every
   mode/repeat/scope in a fresh read-only worker; validate actual ordered

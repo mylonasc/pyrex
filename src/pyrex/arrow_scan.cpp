@@ -20,6 +20,38 @@ struct ArrowScanMetricsState {
 
 namespace {
 
+constexpr size_t kCancellationPollRows = 256;
+
+// Progress is published at polling boundaries, not by taking a metrics lock
+// per row. The destructor also flushes a partial/failed gather attempt.
+class GatherProgress {
+public:
+    GatherProgress(std::atomic<uint64_t>* total, const std::vector<std::string>& keys,
+                   const std::vector<std::string>& values, uint64_t* staged,
+                   const uint64_t& key_bytes, const uint64_t& value_bytes)
+        : total_(total), keys_(keys), values_(values), staged_(staged),
+          key_bytes_(key_bytes), value_bytes_(value_bytes) {}
+    ~GatherProgress() {
+        flush();
+        if (staged_) *staged_ = key_bytes_ + value_bytes_;
+    }
+    void flush() {
+        if (!total_) return;
+        const auto count = keys_.size() < values_.size() ? keys_.size() : values_.size();
+        if (count > recorded_)
+            total_->fetch_add(static_cast<uint64_t>(count - recorded_), std::memory_order_relaxed);
+        recorded_ = count;
+    }
+private:
+    std::atomic<uint64_t>* total_;
+    const std::vector<std::string>& keys_;
+    const std::vector<std::string>& values_;
+    size_t recorded_ = 0;
+    uint64_t* staged_;
+    const uint64_t& key_bytes_;
+    const uint64_t& value_bytes_;
+};
+
 // Batch-phase clocks and accounting are opt-in; disabled scans do not call
 // the clock or lock a metrics mutex. The caller keeps metrics alive.
 class PhaseTimer {
@@ -134,6 +166,18 @@ void free_batch_array(ArrowArray* array) {
     array->release = nullptr;
     array->private_data = nullptr;
 }
+
+// An unpublished batch has the same release path as consumer-owned output.
+// It can therefore be abandoned on any build-phase cancellation checkpoint
+// without leaking partially filled buffers or counting successful output.
+struct PendingBatch {
+    ArrowArray array{};
+    ~PendingBatch() { if (array.release) array.release(&array); }
+    void publish(ArrowArray* out) {
+        *out = array;
+        array.release = nullptr;
+    }
+};
 
 void fill_binary_child(ArrowArray* child, int64_t n, ChildBuffers* owned) {
     std::memset(child, 0, sizeof(ArrowArray));
@@ -353,6 +397,15 @@ void PyArrowScan::close() {
     parent_->unregister_scan(this);
 }
 
+bool PyArrowScan::cancel() {
+    auto expected = Control::Active;
+    return control_.compare_exchange_strong(expected, Control::CancelRequested);
+}
+
+bool PyArrowScan::cancel_requested() const {
+    return control_.load() == Control::CancelRequested;
+}
+
 bool PyArrowScan::is_closed() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return closed_;
@@ -363,7 +416,9 @@ uint64_t PyArrowScan::sequence_number() const { return snapshot_seq_; }
 std::optional<ArrowScanStatistics> PyArrowScan::statistics() const {
     if (!metrics_) return std::nullopt;
     std::lock_guard<std::mutex> lock(metrics_->mutex);
-    return metrics_->totals;
+    auto snapshot = metrics_->totals;
+    snapshot.rows_gathered = rows_gathered_.load(std::memory_order_relaxed);
+    return snapshot;
 }
 
 void PyArrowScan::invalidate_for_db_close(rocksdb::DB* db_raw) {
@@ -376,6 +431,8 @@ void PyArrowScan::invalidate_for_db_close(rocksdb::DB* db_raw) {
 }
 
 std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
+    auto expected = Control::Active;
+    control_.compare_exchange_strong(expected, Control::Terminal);
     if (iter_) {
         delete iter_;
         iter_ = nullptr;
@@ -389,26 +446,34 @@ std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
     return std::move(shared_snapshot_);
 }
 
-bool PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values) {
+PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
+                                                      uint64_t& staged_payload_bytes) {
+    if (cancel_requested()) return GatherResult::Cancelled;
     if (closed_) throw RocksDBException("Arrow scan is closed.");
-    if (exhausted_) return false;
+    if (exhausted_) return GatherResult::End;
     if (stop_reached_) {
         exhausted_ = true;
-        return false;
+        return GatherResult::End;
     }
     if (!iter_) throw RocksDBException("Arrow scan is no longer valid: database was closed.");
 
     keys.clear();
     values.clear();
+    uint64_t key_total = 0;
+    uint64_t value_total = 0;
+    GatherProgress progress(metrics_ ? &rows_gathered_ : nullptr, keys, values,
+                            metrics_ ? &staged_payload_bytes : nullptr, key_total, value_total);
     // Reserve one batch worth of row slots; payloads stream into the strings.
     keys.reserve(batch_size_ < 1024 ? batch_size_ : 1024);
     values.reserve(batch_size_ < 1024 ? batch_size_ : 1024);
 
-    uint64_t key_total = 0;
-    uint64_t value_total = 0;
     bool hit_stop = false;
 
     while (iter_->Valid() && keys.size() < batch_size_) {
+        if ((keys.size() & (kCancellationPollRows - 1)) == 0) {
+            progress.flush();
+            if (cancel_requested()) return GatherResult::Cancelled;
+        }
         rocksdb::Slice key = iter_->key();
         if (has_eff_stop_ && compare_bytes(key.data(), key.size(), eff_stop_.data(), eff_stop_.size()) >= 0) {
             hit_stop = true;
@@ -434,8 +499,8 @@ bool PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<
                                    "; raise max_batch_bytes or pass allow_overflow=True.");
         }
         keys.emplace_back(key.data(), key.size());
-        values.emplace_back(value.data(), value.size());
         key_total += key_len;
+        values.emplace_back(value.data(), value.size());
         value_total += value_len;
         iter_->Next();
     }
@@ -445,7 +510,18 @@ bool PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<
         throw RocksDBException("scan_arrow: iterator error: " + s.ToString());
     }
     if (hit_stop) stop_reached_ = true;
-    return !keys.empty();
+    if (cancel_requested()) return GatherResult::Cancelled;
+    return keys.empty() ? GatherResult::End : GatherResult::Batch;
+}
+
+int PyArrowScan::cancelled_next() {
+    cancellation_observed_.store(true, std::memory_order_release);
+    if (metrics_) {
+        std::lock_guard<std::mutex> lock(metrics_->mutex);
+        ++metrics_->totals.cancelled_calls;
+    }
+    if (parent_) parent_->detach_scan_resources(this, false);
+    return ECANCELED;
 }
 
 int PyArrowScan::fill_schema(ArrowSchema* out) {
@@ -491,16 +567,18 @@ int PyArrowScan::fill_next(ArrowArray* out) {
 
     std::vector<std::string> keys;
     std::vector<std::string> values;
-    bool have_batch = false;
     bool clean_end = false;
+    bool cancelled = false;
+    uint64_t staged_payload_bytes = 0;
     std::string error;
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
         PhaseTimer gather_timer(metrics_.get(), &ArrowScanStatistics::gather_time_ns);
         try {
-            have_batch = gather_next_batch(keys, values);
-            if (!have_batch) clean_end = true;  // exhausted or stop reached
+            const auto result = gather_next_batch(keys, values, staged_payload_bytes);
+            clean_end = result == GatherResult::End;
+            cancelled = result == GatherResult::Cancelled;
         } catch (const std::exception& e) {
             error = e.what();
         } catch (...) {
@@ -512,13 +590,11 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     }
 
     if (metrics_) {
-        uint64_t staged = 0;
-        for (const auto& key : keys) staged += key.size();
-        for (const auto& value : values) staged += value.size();
         std::lock_guard<std::mutex> lock(metrics_->mutex);
-        if (staged > metrics_->totals.peak_staged_payload_bytes)
-            metrics_->totals.peak_staged_payload_bytes = staged;
+        if (staged_payload_bytes > metrics_->totals.peak_staged_payload_bytes)
+            metrics_->totals.peak_staged_payload_bytes = staged_payload_bytes;
     }
+    if (cancelled || cancel_requested()) return cancelled_next();
     if (!error.empty()) {
         // Deterministic failure: tear the scan down so a later get_next
         // keeps failing instead of masquerading as end-of-stream.
@@ -526,6 +602,11 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         return EIO;
     }
     if (clean_end) {
+        // If an accepted request wins this transition, EOS must become an
+        // error. If EOF wins, subsequent cancel() requests return false.
+        auto expected = Control::Active;
+        control_.compare_exchange_strong(expected, Control::Terminal);
+        if (cancel_requested()) return cancelled_next();
         if (parent_) parent_->detach_scan_resources(this, true);
         out->release = nullptr;  // end-of-stream marker
         return 0;
@@ -537,8 +618,12 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     const int64_t n = static_cast<int64_t>(keys.size());
     uint64_t key_bytes = 0;
     uint64_t value_bytes = 0;
-    for (const auto& k : keys) key_bytes += k.size();
-    for (const auto& v : values) value_bytes += v.size();
+    for (size_t i = 0; i < keys.size(); ++i) {
+        if ((i & (kCancellationPollRows - 1)) == 0 && cancel_requested())
+            return cancelled_next();
+        key_bytes += keys[i].size();
+        value_bytes += values[i].size();
+    }
 
     auto* priv = new (std::nothrow) BatchBuffers();
     if (!priv) {
@@ -600,6 +685,20 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         return ENOMEM;
     }
 
+    fill_binary_child(priv->key_array, n, key_owned);
+    fill_binary_child(priv->value_array, n, value_owned);
+    priv->parent_buffers[0] = nullptr;
+    priv->child_pointers[0] = priv->key_array;
+    priv->child_pointers[1] = priv->value_array;
+    PendingBatch pending;
+    pending.array.length = n;
+    pending.array.n_buffers = 1;
+    pending.array.buffers = priv->parent_buffers;
+    pending.array.n_children = 2;
+    pending.array.children = priv->child_pointers;
+    pending.array.release = &free_batch_array;
+    pending.array.private_data = priv;
+
     auto* ko = static_cast<int32_t*>(key_owned->offsets);
     auto* vo = static_cast<int32_t*>(value_owned->offsets);
     auto* kd = static_cast<char*>(key_owned->data);
@@ -607,6 +706,8 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     ko[0] = 0;
     vo[0] = 0;
     for (int64_t i = 0; i < n; ++i) {
+        if ((static_cast<uint64_t>(i) & (kCancellationPollRows - 1)) == 0 && cancel_requested())
+            return cancelled_next();
         if (!keys[static_cast<size_t>(i)].empty()) {
             std::memcpy(kd, keys[static_cast<size_t>(i)].data(), keys[static_cast<size_t>(i)].size());
             kd += keys[static_cast<size_t>(i)].size();
@@ -619,11 +720,10 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         vo[i + 1] = vo[i] + static_cast<int32_t>(values[static_cast<size_t>(i)].size());
     }
 
-    fill_binary_child(priv->key_array, n, key_owned);
-    fill_binary_child(priv->value_array, n, value_owned);
-    priv->parent_buffers[0] = nullptr;
-    priv->child_pointers[0] = priv->key_array;
-    priv->child_pointers[1] = priv->value_array;
+    // Publication decision: cancellation observed here discards the entire
+    // owned batch. A request after this checkpoint may still race with a
+    // fully committed batch; the following get_next reports cancellation.
+    if (cancel_requested()) return cancelled_next();
 
     // Publish counters only for a fully constructed batch. Each child owns
     // its own capacity accounting because consumers may detach/move children
@@ -652,20 +752,12 @@ int PyArrowScan::fill_next(ArrowArray* out) {
         if (s.live_buffer_bytes > s.peak_live_buffer_bytes) s.peak_live_buffer_bytes = s.live_buffer_bytes;
     }
 
-    out->length = n;
-    out->null_count = 0;
-    out->offset = 0;
-    out->n_buffers = 1;
-    out->buffers = priv->parent_buffers;
-    out->n_children = 2;
-    out->children = priv->child_pointers;
-    out->dictionary = nullptr;
-    out->release = &free_batch_array;
-    out->private_data = priv;
+    pending.publish(out);
     return 0;
 }
 
 const char* PyArrowScan::last_error_cstr() {
+    if (cancellation_observed_.load(std::memory_order_acquire)) return "scan_arrow: cancelled";
     std::lock_guard<std::mutex> lock(mutex_);
     return last_error_.empty() ? "scan_arrow: native allocation or stream failure" : last_error_.c_str();
 }

@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -37,6 +38,8 @@ struct ArrowScanStatistics {
     uint64_t get_next_calls = 0;
     uint64_t batches_emitted = 0;
     uint64_t rows_emitted = 0;
+    uint64_t rows_gathered = 0;
+    uint64_t cancelled_calls = 0;
     uint64_t key_bytes_emitted = 0;
     uint64_t value_bytes_emitted = 0;
     uint64_t offset_bytes_emitted = 0;
@@ -141,6 +144,10 @@ public:
     // snapshot. Idempotent. Already exported batches stay valid (owned
     // buffers) but further get_next calls fail.
     void close();
+    // Atomic request only; never waits for the scan/lifecycle mutex. Returns
+    // true once if accepted, false after an earlier request or termination.
+    bool cancel();
+    bool cancel_requested() const;
     bool is_closed() const;
     uint64_t sequence_number() const;
     // None when collection was not requested. Does not touch native DB/CF
@@ -176,10 +183,13 @@ private:
     const char* last_error_cstr();
 
     // Gathers the next batch under the scan mutex with the GIL released by
-    // the caller. Returns true with `keys`/`values` filled when a batch is
-    // ready, false at clean end-of-stream. Throws RocksDBException on I/O,
+    // the caller. Distinguishes a ready batch, clean end and cancellation.
+    // Throws RocksDBException on I/O,
     // overflow or lifecycle errors.
-    bool gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values);
+    enum class GatherResult { Batch, End, Cancelled };
+    GatherResult gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
+                                   uint64_t& staged_payload_bytes);
+    int cancelled_next();
     // Releases iterator + owned snapshot. Caller holds mutex_ (via the
     // parent detach helper or invalidate_for_db_close); db_raw may be
     // null when the parent DB is already gone (then the snapshot was already
@@ -217,6 +227,13 @@ private:
     // batch is still emitted, the *next* get_next ends the stream.
     bool stop_reached_ = false;
     std::string last_error_;
+    // EOF/close and cancel admission are serialized by one atomic state.
+    // A terminal scan rejects a late request; accepted cancellation stays
+    // distinguishable from clean EOF even after native resources are freed.
+    enum class Control { Active, CancelRequested, Terminal };
+    std::atomic<Control> control_{Control::Active};
+    std::atomic<bool> cancellation_observed_{false};
+    std::atomic<uint64_t> rows_gathered_{0};
     // Shared with exported child buffers, so release accounting outlives the
     // stream and the DB. No parent/scan lock is taken by buffer callbacks.
     std::shared_ptr<ArrowScanMetricsState> metrics_;

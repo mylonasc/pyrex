@@ -217,6 +217,8 @@ void bind_pyrex(py::module_& m) {
         .def("__arrow_c_stream__", &PyArrowScan::export_stream, py::arg("requested_schema") = nullptr,
              "Exports the scan as an ArrowArrayStream PyCapsule (single-consumer).")
         .def("close", &PyArrowScan::close, "Closes the scan early, releasing its iterator and snapshot resources. Already exported batches stay valid.", py::call_guard<py::gil_scoped_release>())
+        .def("cancel", &PyArrowScan::cancel, "Request cooperative cancellation without waiting for native scan locks. True once if accepted; False after an earlier request or termination. Close to release idle scans.")
+        .def_property_readonly("cancel_requested", &PyArrowScan::cancel_requested, "Whether a cancellation request was accepted; remains true after cleanup.")
         .def_property_readonly("sequence_number", &PyArrowScan::sequence_number, "Sequence number of the read view this scan observes.")
         .def_property_readonly("is_closed", &PyArrowScan::is_closed, "True after close() or database closure.")
         .def_property_readonly("stats", [](const PyArrowScan& scan) -> py::object {
@@ -227,6 +229,8 @@ void bind_pyrex(py::module_& m) {
             out["get_next_calls"] = s.get_next_calls;
             out["batches_emitted"] = s.batches_emitted;
             out["rows_emitted"] = s.rows_emitted;
+            out["rows_gathered"] = s.rows_gathered;
+            out["cancelled_calls"] = s.cancelled_calls;
             out["key_bytes_emitted"] = s.key_bytes_emitted;
             out["value_bytes_emitted"] = s.value_bytes_emitted;
             out["offset_bytes_emitted"] = s.offset_bytes_emitted;
