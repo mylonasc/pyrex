@@ -335,6 +335,15 @@ void bind_pyrex(py::module_& m) {
         .def_property_readonly("snapshot_sequence_number", &PyTransaction::snapshot_sequence_number,
             "The pinned snapshot's sequence (int, including zero), or None without a snapshot. Raises after commit, rollback, or database closure; does not acquire or reset a snapshot.")
         .def("new_iterator", &PyTransaction::new_iterator, py::arg("read_options") = nullptr, "Creates an iterator over the transaction view.", py::keep_alive<0, 1>())
+        .def("arrow_capabilities", &PyTransaction::arrow_capabilities, "Transaction-local Arrow contract and frozen-mutation policy.")
+        .def("scan_arrow", &PyTransaction::scan_arrow, py::arg("prefix") = nullptr, py::arg("start") = nullptr,
+             py::arg("stop") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false,
+             "Scan transaction-local writes/deletes at a stable view; mutation/completion is rejected until native scan resources are released.")
+        .def("scan_arrow_cf", &PyTransaction::scan_arrow_cf, py::arg("cf_handle"), py::arg("prefix") = nullptr,
+             py::arg("start") = nullptr, py::arg("stop") = nullptr, py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def_property_readonly("is_active", &PyTransaction::is_active, "True while the transaction can still be used.")
         .def("__enter__", [](PyTransaction &txn) -> PyTransaction& { return txn; })
         .def("__exit__", [](PyTransaction &txn, py::object /* type */, py::object /* value */, py::object /* traceback */) {

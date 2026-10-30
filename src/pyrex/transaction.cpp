@@ -1,4 +1,5 @@
 #include "transaction.hpp"
+#include "arrow_scan.hpp"
 
 #include "exceptions.hpp"
 #include "transaction_db.hpp"
@@ -73,6 +74,12 @@ void PyTransaction::check_active() const {
     }
 }
 
+void PyTransaction::check_mutable() const {
+    check_active();
+    if (active_arrow_scans_.load())
+        throw RocksDBException("Transaction has active Arrow scans; close or exhaust them before mutation, snapshot reset, commit or rollback.");
+}
+
 void PyTransaction::invalidate_from_parent_close() {
     invalidate_iterators();
     if (txn_) {
@@ -103,7 +110,7 @@ void PyTransaction::invalidate_iterators() {
 
 void PyTransaction::put(const py::bytes& key, const py::bytes& value) {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     rocksdb::Slice value_slice(static_cast<std::string_view>(value));
     rocksdb::Status s = txn_->Put(key_slice, value_slice);
@@ -112,7 +119,7 @@ void PyTransaction::put(const py::bytes& key, const py::bytes& value) {
 
 void PyTransaction::put_cf(PyColumnFamilyHandle& cf, const py::bytes& key, const py::bytes& value) {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     check_cf(cf);
     auto s = txn_->Put(cf.cf_handle_, rocksdb::Slice(static_cast<std::string_view>(key)),
                        rocksdb::Slice(static_cast<std::string_view>(value)));
@@ -139,7 +146,7 @@ py::object PyTransaction::get_cf(PyColumnFamilyHandle& cf, const py::bytes& key,
 
 void PyTransaction::del_cf(PyColumnFamilyHandle& cf, const py::bytes& key) {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     check_cf(cf);
     auto s = txn_->Delete(cf.cf_handle_, rocksdb::Slice(static_cast<std::string_view>(key)));
     if (!s.ok()) throw_rocksdb_status(s, "Transaction delete_cf failed");
@@ -171,7 +178,7 @@ py::object PyTransaction::get_for_update(const py::bytes& key, std::shared_ptr<P
     {
         py::gil_scoped_release release;
         OperationGuard guard(*this);
-        check_active();
+        check_mutable();
         opts.snapshot = txn_->GetSnapshot();
         s = txn_->GetForUpdate(opts, rocksdb::Slice(key_storage), value, exclusive, do_validate);
     }
@@ -183,7 +190,7 @@ py::object PyTransaction::get_for_update(const py::bytes& key, std::shared_ptr<P
 
 void PyTransaction::del(const py::bytes& key) {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     rocksdb::Slice key_slice(static_cast<std::string_view>(key));
     rocksdb::Status s = txn_->Delete(key_slice);
     if (!s.ok()) throw_rocksdb_status(s, "Transaction delete failed");
@@ -191,7 +198,7 @@ void PyTransaction::del(const py::bytes& key) {
 
 void PyTransaction::write(PyWriteBatch& batch) {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     auto handler = [&] {
         std::lock_guard<std::shared_mutex> lock(parent_db_->arrow_mutex_);
         for (const auto& cf : batch.families_) parent_db_->require_cf(*cf);
@@ -203,7 +210,7 @@ void PyTransaction::write(PyWriteBatch& batch) {
 
 void PyTransaction::commit(std::shared_ptr<PyWriteOptions> write_options) {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     if (write_options) {
         txn_->SetWriteOptions(write_options->options_);
     }
@@ -220,7 +227,7 @@ void PyTransaction::commit(std::shared_ptr<PyWriteOptions> write_options) {
 
 void PyTransaction::rollback() {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     rocksdb::Status s = txn_->Rollback();
     if (!s.ok()) throw_rocksdb_status(s, "Transaction rollback failed");
     invalidate_iterators();
@@ -234,7 +241,7 @@ void PyTransaction::rollback() {
 
 void PyTransaction::set_snapshot() {
     OperationGuard guard(*this);
-    check_active();
+    check_mutable();
     txn_->SetSnapshot();
 }
 
@@ -255,6 +262,59 @@ std::shared_ptr<PyTransactionIterator> PyTransaction::new_iterator(std::shared_p
     opts.snapshot = txn_->GetSnapshot();
     rocksdb::Iterator* raw_iter = txn_->GetIterator(opts);
     return std::make_shared<PyTransactionIterator>(raw_iter, shared_from_this());
+}
+
+std::shared_ptr<PyArrowScan> PyTransaction::scan_arrow_impl(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object prefix, py::object start, py::object stop, size_t batch_size, size_t max_batch_bytes,
+        std::shared_ptr<PyReadOptions> read_options, bool allow_overflow, bool collect_metrics) {
+    if (batch_size < 1 || batch_size > 16 * 1024 * 1024 || max_batch_bytes < 1 ||
+            max_batch_bytes > size_t{4} * 1024 * 1024 * 1024)
+        throw py::value_error("Transaction.scan_arrow: invalid batch_size or max_batch_bytes");
+    auto bound = [](const py::object& obj, bool& present, std::string& storage) {
+        present = !obj.is_none();
+        if (!present) return;
+        if (!py::isinstance<py::bytes>(obj)) throw py::type_error("Transaction.scan_arrow bounds must be bytes or None");
+        storage = py::cast<std::string>(obj);
+    };
+    PyArrowScan::Config config;
+    bound(prefix, config.has_prefix, config.prefix);
+    bound(start, config.has_start, config.start);
+    bound(stop, config.has_stop, config.stop);
+    if (config.has_start && config.has_stop && config.start.compare(config.stop) > 0)
+        throw py::value_error("Transaction.scan_arrow: start must be <= stop");
+    config.batch_size = batch_size;
+    config.max_batch_bytes = max_batch_bytes;
+    config.allow_overflow = allow_overflow;
+    config.collect_metrics = collect_metrics;
+    return std::make_shared<PyArrowScan>(parent_db_, cf, config, nullptr, read_options, shared_from_this());
+}
+
+std::shared_ptr<PyArrowScan> PyTransaction::scan_arrow(py::object prefix, py::object start, py::object stop,
+        size_t batch_size, size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+        bool allow_overflow, bool collect_metrics) {
+    return scan_arrow_impl(nullptr, prefix, start, stop, batch_size, max_batch_bytes,
+                           read_options, allow_overflow, collect_metrics);
+}
+
+std::shared_ptr<PyArrowScan> PyTransaction::scan_arrow_cf(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object prefix, py::object start, py::object stop, size_t batch_size, size_t max_batch_bytes,
+        std::shared_ptr<PyReadOptions> read_options, bool allow_overflow, bool collect_metrics) {
+    if (!cf) throw py::value_error("cf_handle must not be None");
+    return scan_arrow_impl(cf, prefix, start, stop, batch_size, max_batch_bytes,
+                           read_options, allow_overflow, collect_metrics);
+}
+
+py::dict PyTransaction::arrow_capabilities() const {
+    auto result = parent_db_->arrow_capabilities();
+    result["snapshot_scope"] = "transaction_local_frozen_writes";
+    result["scan_arrow_ranges"] = false;
+    result["scan_arrow_ranges_cf"] = false;
+    result["multi_get_arrow"] = false;
+    result["multi_get_arrow_cf"] = false;
+    result["snapshot_at"] = "transaction_snapshot_or_scan_creation";
+    result["mutation_policy"] = "reject_while_native_arrow_resources_active";
+    result["explicit_shared_snapshot_argument"] = false;
+    return result;
 }
 
 bool PyTransaction::is_active() const {
