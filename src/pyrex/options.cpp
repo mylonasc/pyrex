@@ -1,6 +1,7 @@
 #include "options.hpp"
 
 #include <array>
+#include <stdexcept>
 
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/table.h"
@@ -19,6 +20,22 @@ const rocksdb::ReadOptions& PyReadOptions::native_options() const {
 
 bool PyReadOptions::get_fill_cache() const {
     return (flags_.load(std::memory_order_relaxed) & kFillCache) != 0;
+}
+
+rocksdb::ReadOptions PyReadOptions::iterator_options() const {
+    auto result = native_options();
+    result.readahead_size = readahead_size_.load(std::memory_order_relaxed);
+    return result;
+}
+
+size_t PyReadOptions::get_readahead_size() const {
+    return readahead_size_.load(std::memory_order_relaxed);
+}
+
+void PyReadOptions::set_readahead_size(size_t value) {
+    if (value > size_t{1024} * 1024 * 1024)
+        throw std::invalid_argument("readahead_size must be in [0, 1073741824]");
+    readahead_size_.store(value, std::memory_order_relaxed);
 }
 void PyReadOptions::set_fill_cache(bool value) {
     if (value) flags_.fetch_or(kFillCache, std::memory_order_relaxed);

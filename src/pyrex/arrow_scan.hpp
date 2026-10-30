@@ -165,6 +165,7 @@ public:
     // None when collection was not requested. Does not touch native DB/CF
     // resources and remains readable after close, error and exhaustion.
     std::optional<ArrowScanStatistics> statistics() const;
+    py::dict configuration() const;
 
     const std::string& cf_name() const { return cf_name_; }
 
@@ -226,6 +227,9 @@ private:
     size_t batch_size_;
     size_t max_batch_bytes_;
     bool allow_overflow_;
+    bool fill_cache_ = true;
+    bool verify_checksums_ = true;
+    size_t readahead_size_ = 0;
     bool multi_range_ = false;
     std::vector<Range> ranges_;
     size_t range_position_ = 0;

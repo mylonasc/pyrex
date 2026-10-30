@@ -61,7 +61,7 @@ Feature index
      - Validated scan controls and capability contract
      - P2
      - ABR-01
-     - Planned
+     - Implemented on stacked feature branch; review pending
    * - `ABR-07 <https://github.com/mylonasc/pyrex/issues/44>`_
      - Measured native builder/buffer-copy optimization
      - P2

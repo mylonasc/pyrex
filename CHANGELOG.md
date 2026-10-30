@@ -8,6 +8,13 @@ available via `git log`.
 
 ### Added
 
+- ABR-06 (#43): versioned per-DB `arrow_capabilities()` and per-stream
+  `configuration` snapshots describe actual schemas, limits, ordering,
+  snapshot scope, cancellation and controls. `ReadOptions.readahead_size`
+  adds an atomic iterator-only hint captured at creation, without changing
+  the ordinary point-read fast path. Arrow iterators require total-order
+  seeking; unsupported prefix/tailing/raw-bound options remain rejected.
+
 - ABR-05 (#42): `scan_arrow_ranges()` / `scan_arrow_ranges_cf()` stream an
   ordered union of bytewise ranges and prefixes at one pinned snapshot.
   Overlaps/duplicates are normalized; native seeks skip gaps without

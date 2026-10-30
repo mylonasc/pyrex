@@ -251,7 +251,7 @@ std::shared_ptr<PyTransactionIterator> PyTransaction::new_iterator(std::shared_p
     py::gil_scoped_release release;
     OperationGuard guard(*this);
     check_active();
-    rocksdb::ReadOptions opts = read_options ? read_options->native_options() : rocksdb::ReadOptions();
+    rocksdb::ReadOptions opts = read_options ? read_options->iterator_options() : rocksdb::ReadOptions();
     opts.snapshot = txn_->GetSnapshot();
     rocksdb::Iterator* raw_iter = txn_->GetIterator(opts);
     return std::make_shared<PyTransactionIterator>(raw_iter, shared_from_this());

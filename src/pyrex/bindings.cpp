@@ -101,7 +101,9 @@ void bind_pyrex(py::module_& m) {
     )doc")
         .def(py::init<>(), "Constructs a new ReadOptions object with default settings.")
         .def_property("fill_cache", &PyReadOptions::get_fill_cache, &PyReadOptions::set_fill_cache, "If True, reads will fill the block cache. Defaults to True.")
-        .def_property("verify_checksums", &PyReadOptions::get_verify_checksums, &PyReadOptions::set_verify_checksums, "If True, all data read from underlying storage will be verified against its checksums. Defaults to True.");
+        .def_property("verify_checksums", &PyReadOptions::get_verify_checksums, &PyReadOptions::set_verify_checksums, "If True, all data read from underlying storage will be verified against its checksums. Defaults to True.")
+        .def_property("readahead_size", &PyReadOptions::get_readahead_size, &PyReadOptions::set_readahead_size,
+                      "Iterator-only readahead hint in bytes, captured at iterator/scan creation. 0 uses RocksDB defaults; maximum 1 GiB. Ignored by point reads.");
 
     py::class_<PyWriteOptions, std::shared_ptr<PyWriteOptions>>(m, "WriteOptions", R"doc(
         Configuration options for write operations (Put, Delete, Write).
@@ -220,6 +222,7 @@ void bind_pyrex(py::module_& m) {
         .def("cancel", &PyArrowScan::cancel, "Request cooperative cancellation without waiting for native scan locks. True once if accepted; False after an earlier request or termination. Close to release idle scans.")
         .def_property_readonly("cancel_requested", &PyArrowScan::cancel_requested, "Whether a cancellation request was accepted; remains true after cleanup.")
         .def_property_readonly("sequence_number", &PyArrowScan::sequence_number, "Sequence number of the read view this scan observes.")
+        .def_property_readonly("configuration", &PyArrowScan::configuration, "Fresh dict of effective creation-time controls, readable after close.")
         .def_property_readonly("is_closed", &PyArrowScan::is_closed, "True after close() or database closure.")
         .def_property_readonly("stats", [](const PyArrowScan& scan) -> py::object {
             const auto snapshot = scan.statistics();
@@ -373,6 +376,7 @@ void bind_pyrex(py::module_& m) {
         .def("get", &point_get<PyTransactionDB>, py::arg("key"), py::arg("read_options") = py::none(), py::arg("snapshot") = py::none(),
              "Reads committed state, optionally at a shared Snapshot. None options/snapshot use the ordinary read path; explicit objects use the validated general path.")
         .def("multi_get", &PyTransactionDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
+        .def("arrow_capabilities", &PyTransactionDB::arrow_capabilities, "Versioned raw-KV Arrow contract for this DB API.")
         .def("multi_get_arrow", &PyTransactionDB::multi_get_arrow, py::arg("keys"), py::arg("batch_size") = 65536,
              py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
              py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
@@ -460,6 +464,7 @@ void bind_pyrex(py::module_& m) {
         .def("get", &point_get<PyRocksDB>, py::arg("key"), py::arg("read_options") = py::none(), py::arg("snapshot") = py::none(),
              "Retrieves a value, optionally at a shared Snapshot. None options/snapshot use the ordinary read path; explicit objects use the validated general path.")
         .def("multi_get", &PyRocksDB::multi_get, py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Returns values or None in input order (maximum 65536 keys).")
+        .def("arrow_capabilities", &PyRocksDB::arrow_capabilities, "Versioned raw-KV Arrow contract for this DB API.")
         .def("multi_get_arrow", &PyRocksDB::multi_get_arrow, py::arg("keys"), py::arg("batch_size") = 65536,
              py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
              py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)

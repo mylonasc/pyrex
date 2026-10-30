@@ -76,6 +76,12 @@ returns the same single-consumer ``ArrowScan`` lifecycle object, with nullable
 order and duplicates; existing ``multi_get`` methods still return lists.
 See :doc:`arrow_scans` for input validation, snapshot and memory contracts.
 
+``db.arrow_capabilities()`` returns the versioned raw-KV contract for that DB
+class. ``stream.configuration`` records effective creation-time controls.
+Both return independent dictionaries and remain readable after close.
+``ReadOptions.readahead_size`` is a captured iterator-only hint, 0..1 GiB;
+point reads ignore it. See :doc:`arrow_scans` for unsupported-control policy.
+
 ``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
 multiple scans. Methods: ``release()``, ``is_valid()``, ``sequence_number``.
 

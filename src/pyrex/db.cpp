@@ -10,10 +10,16 @@
 #include "write_batch.hpp"
 
 #include "rocksdb/iterator.h"
+#include "rocksdb/comparator.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch.h"
 #include <pybind11/stl.h>
+
+namespace {
+constexpr size_t kMaxBatchSize = 16 * 1024 * 1024;
+constexpr size_t kMaxBatchBytes = size_t{4} * 1024 * 1024 * 1024;
+}
 
 PyRocksDB::PyRocksDB()
     : default_read_options_(std::make_shared<PyReadOptions>()),
@@ -307,7 +313,7 @@ std::shared_ptr<PyRocksDBIterator> PyRocksDB::new_iterator(std::shared_ptr<PyRea
     py::gil_scoped_release release;
     std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
     check_db_open();
-    const auto& opts = (read_options ? read_options : default_read_options_)->native_options();
+    const auto opts = (read_options ? read_options : default_read_options_)->iterator_options();
     rocksdb::Iterator* raw_iter = db_->NewIterator(opts, default_cf_handle_);
     {
         std::lock_guard<std::mutex> lock(active_iterators_mutex_);
@@ -317,6 +323,43 @@ std::shared_ptr<PyRocksDBIterator> PyRocksDB::new_iterator(std::shared_ptr<PyRea
 }
 
 PyOptions PyRocksDB::get_options() const { return opened_options_; }
+
+py::dict PyRocksDB::arrow_capabilities() const {
+    py::dict result;
+    result["contract_version"] = 1;
+    const bool cf = dynamic_cast<const PyRocksDBExtended*>(this) != nullptr;
+    result["column_families"] = cf;
+    result["scan_arrow"] = true;
+    result["scan_arrow_ranges"] = true;
+    result["multi_get_arrow"] = true;
+    result["scan_arrow_cf"] = cf;
+    result["scan_arrow_ranges_cf"] = cf;
+    result["multi_get_arrow_cf"] = cf;
+    result["comparator"] = rocksdb::BytewiseComparator()->Name();
+    result["offset_bits"] = 32;
+    result["key_nullable"] = false;
+    result["scan_value_nullable"] = false;
+    result["point_value_nullable"] = true;
+    result["range_order"] = "bytewise_union";
+    result["point_order"] = "input_with_duplicates";
+    result["snapshot_scope"] = "same_db_committed_state";
+    result["snapshot_at"] = "creation";
+    result["owned_output"] = true;
+    result["single_export"] = true;
+    result["metrics"] = true;
+    result["cooperative_cancellation"] = true;
+    result["cancellation_poll_rows"] = 256;
+    result["batch_size_range"] = py::make_tuple(1, kMaxBatchSize);
+    result["max_batch_bytes_range"] = py::make_tuple(1, kMaxBatchBytes);
+    result["max_point_keys"] = 65536;
+    result["max_selectors_per_argument"] = 65536;
+    result["read_controls"] = py::make_tuple("fill_cache", "verify_checksums", "readahead_size");
+    result["unsupported_controls"] = py::make_tuple("tailing", "prefix_same_as_start", "auto_prefix_mode",
+                                                   "iterate_lower_bound", "iterate_upper_bound", "snapshot");
+    result["readahead_size_range"] = py::make_tuple(0, 1073741824);
+    result["readahead_scope"] = "iterators_only";
+    return result;
+}
 
 std::shared_ptr<PyReadOptions> PyRocksDB::get_default_read_options() {
     std::shared_lock<std::shared_mutex> lock(arrow_mutex_);
@@ -342,9 +385,6 @@ void PyRocksDB::set_default_write_options(std::shared_ptr<PyWriteOptions> opts) 
 // ---------------------------------------------------------------------------
 
 namespace {
-
-constexpr size_t kMaxBatchSize = 16 * 1024 * 1024;
-constexpr size_t kMaxBatchBytes = size_t{4} * 1024 * 1024 * 1024;
 
 int compare_bounds(const std::string& a, const std::string& b) {
     const size_t common = a.size() < b.size() ? a.size() : b.size();
@@ -740,7 +780,7 @@ std::shared_ptr<PyRocksDBIterator> PyRocksDBExtended::new_cf_iterator(PyColumnFa
     check_db_open();
     require_cf(cf_handle);
 
-    const auto& opts = (read_options ? read_options : default_read_options_)->native_options();
+    const auto opts = (read_options ? read_options : default_read_options_)->iterator_options();
     rocksdb::Iterator* raw_iter = db_->NewIterator(opts, cf_handle.cf_handle_);
     {
         std::lock_guard<std::mutex> lock(active_iterators_mutex_);
