@@ -164,6 +164,11 @@ returns the same single-consumer <code class="docutils literal notranslate"><spa
 <code class="docutils literal notranslate"><span class="pre">multi_get_arrow_cf(cf_handle,</span> <span class="pre">keys,</span> <span class="pre">...)</span></code>. These methods preserve input
 order and duplicates; existing <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> methods still return lists.
 See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for input validation, snapshot and memory contracts.</p>
+<p><code class="docutils literal notranslate"><span class="pre">db.arrow_capabilities()</span></code> returns the versioned raw-KV contract for that DB
+class. <code class="docutils literal notranslate"><span class="pre">stream.configuration</span></code> records effective creation-time controls.
+Both return independent dictionaries and remain readable after close.
+<code class="docutils literal notranslate"><span class="pre">ReadOptions.readahead_size</span></code> is a captured iterator-only hint, 0..1 GiB;
+point reads ignore it. See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for unsupported-control policy.</p>
 <p><code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> is a pinned read view from <code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> shareable by
 multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
 <p>The same snapshot also pins <code class="docutils literal notranslate"><span class="pre">get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> and their CF variants.

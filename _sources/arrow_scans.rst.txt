@@ -425,6 +425,42 @@ binary key/value with independent owned batches. Existing scan signatures
 are unchanged. ``benchmarks/bench_arrow_ranges.py`` compares against separate
 scans sharing the same explicit snapshot and verifies ordered digests.
 
+Capability and configuration contract (ABR-06)
+------------------------------------------------
+
+``db.arrow_capabilities()`` returns a fresh dictionary with
+``contract_version=1`` and the actual API surface for that DB class. It reports
+default/named-CF methods, binary offset width/nullability, point/range ordering,
+creation-time same-DB committed snapshot scope, independent owned output,
+single export, metrics/cancellation and numeric row/byte/input limits. This is
+a raw-KV contract, not graph decoding, transaction-local visibility or a
+whole-process memory guarantee. Reading it does not touch an open DB.
+
+``stream.configuration`` is a fresh, read-only-property dictionary recording
+effective creation-time source, CF, row/byte limits, overflow/metrics choices
+and read controls; it remains readable after close. Mutating either returned
+dictionary does not reconfigure anything. Consumers should check the contract
+version and capabilities rather than infer behavior from a package version.
+
+Existing ``ReadOptions.fill_cache`` and ``verify_checksums`` remain supported.
+``ReadOptions.readahead_size`` is an atomic iterator-only hint from 0 to 1 GiB;
+zero delegates to RocksDB defaults. Arrow and ordinary DB/CF/transaction
+iterators copy it at creation, so later mutation/destruction cannot change
+their controls. Point Get/MultiGet paths ignore this irrelevant hint and keep
+their existing fast-path configuration. Point streams report effective
+readahead as zero. Separate property assignments are not a multi-field atomic
+transaction; configure the object before sharing it for stream creation.
+
+Arrow iterators explicitly use total-order seeks and owned bound storage.
+Custom comparators are rejected at establishment. ``ReadOptions`` deliberately
+does not expose tailing, prefix-only seek modes, raw bound buffers or raw
+snapshot pointers: setting these attributes fails, rather than silently
+accepting unsafe/incomplete-result combinations. Supply bounds/prefixes and
+validated ``Snapshot`` objects through the public scan arguments. Capability
+``unsupported_controls`` refers to these unsupported ReadOptions attributes,
+not to the supported explicit ``snapshot=`` argument. No mutable/buffer-bearing
+control is borrowed from caller storage.
+
 Reference
 ---------
 
