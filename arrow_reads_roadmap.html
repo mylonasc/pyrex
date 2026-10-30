@@ -142,7 +142,7 @@ current feature-availability matrix. These follow-ups cover remaining work.</p>
 <td><p>Cooperative in-flight cancellation and C Stream errors</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Planned</p></td>
+<td><p>Implemented on feature branch; review pending</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/41">ABR-04</a></p></td>
 <td><p>Snapshot-consistent Arrow batched point lookups</p></td>
@@ -187,8 +187,8 @@ requiring PyArrow/Polars in core PyRex. See <a class="reference internal" href="
 <code class="docutils literal notranslate"><span class="pre">collect_metrics=True</span></code> / <code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code> contract.</p>
 <p>ABR-01 does not replace the existing benchmark. ABR-02 adds an isolated mode
 and uses ABR-01 counters for fresh-process resource experiments; see
-<a class="reference internal" href="arrow_benchmarks.html"><span class="doc">Isolated Arrow Benchmarks (ABR-02)</span></a>. Likewise, existing
-<code class="docutils literal notranslate"><span class="pre">close()</span></code> is not ABR-03’s in-gather cancellation request.</p>
+<a class="reference internal" href="arrow_benchmarks.html"><span class="doc">Isolated Arrow Benchmarks (ABR-02)</span></a>. ABR-03 adds an independent, atomic cancellation
+request; existing <code class="docutils literal notranslate"><span class="pre">close()</span></code> remains the synchronous resource-release API.</p>
 </section>
 <section id="scope-boundaries">
 <h2>Scope boundaries<a class="headerlink" href="#scope-boundaries" title="Link to this heading"></a></h2>

@@ -46,7 +46,7 @@ Feature index
      - Cooperative in-flight cancellation and C Stream errors
      - P1
      - ABR-01
-     - Planned
+     - Implemented on feature branch; review pending
    * - `ABR-04 <https://github.com/mylonasc/pyrex/issues/41>`_
      - Snapshot-consistent Arrow batched point lookups
      - P1
@@ -85,8 +85,8 @@ requiring PyArrow/Polars in core PyRex. See :doc:`arrow_scans` for its public
 
 ABR-01 does not replace the existing benchmark. ABR-02 adds an isolated mode
 and uses ABR-01 counters for fresh-process resource experiments; see
-:doc:`arrow_benchmarks`. Likewise, existing
-``close()`` is not ABR-03's in-gather cancellation request.
+:doc:`arrow_benchmarks`. ABR-03 adds an independent, atomic cancellation
+request; existing ``close()`` remains the synchronous resource-release API.
 
 Scope boundaries
 ----------------

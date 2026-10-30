@@ -60,6 +60,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#snapshot-consistent-materialization">Snapshot-consistent materialization</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#column-family-integration-opportunities">Column-family integration opportunities</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#lifecycle-and-safety">Lifecycle and safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cooperative-cancellation-abr-03">Cooperative cancellation (ABR-03)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
 </ul>
 </li>
@@ -182,6 +183,16 @@ clean exhaustion and failures; not Python calls or RocksDB IO count.</p></td>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rows_emitted</span></code>, <code class="docutils literal notranslate"><span class="pre">batches_emitted</span></code></p></td>
 <td><p>Successfully constructed/published output only; no partial batch on
 allocation, size-limit, lifecycle or iterator errors.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rows_gathered</span></code></p></td>
+<td><p>Complete key/value records copied to staging, including discarded or
+failed batches. Live progress is published every 256 rows and at the
+end of an attempt; it can lag by one 256-row polling window.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">cancelled_calls</span></code></p></td>
+<td><p>get_next calls entering the ECANCELED path, including repeat attempts
+after cancellation. Not the number of cancel requests; cleanup can
+still be in progress when the counter becomes visible.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">key_bytes_emitted</span></code>, <code class="docutils literal notranslate"><span class="pre">value_bytes_emitted</span></code></p></td>
 <td><p>Raw KV payload bytes in successful output, not compressed storage IO.</p></td>
@@ -351,6 +362,73 @@ application payloads (JSON, MessagePack, term encodings, graph relations)
 stays with the caller; predicate filtering and graph semantics do not belong
 in PyRex.</p>
 </section>
+<section id="cooperative-cancellation-abr-03">
+<h2>Cooperative cancellation (ABR-03)<a class="headerlink" href="#cooperative-cancellation-abr-03" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ArrowScan.cancel()</span></code> makes an atomic request without acquiring the scan,
+lifecycle or metrics mutex. <code class="docutils literal notranslate"><span class="pre">cancel_requested</span></code> is an atomic read-only flag.
+This permits a control thread to request termination while a consumer is
+inside a long native gather. The request method itself does not wait for
+that gather to finish:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">scan</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">scan_arrow</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">65536</span><span class="p">,</span> <span class="n">collect_metrics</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">reader</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">RecordBatchReader</span><span class="o">.</span><span class="n">from_stream</span><span class="p">(</span><span class="n">scan</span><span class="p">)</span>
+<span class="c1"># Another thread may already be consuming reader.</span>
+<span class="n">accepted</span> <span class="o">=</span> <span class="n">scan</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
+<span class="c1"># The consumer receives a cancellation error at a native checkpoint.</span>
+<span class="c1"># Close the reader/scan in its finally block, especially if it stops pulling.</span>
+</pre></div>
+</div>
+<p>Admission and completion are explicit:</p>
+<ul class="simple">
+<li><p>True means this call accepted the first request. Repeating the request
+returns False; <code class="docutils literal notranslate"><span class="pre">cancel_requested</span></code> remains True after cleanup.</p></li>
+<li><p>After a clean EOF has been committed, after close, or after a terminal
+native error, the request returns False without relabeling that result.
+Merely returning the last data batch is not yet committing clean EOF.</p></li>
+<li><p>Accepted cancellation observed by get_next returns platform
+<code class="docutils literal notranslate"><span class="pre">errno.ECANCELED</span></code> with the stable diagnostic <code class="docutils literal notranslate"><span class="pre">scan_arrow:</span> <span class="pre">cancelled</span></code>.
+Repeated pulls return cancellation errors, never an empty successful scan.
+Arrow consumers surface their own error types (PyArrow commonly raises
+<code class="docutils literal notranslate"><span class="pre">OSError</span></code>); non-Python C Stream consumers have the same error channel.</p></li>
+<li><p>A complete batch whose final publication decision precedes a racing
+request may still return successfully. No partially built batch is returned;
+unpublished buffers are freed through their normal Arrow release path.
+A following get_next observes the accepted request instead of clean EOF.
+An independent native failure can also terminate a call before cancellation
+is observed; failures are never converted to successful exhaustion.</p></li>
+</ul>
+<p>Native gathering, output sizing and buffer-copy loops check every <strong>256
+records</strong>, plus batch/EOF/publication boundaries. There is no per-row Python
+work or per-row metrics lock. A single blocking RocksDB call, allocator call
+or large memcpy is not forcibly interrupted. End-to-end responsiveness is
+also subject to scheduling and Python GIL availability: a consumer that
+holds the GIL for its whole callback prevents another Python thread from
+entering the request method. PyArrow and the raw-CDLL tests release it.</p>
+<p><code class="docutils literal notranslate"><span class="pre">cancel()</span></code> is a request, <strong>not</strong> synchronous close. If no get_next is active,
+the iterator/snapshot can remain pinned until a later pull observes the
+request, or until <code class="docutils literal notranslate"><span class="pre">close()</span></code> / stream release / DB teardown. An active CF
+therefore remains protected from drop after a request alone. Cleanup is
+idempotent; cancellation of one stream does not cancel other streams sharing
+its DB snapshot. Previously exported batches and detached Arrow children
+remain valid after cancellation, stream release, CF drop or DB closure.</p>
+<p><code class="docutils literal notranslate"><span class="pre">close()</span></code> retains its existing deterministic behavior and can wait for a
+native operation. <code class="docutils literal notranslate"><span class="pre">is_closed</span></code> takes the scan mutex as before; use the
+atomic request flag, not that property, on a latency-sensitive control path.
+Do not change the stream’s single-consumer contract by issuing concurrent
+get_next calls from multiple consumers.</p>
+<p>Opt-in <code class="docutils literal notranslate"><span class="pre">stats</span></code> adds gathered progress and cancelled-call counts, alongside
+the existing used/capacity/retention and native-phase metrics. Emitted counters
+include only successfully committed output, not a discarded gather/build.
+Failed/cancelled build time can include its local failure cleanup; it is not
+a universal cancellation latency or a whole-operation timer.</p>
+<p><code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_cancel_overhead.py</span></code> reports the no-request polling
+path with/without metrics, including every repeat. It is runnable against
+ABR-01 and ABR-03 artifacts for same-toolchain comparisons. Controlled latency
+tests pause an actual native allocation during gather/build and save JSON
+with request duration, resumed completion time and gathered progress; these
+are bounded subprocess tests with <strong>no performance thresholds</strong> or production
+test hooks. See <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_cancellation.md</span></code> for measured results and
+reproduction. They do not certify production/worst-case IO cancellation time.</p>
+</section>
 <section id="reference">
 <h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>
 <ul class="simple">
@@ -369,7 +447,7 @@ column family; observes committed state (open-transaction writes excluded).</p><
 snapshots are per-instance and never shared across DB objects)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Snapshot.release()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">Snapshot.sequence_number</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ArrowScan.close()</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.sequence_number</span></code>,
-<code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code></p></li>
+<code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.cancel()</span></code>, <code class="docutils literal notranslate"><span class="pre">ArrowScan.cancel_requested</span></code></p></li>
 </ul>
 <p>See <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_scan.py</span></code> for the reproducible comparison of
 Python iterators vs. native scans, and <code class="docutils literal notranslate"><span class="pre">examples_simple/arrow_scan.py</span></code> for

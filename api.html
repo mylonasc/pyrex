@@ -144,11 +144,19 @@ and applies all rows through one native RocksDB <code class="docutils literal no
 and <code class="docutils literal notranslate"><span class="pre">scan_arrow_cf()</span></code>. It exports the Arrow C Stream interface via
 <code class="docutils literal notranslate"><span class="pre">__arrow_c_stream__</span></code> (PyCapsule <code class="docutils literal notranslate"><span class="pre">arrow_array_stream</span></code>) with schema
 <code class="docutils literal notranslate"><span class="pre">struct&lt;key:</span> <span class="pre">binary</span> <span class="pre">(non-null),</span> <span class="pre">value:</span> <span class="pre">binary</span> <span class="pre">(non-null)&gt;</span></code> and supports
-<code class="docutils literal notranslate"><span class="pre">close()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_closed</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>, <code class="docutils literal notranslate"><span class="pre">stats</span></code>, and context-manager use.
+<code class="docutils literal notranslate"><span class="pre">close()</span></code>, <code class="docutils literal notranslate"><span class="pre">cancel()</span></code>, <code class="docutils literal notranslate"><span class="pre">cancel_requested</span></code>, <code class="docutils literal notranslate"><span class="pre">is_closed</span></code>,
+<code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>, <code class="docutils literal notranslate"><span class="pre">stats</span></code>, and context-manager use.
 <code class="docutils literal notranslate"><span class="pre">stats</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code> by default; scans created with <code class="docutils literal notranslate"><span class="pre">collect_metrics=True</span></code>
 provide a fresh dictionary of native output counters, phase times and requested
 buffer capacities. Accounting follows exported child-buffer releases and
 remains readable after stream or DB closure. It does not measure process RSS.</p>
+<p><code class="docutils literal notranslate"><span class="pre">cancel()</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code> requests cooperative cancellation without waiting for the
+scan/lifecycle mutex. It returns True once if accepted, False after an earlier
+request or terminal close/error/EOF. <code class="docutils literal notranslate"><span class="pre">cancel_requested</span></code> records whether a
+request was accepted and remains True after cancellation cleanup. Observation
+by the stream returns <code class="docutils literal notranslate"><span class="pre">ECANCELED</span></code> / <code class="docutils literal notranslate"><span class="pre">scan_arrow:</span> <span class="pre">cancelled</span></code>, not successful
+exhaustion; already committed batches remain valid. Use <code class="docutils literal notranslate"><span class="pre">close()</span></code> for
+deterministic resource release, including idle scans that will not be pulled.</p>
 <p><code class="docutils literal notranslate"><span class="pre">Snapshot</span></code> is a pinned read view from <code class="docutils literal notranslate"><span class="pre">create_snapshot()</span></code> shareable by
 multiple scans. Methods: <code class="docutils literal notranslate"><span class="pre">release()</span></code>, <code class="docutils literal notranslate"><span class="pre">is_valid()</span></code>, <code class="docutils literal notranslate"><span class="pre">sequence_number</span></code>.</p>
 <p>The same snapshot also pins <code class="docutils literal notranslate"><span class="pre">get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> and their CF variants.
