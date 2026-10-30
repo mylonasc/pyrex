@@ -367,7 +367,14 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
     }
 
     try {
-        rocksdb::ReadOptions opts = (read_options ? read_options : parent_->default_read_options_)->native_options();
+        rocksdb::ReadOptions opts = (read_options ? read_options : parent_->default_read_options_)->iterator_options();
+        // Never inherit prefix-only iteration semantics. Bounds are owned by
+        // this scan and a bytewise complete result is the public contract.
+        opts.total_order_seek = true;
+        fill_cache_ = opts.fill_cache;
+        verify_checksums_ = opts.verify_checksums;
+        readahead_size_ = point_lookup_ ? 0 : opts.readahead_size;
+        if (point_lookup_) opts.readahead_size = 0;
         opts.snapshot = view;
         if (point_lookup_) {
             point_cf_ = cf_raw;
@@ -437,6 +444,23 @@ bool PyArrowScan::is_closed() const {
 }
 
 uint64_t PyArrowScan::sequence_number() const { return snapshot_seq_; }
+
+py::dict PyArrowScan::configuration() const {
+    py::dict result;
+    result["contract_version"] = 1;
+    result["source"] = point_lookup_ ? "points" : multi_range_ ? "range_union" : "scan";
+    result["batch_size"] = batch_size_;
+    result["max_batch_bytes"] = max_batch_bytes_;
+    result["allow_overflow"] = allow_overflow_;
+    result["collect_metrics"] = static_cast<bool>(metrics_);
+    result["fill_cache"] = fill_cache_;
+    result["verify_checksums"] = verify_checksums_;
+    result["readahead_size"] = readahead_size_;
+    result["total_order_seek"] = true;
+    result["column_family"] = cf_name_;
+    result["value_nullable"] = point_lookup_;
+    return result;
+}
 
 std::optional<ArrowScanStatistics> PyArrowScan::statistics() const {
     if (!metrics_) return std::nullopt;

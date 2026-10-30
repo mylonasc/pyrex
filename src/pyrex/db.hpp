@@ -111,6 +111,7 @@ public:
                                             std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false,
                                             bool collect_metrics = false);
     PyOptions get_options() const;
+    py::dict arrow_capabilities() const;
     std::shared_ptr<PyArrowScan> multi_get_arrow(py::object keys, size_t batch_size = 65536,
         size_t max_batch_bytes = 8 * 1024 * 1024, std::shared_ptr<PyReadOptions> read_options = nullptr,
         std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false, bool collect_metrics = false);

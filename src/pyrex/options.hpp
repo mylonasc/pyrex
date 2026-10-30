@@ -15,6 +15,7 @@ private:
     static constexpr uint8_t kFillCache = 1;
     static constexpr uint8_t kVerifyChecksums = 2;
     std::atomic<uint8_t> flags_{kFillCache | kVerifyChecksums};
+    std::atomic<size_t> readahead_size_{0};
 
 public:
     PyReadOptions() = default;
@@ -22,6 +23,9 @@ public:
     // Process-lifetime immutable options for the four flag combinations.
     // Copy the result before overriding snapshot or iterator bounds.
     const rocksdb::ReadOptions& native_options() const;
+    rocksdb::ReadOptions iterator_options() const;
+    size_t get_readahead_size() const;
+    void set_readahead_size(size_t value);
 
     bool get_fill_cache() const;
     void set_fill_cache(bool value);
