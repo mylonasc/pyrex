@@ -76,6 +76,17 @@ Feature index
 Why ABR-01 first
 ----------------
 
+Implementation checkpoint: all indexed features have review branches.
+PRs #46 (ABR-01), #47 (ABR-02), #48 (ABR-03), #49 (ABR-04), #50 (ABR-05),
+#51 (ABR-06), #52 (ABR-07) and #53 (ABR-08) are **not** claims of merged or
+released availability. Review/merge follows the dependency graph; #47 remains
+draft until its #46 base merges. The later implementation stack proceeds
+#48 → #49 → #50 → #51 → #52 → #53, and ABR-07 additionally retains its ABR-02
+delivery gate. No feature release is published by these branches.
+``benchmarks/arrow_integration.md`` records cumulative native/sanitizer
+validation and the independent ABR-02 runner's 216-worker matrix plus
+18-worker 1M profile against the final native implementation.
+
 Before tuning buffer builders or introducing new streaming sources, measure
 what the current producer emits, what it allocates, how long native phases
 take, and what consumers retain. The highest-priority feature adds that
