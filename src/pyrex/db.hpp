@@ -114,6 +114,10 @@ public:
     std::shared_ptr<PyArrowScan> multi_get_arrow(py::object keys, size_t batch_size = 65536,
         size_t max_batch_bytes = 8 * 1024 * 1024, std::shared_ptr<PyReadOptions> read_options = nullptr,
         std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false, bool collect_metrics = false);
+    std::shared_ptr<PyArrowScan> scan_arrow_ranges(py::object ranges = py::none(), py::object prefixes = py::none(),
+        size_t batch_size = 65536, size_t max_batch_bytes = 8 * 1024 * 1024,
+        std::shared_ptr<PyReadOptions> read_options = nullptr, std::shared_ptr<PySnapshot> snapshot = nullptr,
+        bool allow_overflow = false, bool collect_metrics = false);
     std::shared_ptr<PyReadOptions> get_default_read_options();
     void set_default_read_options(std::shared_ptr<PyReadOptions> opts);
     std::shared_ptr<PyWriteOptions> get_default_write_options();
@@ -149,6 +153,10 @@ public:
         size_t batch_size = 65536, size_t max_batch_bytes = 8 * 1024 * 1024,
         std::shared_ptr<PyReadOptions> read_options = nullptr, std::shared_ptr<PySnapshot> snapshot = nullptr,
         bool allow_overflow = false, bool collect_metrics = false);
+    std::shared_ptr<PyArrowScan> scan_arrow_ranges_cf(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object ranges = py::none(), py::object prefixes = py::none(), size_t batch_size = 65536,
+        size_t max_batch_bytes = 8 * 1024 * 1024, std::shared_ptr<PyReadOptions> read_options = nullptr,
+        std::shared_ptr<PySnapshot> snapshot = nullptr, bool allow_overflow = false, bool collect_metrics = false);
     std::shared_ptr<PyRocksDBIterator> new_cf_iterator(PyColumnFamilyHandle& cf_handle, std::shared_ptr<PyReadOptions> read_options = nullptr);
     // Native batched Arrow scan of a named column family (same contract as
     // scan_arrow; shares the DB snapshot when one is supplied).

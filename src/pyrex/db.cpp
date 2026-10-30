@@ -1,4 +1,5 @@
 #include "db.hpp"
+#include <algorithm>
 
 #include <cstring>
 
@@ -437,6 +438,87 @@ std::shared_ptr<PyArrowScan> PyRocksDBExtended::multi_get_arrow_cf(std::shared_p
     if (!cf) throw py::value_error("cf_handle must not be None");
     return point_arrow_impl(shared_from_this(), cf, keys, batch_size, max_batch_bytes,
                             read_options, snapshot, allow_overflow, collect_metrics);
+}
+
+namespace {
+std::shared_ptr<PyArrowScan> ranges_arrow_impl(std::shared_ptr<PyRocksDB> self,
+        std::shared_ptr<PyColumnFamilyHandle> cf, py::object ranges, py::object prefixes,
+        size_t batch_size, size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+        std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
+    if (batch_size < 1 || batch_size > kMaxBatchSize || max_batch_bytes < 1 || max_batch_bytes > kMaxBatchBytes)
+        throw py::value_error("scan_arrow_ranges: invalid batch_size or max_batch_bytes");
+    if (ranges.is_none() && prefixes.is_none())
+        throw py::value_error("scan_arrow_ranges: supply ranges and/or prefixes (empty lists select no records)");
+    std::vector<PyArrowScan::Range> input;
+    auto require_sequence = [](const py::object& obj) {
+        if (!py::isinstance<py::list>(obj) && !py::isinstance<py::tuple>(obj))
+            throw py::type_error("scan_arrow_ranges: ranges/prefixes must be lists or tuples");
+        if (py::len(obj) > 65536) throw py::value_error("scan_arrow_ranges: at most 65536 selectors per argument");
+    };
+    if (!ranges.is_none()) {
+        require_sequence(ranges);
+        for (auto item : ranges) {
+            auto pair = py::reinterpret_borrow<py::object>(item);
+            if ((!py::isinstance<py::list>(pair) && !py::isinstance<py::tuple>(pair)) || py::len(pair) != 2)
+                throw py::type_error("scan_arrow_ranges: each range must be a (start, stop) pair");
+            auto [has_start, start] = parse_bound(pair[py::int_(0)], "start");
+            auto [has_stop, stop] = parse_bound(pair[py::int_(1)], "stop");
+            if (has_start && has_stop && compare_bounds(start, stop) > 0)
+                throw py::value_error("scan_arrow_ranges: start must be <= stop");
+            if (has_start && has_stop && start == stop) continue;
+            input.push_back({has_start ? std::optional<std::string>(start) : std::nullopt,
+                             has_stop ? std::optional<std::string>(stop) : std::nullopt});
+        }
+    }
+    if (!prefixes.is_none()) {
+        require_sequence(prefixes);
+        for (auto item : prefixes) {
+            if (!py::isinstance<py::bytes>(item)) throw py::type_error("scan_arrow_ranges: prefixes must be bytes");
+            const auto prefix = py::cast<std::string>(item);
+            std::string stop;
+            const bool bounded = prefix_successor(prefix, stop);
+            input.push_back({prefix.empty() ? std::nullopt : std::optional<std::string>(prefix),
+                             bounded ? std::optional<std::string>(stop) : std::nullopt});
+        }
+    }
+    std::sort(input.begin(), input.end(), [](const auto& a, const auto& b) {
+        if (!a.start) return b.start.has_value();
+        if (!b.start) return false;
+        return compare_bounds(*a.start, *b.start) < 0;
+    });
+    PyArrowScan::Config config;
+    config.multi_range = true;
+    for (const auto& range : input) {
+        if (config.ranges.empty() || (config.ranges.back().stop && range.start &&
+                compare_bounds(*config.ranges.back().stop, *range.start) < 0)) {
+            config.ranges.push_back(range);
+        } else if (!range.stop || (config.ranges.back().stop &&
+                compare_bounds(*range.stop, *config.ranges.back().stop) > 0)) {
+            config.ranges.back().stop = range.stop;
+        }
+    }
+    config.batch_size = batch_size;
+    config.max_batch_bytes = max_batch_bytes;
+    config.allow_overflow = allow_overflow;
+    config.collect_metrics = collect_metrics;
+    return std::make_shared<PyArrowScan>(self, cf, config, snapshot, read_options);
+}
+}  // namespace
+
+std::shared_ptr<PyArrowScan> PyRocksDB::scan_arrow_ranges(py::object ranges, py::object prefixes,
+        size_t batch_size, size_t max_batch_bytes, std::shared_ptr<PyReadOptions> read_options,
+        std::shared_ptr<PySnapshot> snapshot, bool allow_overflow, bool collect_metrics) {
+    return ranges_arrow_impl(shared_from_this(), nullptr, ranges, prefixes, batch_size, max_batch_bytes,
+                             read_options, snapshot, allow_overflow, collect_metrics);
+}
+
+std::shared_ptr<PyArrowScan> PyRocksDBExtended::scan_arrow_ranges_cf(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object ranges, py::object prefixes, size_t batch_size, size_t max_batch_bytes,
+        std::shared_ptr<PyReadOptions> read_options, std::shared_ptr<PySnapshot> snapshot,
+        bool allow_overflow, bool collect_metrics) {
+    if (!cf) throw py::value_error("cf_handle must not be None");
+    return ranges_arrow_impl(shared_from_this(), cf, ranges, prefixes, batch_size, max_batch_bytes,
+                             read_options, snapshot, allow_overflow, collect_metrics);
 }
 
 void PyRocksDB::unregister_scan(PyArrowScan* scan) {

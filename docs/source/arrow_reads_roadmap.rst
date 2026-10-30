@@ -56,7 +56,7 @@ Feature index
      - Multi-range/multi-prefix scans at one horizon
      - P2
      - ABR-01, ABR-03
-     - Planned
+     - Implemented on stacked feature branch; review pending
    * - `ABR-06 <https://github.com/mylonasc/pyrex/issues/43>`_
      - Validated scan controls and capability contract
      - P2

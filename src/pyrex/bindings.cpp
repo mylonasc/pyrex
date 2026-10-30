@@ -376,6 +376,14 @@ void bind_pyrex(py::module_& m) {
         .def("multi_get_arrow", &PyTransactionDB::multi_get_arrow, py::arg("keys"), py::arg("batch_size") = 65536,
              py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
              py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
+        .def("scan_arrow_ranges", &PyTransactionDB::scan_arrow_ranges, py::arg("ranges") = nullptr,
+             py::arg("prefixes") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr,
+             py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
+        .def("scan_arrow_ranges_cf", &PyTransactionDB::scan_arrow_ranges_cf, py::arg("cf_handle"),
+             py::arg("ranges") = nullptr, py::arg("prefixes") = nullptr, py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def("multi_get_arrow_cf", &PyTransactionDB::multi_get_arrow_cf, py::arg("cf_handle"), py::arg("keys"),
              py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
              py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr,
@@ -455,6 +463,10 @@ void bind_pyrex(py::module_& m) {
         .def("multi_get_arrow", &PyRocksDB::multi_get_arrow, py::arg("keys"), py::arg("batch_size") = 65536,
              py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
              py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
+        .def("scan_arrow_ranges", &PyRocksDB::scan_arrow_ranges, py::arg("ranges") = nullptr,
+             py::arg("prefixes") = nullptr, py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
+             py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr,
+             py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def("delete", &PyRocksDB::del, py::arg("key"), py::arg("write_options") = nullptr, "Deletes a key.", py::call_guard<py::gil_scoped_release>())
         .def("write", &PyRocksDB::write, py::arg("write_batch"), py::arg("write_options") = nullptr, "Applies a batch of operations atomically.", py::call_guard<py::gil_scoped_release>())
         .def("write_columnar_batch", &PyRocksDB::write_columnar_batch, py::arg("keys"), py::arg("values"), py::kw_only(), py::arg("write_options") = nullptr, py::arg("on_null") = "error", "Writes columnar key/value arrays using a native RocksDB WriteBatch.")
@@ -513,6 +525,10 @@ void bind_pyrex(py::module_& m) {
         .def("put_cf", &PyRocksDBExtended::put_cf, py::arg("cf_handle"), py::arg("key"), py::arg("value"), py::arg("write_options") = nullptr, "Inserts a key-value pair into a specific column family.", py::call_guard<py::gil_scoped_release>())
         .def("get_cf", &PyRocksDBExtended::get_cf, py::arg("cf_handle"), py::arg("key"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr, "Retrieves a CF value, optionally at a shared Snapshot.")
         .def("multi_get_cf", &PyRocksDBExtended::multi_get_cf, py::arg("cf_handle"), py::arg("keys"), py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr)
+        .def("scan_arrow_ranges_cf", &PyRocksDBExtended::scan_arrow_ranges_cf, py::arg("cf_handle"),
+             py::arg("ranges") = nullptr, py::arg("prefixes") = nullptr, py::arg("batch_size") = 65536,
+             py::arg("max_batch_bytes") = 8 * 1024 * 1024, py::arg("read_options") = nullptr,
+             py::arg("snapshot") = nullptr, py::arg("allow_overflow") = false, py::arg("collect_metrics") = false)
         .def("multi_get_arrow_cf", &PyRocksDBExtended::multi_get_arrow_cf, py::arg("cf_handle"), py::arg("keys"),
              py::arg("batch_size") = 65536, py::arg("max_batch_bytes") = 8 * 1024 * 1024,
              py::arg("read_options") = nullptr, py::arg("snapshot") = nullptr,
