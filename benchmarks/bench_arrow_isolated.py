@@ -155,6 +155,7 @@ def run(args, cli):
         },
     }
     started = time.perf_counter_ns()
+    active_job = None
     try:
         with tempfile.TemporaryDirectory(prefix="pyrex-abr02-", dir=args.work_dir) as temporary:
             for rows in sizes:
@@ -164,6 +165,7 @@ def run(args, cli):
                     config = {"path": str(Path(temporary) / f"db-{len(report['datasets'])}"),
                               "rows": rows, "value_size": args.value_size, "variable": shape == "variable",
                               "seed": args.seed, "scopes": selected_scopes, "threads": args.threads}
+                    active_job = {"task": "prepare", "dataset_id": dataset_id, "parameters": config}
                     prepared = child("prepare", config, args.timeout)
                     report["datasets"].append({"id": dataset_id, "parameters": config, **prepared})
                     for scope in selected_scopes:
@@ -177,6 +179,7 @@ def run(args, cli):
                                            max_batch_bytes=args.max_batch_bytes, allow_overflow=args.allow_overflow,
                                            collect_metrics=not args.no_metrics, fill_cache=not args.no_fill_cache,
                                            verify_checksums=not args.no_verify_checksums)
+                                active_job = {"task": "measure", "dataset_id": dataset_id, "parameters": job}
                                 sample = child("measure", job, args.timeout)
                                 sample["dataset_id"] = dataset_id
                                 sample["scope"] = scope
@@ -185,6 +188,7 @@ def run(args, cli):
     except Exception as exc:
         report["status"] = "failed"
         report["error"] = f"{type(exc).__name__}: {exc}"
+        report["failed_job"] = active_job
     finally:
         report["elapsed_ns"] = time.perf_counter_ns() - started
         report["summary"] = summarize(report["samples"])
