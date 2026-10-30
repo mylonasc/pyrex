@@ -104,11 +104,13 @@ void PyRocksDB::close() {
         // scan creation and snapshot release; it is held until db_ is gone
         // so no scan path can touch a half-destroyed DB.
         std::lock_guard<std::shared_mutex> arrow_lock(arrow_mutex_);
-        before_close_locked();
         for (PyArrowScan* scan : active_arrow_scans_) {
             scan->invalidate_for_db_close(db_);
         }
         active_arrow_scans_.clear();
+        // Transaction-local Arrow iterators must die before their transaction
+        // write batches. TransactionDB::close already owns its operation gate.
+        before_close_locked();
         for (PySnapshot* snapshot : active_snapshots_) {
             snapshot->invalidate_for_db_close(db_);
         }

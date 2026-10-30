@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -19,6 +20,7 @@ class PyTransactionDB;
 class PyWriteBatch;
 class PyTransactionIterator;
 class PyColumnFamilyHandle;
+class PyArrowScan;
 
 class PyTransaction : public std::enable_shared_from_this<PyTransaction> {
 private:
@@ -28,6 +30,7 @@ private:
     std::mutex active_iterators_mutex_;
     std::set<PyTransactionIterator*> active_iterators_;
     mutable std::mutex operation_mutex_;
+    std::atomic<size_t> active_arrow_scans_{0};
     struct OperationGuard {
         std::shared_lock<std::shared_mutex> db_lock;
         std::lock_guard<std::mutex> txn_lock;
@@ -37,9 +40,14 @@ private:
 
     friend class PyTransactionDB;
     friend class PyTransactionIterator;
+    friend class PyArrowScan;
 
     PyTransaction(rocksdb::Transaction* txn, std::shared_ptr<PyTransactionDB> parent_db);
     void check_active() const;
+    void check_mutable() const;
+    std::shared_ptr<PyArrowScan> scan_arrow_impl(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object prefix, py::object start, py::object stop, size_t batch_size, size_t max_batch_bytes,
+        std::shared_ptr<PyReadOptions> read_options, bool allow_overflow, bool collect_metrics);
     void invalidate_from_parent_close();
     void register_iterator(PyTransactionIterator* it);
     void unregister_iterator(PyTransactionIterator* it);
@@ -62,6 +70,14 @@ public:
     std::optional<uint64_t> snapshot_sequence_number() const;
     std::shared_ptr<PyTransactionIterator> new_iterator(std::shared_ptr<PyReadOptions> read_options = nullptr);
     bool is_active() const;
+    std::shared_ptr<PyArrowScan> scan_arrow(py::object prefix = py::none(), py::object start = py::none(),
+        py::object stop = py::none(), size_t batch_size = 65536, size_t max_batch_bytes = 8 * 1024 * 1024,
+        std::shared_ptr<PyReadOptions> read_options = nullptr, bool allow_overflow = false, bool collect_metrics = false);
+    std::shared_ptr<PyArrowScan> scan_arrow_cf(std::shared_ptr<PyColumnFamilyHandle> cf,
+        py::object prefix = py::none(), py::object start = py::none(), py::object stop = py::none(),
+        size_t batch_size = 65536, size_t max_batch_bytes = 8 * 1024 * 1024,
+        std::shared_ptr<PyReadOptions> read_options = nullptr, bool allow_overflow = false, bool collect_metrics = false);
+    py::dict arrow_capabilities() const;
 };
 
 class PyTransactionIterator {

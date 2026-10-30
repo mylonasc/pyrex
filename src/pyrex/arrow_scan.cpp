@@ -8,6 +8,8 @@
 #include "db.hpp"
 #include "exceptions.hpp"
 #include "options.hpp"
+#include "transaction.hpp"
+#include "transaction_db.hpp"
 
 #include "rocksdb/comparator.h"
 #include "rocksdb/db.h"
@@ -301,8 +303,10 @@ void PySnapshot::invalidate_for_db_close(rocksdb::DB* db_raw) {
 // ---------------------------------------------------------------------------
 
 PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyColumnFamilyHandle> cf_handle, const Config& config,
-                         std::shared_ptr<PySnapshot> shared_snapshot, std::shared_ptr<PyReadOptions> read_options)
+                         std::shared_ptr<PySnapshot> shared_snapshot, std::shared_ptr<PyReadOptions> read_options,
+                         std::shared_ptr<PyTransaction> transaction)
     : parent_(std::move(parent)),
+      transaction_(std::move(transaction)),
       cf_handle_(std::move(cf_handle)),
       batch_size_(config.batch_size),
       max_batch_bytes_(config.max_batch_bytes),
@@ -354,6 +358,13 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
 
     // Never wait for the GIL while holding the DB lifecycle lock.
     py::gil_scoped_release release;
+    // Same order as other transaction operations and DB close: transaction
+    // operations guard -> transaction mutex -> DB lifecycle -> scan mutex.
+    std::unique_ptr<PyTransaction::OperationGuard> transaction_guard;
+    if (transaction_) {
+        transaction_guard = std::make_unique<PyTransaction::OperationGuard>(*transaction_);
+        transaction_->check_active();
+    }
     std::lock_guard<std::shared_mutex> arrow_lock(parent_->arrow_mutex_);
     if (parent_->is_closed_.load() || !parent_->db_) {
         throw RocksDBException("Cannot scan: database is closed.");
@@ -382,7 +393,10 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
     }
 
     const rocksdb::Snapshot* view = nullptr;
-    if (shared_snapshot) {
+    if (transaction_ && transaction_->txn_->GetSnapshot()) {
+        view = transaction_->txn_->GetSnapshot();
+        snapshot_seq_ = view->GetSequenceNumber();
+    } else if (shared_snapshot) {
         if (shared_snapshot->parent_.get() != parent_.get()) {
             throw RocksDBException("scan_arrow: snapshot belongs to a different database instance.");
         }
@@ -425,7 +439,7 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
             opts.iterate_upper_bound = &upper_bound_slice_;
         }
 
-        iter_ = db_raw->NewIterator(opts, cf_raw);
+        iter_ = transaction_ ? transaction_->txn_->GetIterator(opts, cf_raw) : db_raw->NewIterator(opts, cf_raw);
         if (!iter_) throw RocksDBException("scan_arrow: failed to create iterator.");
         if (has_eff_start_) {
             iter_->Seek(rocksdb::Slice(eff_start_));
@@ -437,6 +451,10 @@ PyArrowScan::PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyCo
         started_ = true;
         // Registration and establishment are atomic with respect to close/drop.
         parent_->active_arrow_scans_.insert(this);
+        if (transaction_) {
+            transaction_->active_arrow_scans_.fetch_add(1);
+            transaction_registered_ = true;
+        }
     } catch (...) {
         delete iter_;
         iter_ = nullptr;
@@ -482,7 +500,8 @@ uint64_t PyArrowScan::sequence_number() const { return snapshot_seq_; }
 py::dict PyArrowScan::configuration() const {
     py::dict result;
     result["contract_version"] = 1;
-    result["source"] = point_lookup_ ? "points" : multi_range_ ? "range_union" : "scan";
+    result["source"] = transaction_ ? "transaction_scan" : point_lookup_ ? "points" : multi_range_ ? "range_union" : "scan";
+    result["snapshot_scope"] = transaction_ ? "transaction_local_frozen_writes" : "same_db_committed_state";
     result["batch_size"] = batch_size_;
     result["max_batch_bytes"] = max_batch_bytes_;
     result["allow_overflow"] = allow_overflow_;
@@ -541,6 +560,11 @@ std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
                 parent_->active_snapshots_.erase(shared_snapshot_.get());
             }
         }
+    }
+    if (transaction_registered_) {
+        // Native iterator/snapshot are gone before mutation can be admitted.
+        transaction_registered_ = false;
+        transaction_->active_arrow_scans_.fetch_sub(1);
     }
     // The last reference can call back into the parent. Destroy it only
     // AFTER the parent and scan locks have been released by the caller.
@@ -751,6 +775,11 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     std::string error;
 
     {
+        std::unique_ptr<PyTransaction::OperationGuard> transaction_guard;
+        if (transaction_ && control_.load() == Control::Active) {
+            transaction_guard = std::make_unique<PyTransaction::OperationGuard>(*transaction_);
+            transaction_->check_active();
+        }
         std::unique_lock<std::mutex> lock(mutex_);
         PhaseTimer gather_timer(metrics_.get(), &ArrowScanStatistics::gather_time_ns);
         try {

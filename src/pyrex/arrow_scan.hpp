@@ -30,6 +30,7 @@ namespace py = pybind11;
 
 class PyRocksDB;
 class PyReadOptions;
+class PyTransaction;
 struct ArrowScanMetricsState;
 struct ArrowValueStaging;
 
@@ -141,7 +142,8 @@ public:
     // Factory path only: native initialization and parent registration are
     // performed atomically under the DB lifecycle mutex.
     PyArrowScan(std::shared_ptr<PyRocksDB> parent, std::shared_ptr<PyColumnFamilyHandle> cf_handle, const Config& config,
-                std::shared_ptr<PySnapshot> shared_snapshot, std::shared_ptr<PyReadOptions> read_options);
+                std::shared_ptr<PySnapshot> shared_snapshot, std::shared_ptr<PyReadOptions> read_options,
+                std::shared_ptr<PyTransaction> transaction = nullptr);
     ~PyArrowScan();
 
     PyArrowScan(const PyArrowScan&) = delete;
@@ -215,6 +217,8 @@ private:
     std::shared_ptr<PySnapshot> finish_locked(rocksdb::DB* db_raw);
 
     std::shared_ptr<PyRocksDB> parent_;
+    std::shared_ptr<PyTransaction> transaction_;
+    bool transaction_registered_ = false;
     std::shared_ptr<PyColumnFamilyHandle> cf_handle_;
     std::string cf_name_;
 

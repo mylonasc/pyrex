@@ -255,3 +255,56 @@ Complete Example
    :language: python
    :caption: transactions.py
    :linenos:
+
+Transaction-local Arrow scans (ABR-08)
+------------------------------------------
+
+``Transaction.scan_arrow`` and ``scan_arrow_cf`` are distinct from committed
+``TransactionDB.scan_arrow``. They include the transaction's own writes and
+deletes, without exposing another transaction's uncommitted changes::
+
+    import pyarrow as pa
+
+    with db.transaction() as txn:
+        txn.put(b"private", b"value")
+        with txn.scan_arrow(batch_size=4096) as scan:
+            with pa.RecordBatchReader.from_stream(scan) as reader:
+                result = reader.read_all()
+        txn.commit()
+    # result owns its buffers and remains valid after transaction/DB closure.
+
+The scan schema, prefix/range intersection, bytewise comparator, row/used-byte
+limits, overflow policy, owned buffers, opt-in metrics and cooperative
+cancellation are the same as DB scans. Named-CF handles are validated against
+the parent DB by identity. Transaction Arrow methods do not accept a DB
+``Snapshot`` argument, and do not add transaction-local points/multi-range APIs.
+``txn.arrow_capabilities()`` reports this narrower API and visibility contract;
+``scan.configuration["source"]`` is ``transaction_scan``.
+
+Consistency is explicit. If the transaction has a snapshot, the scan uses that
+committed horizon. Otherwise it pins a DB snapshot at scan creation. Its own
+write batch is **frozen** while any transaction Arrow stream retains native
+resources: puts/deletes (including CF variants), write batches, get-for-update,
+snapshot reset, commit and rollback raise an active-Arrow-scan error. Ordinary
+gets/iterators remain allowed and native gathers serialize with transaction
+operations. Without a transaction snapshot, ordinary point gets can observe
+later committed writes while the Arrow view remains pinned.
+
+Exhaustion, explicit scan/reader close, observed cancellation or terminal scan
+error releases the freeze. Merely returning the last data batch or requesting
+cancellation on an idle stream does not. Close all streams before completing
+the transaction; nest their contexts inside the transaction context so its
+automatic rollback is not blocked. Multiple scans each keep the freeze until
+their resources are released. To share one committed horizon across them,
+set the transaction snapshot before constructing them.
+
+``sequence_number`` identifies only the committed snapshot horizon, not the
+transaction's private write-batch generation or an application visibility
+marker. DB close serializes with transaction operations and invalidates native
+Arrow iterators **before** deleting their transaction/write batch. Existing
+CF-drop protection while transactions are active remains in place. A full
+batch already committed before a racing close/cancel may return; its owned
+buffers remain valid after rollback/commit/DB close. No partially built output
+is successful. ``benchmarks/bench_transaction_arrow.py`` compares the native
+stream with transaction-local iterator plus Arrow reconstruction at the same
+transaction snapshot, not with committed-state DB scans.

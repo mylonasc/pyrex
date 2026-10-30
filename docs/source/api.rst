@@ -82,6 +82,12 @@ Both return independent dictionaries and remain readable after close.
 ``ReadOptions.readahead_size`` is a captured iterator-only hint, 0..1 GiB;
 point reads ignore it. See :doc:`arrow_scans` for unsupported-control policy.
 
+``Transaction.scan_arrow(...)`` / ``scan_arrow_cf(cf_handle, ...)`` use the
+same scan options except ``snapshot=``: they use the transaction snapshot or
+pin a committed horizon at creation, and include private writes/deletes.
+``Transaction.arrow_capabilities()`` reports their frozen-mutation policy.
+See :doc:`transactions` before consuming streams while completing a transaction.
+
 ``Snapshot`` is a pinned read view from ``create_snapshot()`` shareable by
 multiple scans. Methods: ``release()``, ``is_valid()``, ``sequence_number``.
 

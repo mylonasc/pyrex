@@ -93,6 +93,24 @@ with pyrex.PyRocksDB(tempfile.mkdtemp()) as db:
         assert after['live_buffer_bytes'] == 0
         scan.close()
         del capsule, scan
+with pyrex.TransactionDB(tempfile.mkdtemp()) as db:
+    txn = db.begin_transaction()
+    txn.put(b'k', b'v')
+    probe = txn.scan_arrow(collect_metrics=True)
+    capsule = probe.__arrow_c_stream__()
+    assert helper.fail_batch(get_pointer(capsule, b'arrow_array_stream'), 0) == 0
+    count = helper.allocation_count()
+    probe.close()
+    del capsule, probe
+    for allocation in range(1, count + 1):
+        scan = txn.scan_arrow(collect_metrics=True)
+        capsule = scan.__arrow_c_stream__()
+        assert helper.fail_batch(get_pointer(capsule, b'arrow_array_stream'), allocation) != 0
+        scan.close()
+        assert scan.stats['rows_emitted'] == scan.stats['live_buffer_bytes'] == 0
+        txn.put(b'k', b'v')  # failed attempts never leave mutation frozen
+        del capsule, scan
+    txn.rollback()
 """
     env = dict(os.environ, PYREX_ALLOC_HELPER=str(library))
     # Sanitizer interceptors must load first when running an ASan build.
