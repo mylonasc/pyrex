@@ -104,12 +104,13 @@ APIs remain supported. <code class="docutils literal notranslate"><span class="p
 they are <strong>not</strong> an Arrow point-materialization API. TransactionDB scans
 observe committed state, <strong>not</strong> transaction-local read-your-writes.</p>
 <p>The original design text and unchecked boxes in #31 are historical, not a
-current feature-availability matrix. These follow-ups cover remaining work.</p>
+current feature-availability matrix. All indexed follow-ups below are merged
+into <code class="docutils literal notranslate"><span class="pre">main</span></code> and remain unreleased; the 0.7.1 baseline above is unchanged.</p>
 </section>
 <section id="feature-index">
 <h2>Feature index<a class="headerlink" href="#feature-index" title="Link to this heading"></a></h2>
 <table class="docutils align-default" id="id2">
-<caption><span class="caption-text">Remaining features and dependencies</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<caption><span class="caption-text">Merged features and dependencies</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 12.0%" />
 <col style="width: 42.0%" />
@@ -130,62 +131,59 @@ current feature-availability matrix. These follow-ups cover remaining work.</p>
 <td><p>Opt-in native metrics and Arrow buffer accounting</p></td>
 <td><p>P0</p></td>
 <td><p>None</p></td>
-<td><p>Implemented on feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/39">ABR-02</a></p></td>
 <td><p>Reproducible scale, memory and interoperability benchmarks</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Implemented on stacked feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/40">ABR-03</a></p></td>
 <td><p>Cooperative in-flight cancellation and C Stream errors</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Implemented on feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/41">ABR-04</a></p></td>
 <td><p>Snapshot-consistent Arrow batched point lookups</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01, ABR-03</p></td>
-<td><p>Implemented on stacked feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/42">ABR-05</a></p></td>
 <td><p>Multi-range/multi-prefix scans at one horizon</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01, ABR-03</p></td>
-<td><p>Implemented on stacked feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/43">ABR-06</a></p></td>
 <td><p>Validated scan controls and capability contract</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Implemented on stacked feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/44">ABR-07</a></p></td>
 <td><p>Measured native builder/buffer-copy optimization</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01, ABR-02</p></td>
-<td><p>Implemented on stacked feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/45">ABR-08</a></p></td>
 <td><p>Transaction-local Arrow scans with read-your-writes</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01, ABR-03</p></td>
-<td><p>Implemented on stacked feature branch; review pending</p></td>
+<td><p>Merged; unreleased</p></td>
 </tr>
 </tbody>
 </table>
 </section>
 <section id="why-abr-01-first">
 <h2>Why ABR-01 first<a class="headerlink" href="#why-abr-01-first" title="Link to this heading"></a></h2>
-<p>Implementation checkpoint: all indexed features have review branches.
+<p>Merge checkpoint (2026-10-30): all indexed features are merged into <code class="docutils literal notranslate"><span class="pre">main</span></code>.
 PRs #46 (ABR-01), #47 (ABR-02), #48 (ABR-03), #49 (ABR-04), #50 (ABR-05),
-#51 (ABR-06), #52 (ABR-07) and #53 (ABR-08) are <strong>not</strong> claims of merged or
-released availability. Review/merge follows the dependency graph; #47 remains
-draft until its #46 base merges. The later implementation stack proceeds
-#48 → #49 → #50 → #51 → #52 → #53, and ABR-07 additionally retains its ABR-02
-delivery gate. No feature release is published by these branches.
+#51 (ABR-06), #52 (ABR-07) and #53 (ABR-08) were merged in dependency order,
+preserving commit ancestry. No feature release or version bump was published.
 <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_integration.md</span></code> records cumulative native/sanitizer
 validation and the independent ABR-02 runner’s 216-worker matrix plus
 18-worker 1M profile against the final native implementation.</p>
