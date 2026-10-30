@@ -83,11 +83,10 @@ observability without changing the default path's timing collection or
 requiring PyArrow/Polars in core PyRex. See :doc:`arrow_scans` for its public
 ``collect_metrics=True`` / ``ArrowScan.stats`` contract.
 
-ABR-01 does not replace the existing benchmark or implement ABR-02's
-large-scale, fresh-process memory experiments. Its integration simply makes
-native counters available to those measurements. ABR-02 is tracked separately
-in PR #47. ABR-03 adds an independent, atomic cancellation request; existing
-``close()`` remains the synchronous resource-release API.
+ABR-01 does not replace the existing benchmark. ABR-02 adds an isolated mode
+and uses ABR-01 counters for fresh-process resource experiments; see
+:doc:`arrow_benchmarks`. ABR-03 adds an independent, atomic cancellation
+request; existing ``close()`` remains the synchronous resource-release API.
 
 Scope boundaries
 ----------------

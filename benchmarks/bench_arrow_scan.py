@@ -168,7 +168,10 @@ def bench_native_scan_compute(db, batch_size, max_batch_bytes, prefix=None, coll
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark native batched Arrow scans vs Python iterators.")
+    if "--isolated" in sys.argv[1:]:
+        from bench_arrow_isolated import main as isolated_main
+        raise SystemExit(isolated_main([arg for arg in sys.argv[1:] if arg != "--isolated"]))
+    parser = argparse.ArgumentParser(description="Benchmark native batched Arrow scans vs Python iterators. Use --isolated --help for ABR-02 process-isolated profiles.")
     parser.add_argument("--rows", type=int, default=100_000)
     parser.add_argument("--value-size", type=int, default=64)
     parser.add_argument("--variable", action="store_true", help="variable-length values")
