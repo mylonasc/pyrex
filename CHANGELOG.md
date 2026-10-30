@@ -8,6 +8,17 @@ available via `git log`.
 
 ### Added
 
+- ABR-02 (#39): an optional `--isolated` Arrow benchmark runner alongside the
+  existing quick comparison. Seed datasets in a separate process; run every
+  mode/repeat/scope in a fresh read-only worker; validate actual ordered
+  output using chunk-independent buffer digests. JSON manifests include
+  repeat distributions, per-worker RSS, setup/cleanup/validation timings,
+  ABR-01 capacity/retention counters, thread/cache controls and build labels.
+  Full/prefix/range and fixed/variable profiles support 10K/100K/1M scales
+  and an explicit 10M plan, with optional Polars materialized/streaming modes.
+  Failed workers/digests/timeouts produce nonzero exits and failure reports;
+  reopened databases are not mislabeled cold-cache measurements.
+
 - ABR-01 (#38): opt-in `collect_metrics=True` for native default/CF Arrow
   scans, including TransactionDB. `ArrowScan.stats` reports coherent output
   counters, requested buffer capacity/slack, retained-buffer high-water
