@@ -27,8 +27,14 @@ constexpr size_t kCancellationPollRows = 256;
 class GatherProgress {
 public:
     GatherProgress(std::atomic<uint64_t>* total, const std::vector<std::string>& keys,
-                   const std::vector<std::string>& values) : total_(total), keys_(keys), values_(values) {}
-    ~GatherProgress() { flush(); }
+                   const std::vector<std::string>& values, uint64_t* staged,
+                   const uint64_t& key_bytes, const uint64_t& value_bytes)
+        : total_(total), keys_(keys), values_(values), staged_(staged),
+          key_bytes_(key_bytes), value_bytes_(value_bytes) {}
+    ~GatherProgress() {
+        flush();
+        if (staged_) *staged_ = key_bytes_ + value_bytes_;
+    }
     void flush() {
         if (!total_) return;
         const auto count = keys_.size() < values_.size() ? keys_.size() : values_.size();
@@ -41,6 +47,9 @@ private:
     const std::vector<std::string>& keys_;
     const std::vector<std::string>& values_;
     size_t recorded_ = 0;
+    uint64_t* staged_;
+    const uint64_t& key_bytes_;
+    const uint64_t& value_bytes_;
 };
 
 // Batch-phase clocks and accounting are opt-in; disabled scans do not call
@@ -437,7 +446,8 @@ std::shared_ptr<PySnapshot> PyArrowScan::finish_locked(rocksdb::DB* db_raw) {
     return std::move(shared_snapshot_);
 }
 
-PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values) {
+PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
+                                                      uint64_t& staged_payload_bytes) {
     if (cancel_requested()) return GatherResult::Cancelled;
     if (closed_) throw RocksDBException("Arrow scan is closed.");
     if (exhausted_) return GatherResult::End;
@@ -449,13 +459,14 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
 
     keys.clear();
     values.clear();
-    GatherProgress progress(metrics_ ? &rows_gathered_ : nullptr, keys, values);
+    uint64_t key_total = 0;
+    uint64_t value_total = 0;
+    GatherProgress progress(metrics_ ? &rows_gathered_ : nullptr, keys, values,
+                            metrics_ ? &staged_payload_bytes : nullptr, key_total, value_total);
     // Reserve one batch worth of row slots; payloads stream into the strings.
     keys.reserve(batch_size_ < 1024 ? batch_size_ : 1024);
     values.reserve(batch_size_ < 1024 ? batch_size_ : 1024);
 
-    uint64_t key_total = 0;
-    uint64_t value_total = 0;
     bool hit_stop = false;
 
     while (iter_->Valid() && keys.size() < batch_size_) {
@@ -488,8 +499,8 @@ PyArrowScan::GatherResult PyArrowScan::gather_next_batch(std::vector<std::string
                                    "; raise max_batch_bytes or pass allow_overflow=True.");
         }
         keys.emplace_back(key.data(), key.size());
-        values.emplace_back(value.data(), value.size());
         key_total += key_len;
+        values.emplace_back(value.data(), value.size());
         value_total += value_len;
         iter_->Next();
     }
@@ -558,13 +569,14 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     std::vector<std::string> values;
     bool clean_end = false;
     bool cancelled = false;
+    uint64_t staged_payload_bytes = 0;
     std::string error;
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
         PhaseTimer gather_timer(metrics_.get(), &ArrowScanStatistics::gather_time_ns);
         try {
-            const auto result = gather_next_batch(keys, values);
+            const auto result = gather_next_batch(keys, values, staged_payload_bytes);
             clean_end = result == GatherResult::End;
             cancelled = result == GatherResult::Cancelled;
         } catch (const std::exception& e) {
@@ -578,12 +590,9 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     }
 
     if (metrics_) {
-        uint64_t staged = 0;
-        for (const auto& key : keys) staged += key.size();
-        for (const auto& value : values) staged += value.size();
         std::lock_guard<std::mutex> lock(metrics_->mutex);
-        if (staged > metrics_->totals.peak_staged_payload_bytes)
-            metrics_->totals.peak_staged_payload_bytes = staged;
+        if (staged_payload_bytes > metrics_->totals.peak_staged_payload_bytes)
+            metrics_->totals.peak_staged_payload_bytes = staged_payload_bytes;
     }
     if (cancelled || cancel_requested()) return cancelled_next();
     if (!error.empty()) {
@@ -609,8 +618,12 @@ int PyArrowScan::fill_next(ArrowArray* out) {
     const int64_t n = static_cast<int64_t>(keys.size());
     uint64_t key_bytes = 0;
     uint64_t value_bytes = 0;
-    for (const auto& k : keys) key_bytes += k.size();
-    for (const auto& v : values) value_bytes += v.size();
+    for (size_t i = 0; i < keys.size(); ++i) {
+        if ((i & (kCancellationPollRows - 1)) == 0 && cancel_requested())
+            return cancelled_next();
+        key_bytes += keys[i].size();
+        value_bytes += values[i].size();
+    }
 
     auto* priv = new (std::nothrow) BatchBuffers();
     if (!priv) {

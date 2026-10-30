@@ -187,7 +187,8 @@ private:
     // Throws RocksDBException on I/O,
     // overflow or lifecycle errors.
     enum class GatherResult { Batch, End, Cancelled };
-    GatherResult gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values);
+    GatherResult gather_next_batch(std::vector<std::string>& keys, std::vector<std::string>& values,
+                                   uint64_t& staged_payload_bytes);
     int cancelled_next();
     // Releases iterator + owned snapshot. Caller holds mutex_ (via the
     // parent detach helper or invalidate_for_db_close); db_raw may be
