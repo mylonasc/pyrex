@@ -64,6 +64,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="arrow_reads_roadmap.html">Arrow Buffer Reads Roadmap</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_benchmarks.html">Isolated Arrow Benchmarks (ABR-02)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
@@ -372,7 +373,10 @@ snapshots are per-instance and never shared across DB objects)</p></li>
 </ul>
 <p>See <code class="docutils literal notranslate"><span class="pre">benchmarks/bench_arrow_scan.py</span></code> for the reproducible comparison of
 Python iterators vs. native scans, and <code class="docutils literal notranslate"><span class="pre">examples_simple/arrow_scan.py</span></code> for
-a minimal end-to-end example.</p>
+a minimal end-to-end example.
+The optional <code class="docutils literal notranslate"><span class="pre">--isolated</span></code> runner records fresh-process repeats, digest
+parity, per-worker RSS and ABR-01 capacity/timings; see <a class="reference internal" href="arrow_benchmarks.html"><span class="doc">Isolated Arrow Benchmarks (ABR-02)</span></a>
+for its cache/validation/memory boundaries and scale execution plan.</p>
 </section>
 </section>
 

@@ -278,3 +278,6 @@ Reference
 See ``benchmarks/bench_arrow_scan.py`` for the reproducible comparison of
 Python iterators vs. native scans, and ``examples_simple/arrow_scan.py`` for
 a minimal end-to-end example.
+The optional ``--isolated`` runner records fresh-process repeats, digest
+parity, per-worker RSS and ABR-01 capacity/timings; see :doc:`arrow_benchmarks`
+for its cache/validation/memory boundaries and scale execution plan.

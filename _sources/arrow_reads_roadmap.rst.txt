@@ -41,7 +41,7 @@ Feature index
      - Reproducible scale, memory and interoperability benchmarks
      - P1
      - ABR-01
-     - Planned
+     - Implemented on stacked feature branch; review pending
    * - `ABR-03 <https://github.com/mylonasc/pyrex/issues/40>`_
      - Cooperative in-flight cancellation and C Stream errors
      - P1
@@ -83,9 +83,9 @@ observability without changing the default path's timing collection or
 requiring PyArrow/Polars in core PyRex. See :doc:`arrow_scans` for its public
 ``collect_metrics=True`` / ``ArrowScan.stats`` contract.
 
-ABR-01 does not replace the existing benchmark or implement ABR-02's
-large-scale, fresh-process memory experiments. Its integration simply makes
-native counters available to those future measurements. Likewise, existing
+ABR-01 does not replace the existing benchmark. ABR-02 adds an isolated mode
+and uses ABR-01 counters for fresh-process resource experiments; see
+:doc:`arrow_benchmarks`. Likewise, existing
 ``close()`` is not ABR-03's in-gather cancellation request.
 
 Scope boundaries

@@ -1,0 +1,326 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Isolated Arrow Benchmarks (ABR-02) &mdash; pyrex-rocksdb 0.7.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=5a057da9"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Column Family Usage Example" href="column_families.html" />
+    <link rel="prev" title="Arrow Buffer Reads Roadmap" href="arrow_reads_roadmap.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            pyrex-rocksdb
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="transactions.html">Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="columnar_ingestion.html">Columnar Batch Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_scans.html">Batched Arrow Scans</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_reads_roadmap.html">Arrow Buffer Reads Roadmap</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Isolated Arrow Benchmarks (ABR-02)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#isolation-and-datasets">Isolation and datasets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#modes-and-ordered-parity">Modes and ordered parity</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#timings-and-validation-pauses">Timings and validation pauses</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#memory-and-output-ownership">Memory and output ownership</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cache-and-native-build-provenance">Cache and native build provenance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#scale-execution-plan">Scale execution plan</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
+<li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyrex-rocksdb</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Isolated Arrow Benchmarks (ABR-02)</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/arrow_benchmarks.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="isolated-arrow-benchmarks-abr-02">
+<h1>Isolated Arrow Benchmarks (ABR-02)<a class="headerlink" href="#isolated-arrow-benchmarks-abr-02" title="Link to this heading"></a></h1>
+<p>The original quick comparison remains available:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">benchmarks</span><span class="o">/</span><span class="n">bench_arrow_scan</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">rows</span> <span class="mi">100000</span> <span class="o">--</span><span class="n">repeat</span> <span class="mi">3</span>
+</pre></div>
+</div>
+<p>Use its new <code class="docutils literal notranslate"><span class="pre">--isolated</span></code> mode for reproducible per-mode measurements:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">benchmarks</span><span class="o">/</span><span class="n">bench_arrow_scan</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">isolated</span> \
+  <span class="o">--</span><span class="n">rows</span> <span class="mi">1000</span> <span class="o">--</span><span class="n">repeat</span> <span class="mi">2</span> <span class="o">--</span><span class="n">batch</span><span class="o">-</span><span class="n">size</span> <span class="mi">128</span> <span class="o">--</span><span class="n">include</span><span class="o">-</span><span class="n">polars</span> \
+  <span class="o">--</span><span class="n">output</span> <span class="n">results</span><span class="o">/</span><span class="n">smoke</span><span class="o">.</span><span class="n">json</span>
+</pre></div>
+</div>
+<p>The same isolated runner is also executable as
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">benchmarks/bench_arrow_isolated.py</span></code>. PyArrow is an optional benchmark
+dependency, not a new core PyRex dependency. Polars modes are opt-in and
+reported explicitly as skipped if Polars is unavailable. Invalid inputs fail
+before datasets are created. Worker timeouts, native errors, digest failures
+or malformed output produce a nonzero exit and a failed JSON report with the
+failed job’s configuration; they are not converted to empty successful scans.</p>
+<section id="isolation-and-datasets">
+<h2>Isolation and datasets<a class="headerlink" href="#isolation-and-datasets" title="Link to this heading"></a></h2>
+<p>Each dataset is prepared once in a separate process, using a bounded native
+WriteBatch at a time. Each mode, repeat and scan scope then runs in a <strong>new
+read-only process</strong>, sequentially. Dataset creation does not inflate the read
+worker’s RSS high-water mark. Workers are not pooled or shared across modes.
+Builds/tests should not run concurrently with a measured experiment.</p>
+<p>The deterministic generator creates exactly the requested number of unique,
+bytewise-sorted records. Ten percent of keys use <code class="docutils literal notranslate"><span class="pre">other/</span></code> and the remainder
+use <code class="docutils literal notranslate"><span class="pre">sensor/</span></code>; very small datasets can contain no decoy keys. Values are
+seeded pseudo-random bytes, either fixed-length or uniformly sized from one
+to <code class="docutils literal notranslate"><span class="pre">--value-size</span></code> bytes. Seed, generator parameters, reference digests,
+selected counts, raw samples and repeat distributions are recorded.</p>
+<p>Scopes include a full scan, a selective prefix (<code class="docutils literal notranslate"><span class="pre">sensor/</span></code> by default) and
+an inclusive-start/exclusive-stop middle range in the sensor keys. Bounds
+are recorded as hexadecimal bytes. Empty selections retain their schema
+and are validated normally. <code class="docutils literal notranslate"><span class="pre">--prefix</span> <span class="pre">X</span></code> alone selects a custom prefix
+profile; <code class="docutils literal notranslate"><span class="pre">--workloads</span></code> explicitly selects any combination of scopes.</p>
+<p><code class="docutils literal notranslate"><span class="pre">--work-dir</span></code> is a parent for <strong>runner-owned temporary directories</strong>, not an
+existing database to replace. Datasets are removed on completion or worker
+failure; unrelated files in that parent are preserved. Preparation refuses
+to open an existing dataset path. Reference data can be regenerated from
+the manifest, but physical SST/compaction layout is not promised identical.</p>
+</section>
+<section id="modes-and-ordered-parity">
+<h2>Modes and ordered parity<a class="headerlink" href="#modes-and-ordered-parity" title="Link to this heading"></a></h2>
+<table class="docutils align-default" id="id1">
+<caption><span class="caption-text">Available modes</span><a class="headerlink" href="#id1" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 34.0%" />
+<col style="width: 66.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Mode</p></th>
+<th class="head"><p>Operation</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">python_iter_collect</span></code></p></td>
+<td><p>Existing iterator collecting Python key/value records.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">python_iter_then_arrow</span></code></p></td>
+<td><p>Existing iterator collecting bytes, then constructing Arrow columns.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">native_materialize</span></code></p></td>
+<td><p>Native Arrow scan fully materialized by PyArrow.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">native_stream_compute</span></code></p></td>
+<td><p>Per-batch Arrow binary-length sum; release each batch before the next.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">polars_materialize</span></code></p></td>
+<td><p>Native scan materialized by Polars without requested rechunking.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">polars_stream_compute</span></code></p></td>
+<td><p>Per-batch Polars binary-length sum using a uint64 accumulator.</p></td>
+</tr>
+</tbody>
+</table>
+<p>The first four modes are the default. <code class="docutils literal notranslate"><span class="pre">--include-polars</span></code> adds both optional
+Polars modes; <code class="docutils literal notranslate"><span class="pre">--modes</span></code> selects an explicit subset. Mode order is shuffled
+deterministically for every repeat; execution order is preserved in the JSON
+sample list. This is a <strong>raw KV</strong> workload, not decoded graph facts, temporal
+visibility validation, joins or reasoning.</p>
+<p>Every worker validates actual ordered output against references generated
+during preparation. For Arrow, validation hashes native key-length, key-data,
+value-length and value-data streams without per-row Python bytes conversion.
+The versioned digest is independent of batch boundaries, supports sliced
+arrays and binary/large-binary interoperability, and includes record lengths
+to disambiguate concatenated payloads. The manifest records length endianness;
+this digest is not the quick benchmark’s older row-framed digest format.
+Null binary records or an unexpected schema are rejected.</p>
+<p>Streaming validation hashes the <strong>actual consumed batch</strong>, not a second scan
+that might conceal an error in the timed path. Compute aggregates, row counts,
+key/value byte counts and the ordered digest must all match.</p>
+</section>
+<section id="timings-and-validation-pauses">
+<h2>Timings and validation pauses<a class="headerlink" href="#timings-and-validation-pauses" title="Link to this heading"></a></h2>
+<p>Each sample records nanoseconds for:</p>
+<ul class="simple">
+<li><p>DB open and the optional warmup pass;</p></li>
+<li><p>scan/iterator establishment and Arrow schema/reader setup;</p></li>
+<li><p>extraction/materialization or per-batch consumer compute;</p></li>
+<li><p>ordered validation;</p></li>
+<li><p>complete operation wall time, including validation;</p></li>
+<li><p>consumer release, including an explicit GC pass;</p></li>
+<li><p>native scan/DB closure (already exhausted scans may have little left to free).</p></li>
+</ul>
+<p>For materialization, extraction is one continuous interval; validation follows
+it. For streaming, extraction is a <strong>segmented</strong> clock: each native pull and
+compute is timed, then paused for ordered buffer hashing. Batches are released
+before another is requested. <code class="docutils literal notranslate"><span class="pre">operation_wall</span></code> includes those pauses and
+additional harness bookkeeping; <code class="docutils literal notranslate"><span class="pre">extraction</span></code> does not. Samples and summaries
+explicitly mark this distinction.</p>
+<p>Do not advertise segmented extraction as uninterrupted streaming throughput,
+or compare one mode’s validation-inclusive wall time with another mode’s
+extraction-only time. Native ABR-01 clocks are a further decomposition, not
+the entire application wall time. Repeat reports include every sample,
+median, min/max, mean, standard deviation and nearest-rank p95; small sample
+sets are not statistical certification. No timing thresholds are asserted in CI.</p>
+</section>
+<section id="memory-and-output-ownership">
+<h2>Memory and output ownership<a class="headerlink" href="#memory-and-output-ownership" title="Link to this heading"></a></h2>
+<p>RSS is reported per worker, not as differences between modes in one reused
+process. The report includes baseline current RSS where <code class="docutils literal notranslate"><span class="pre">/proc</span></code> is available,
+baseline high-water RSS, high-water marks after the operation/validation and
+the worker peak through cleanup. Peak sources and unavailable measurements
+are explicit. Worker peaks include interpreter/library imports, DB open,
+warmup, validation and consumer output; they exclude dataset preparation and
+final report serialization. A high-water increase over baseline is <strong>not</strong>
+an allocation count or net memory attributed solely to a mode.</p>
+<p>ABR-01 counters are enabled by default for native modes. Snapshots are taken
+after the operation, after consumer release and after native/DB close. They
+distinguish logical output bytes, requested exported buffer capacity/slack,
+current/peak retained capacity, logical staging payload and native gather/build
+times. Python iterator modes have no native scan stats.</p>
+<p>A materialized table may retain all native output; streaming compute releases
+its input batches. Polars/PyArrow may also allocate or copy independent buffers:
+those allocations contribute to RSS but are not counted as retained PyRex
+exported buffers. Never treat <code class="docutils literal notranslate"><span class="pre">max_batch_bytes</span></code> or exported capacity as a
+whole-process bound. Metrics do not measure allocator metadata, all staging
+capacity, Python allocation counts, physical RocksDB IO bytes or cache history.</p>
+<p><code class="docutils literal notranslate"><span class="pre">--no-metrics</span></code> enables a native instrumentation ablation and allows the
+isolated runner to probe historical versions without ABR-01. Native stats are
+then null, not fabricated estimates. The old quick benchmark is unchanged by
+default and continues to work on historical versions.</p>
+</section>
+<section id="cache-and-native-build-provenance">
+<h2>Cache and native build provenance<a class="headerlink" href="#cache-and-native-build-provenance" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--cache</span> <span class="pre">warm</span></code> performs a streaming iterator prepass over the selected
+scope in <strong>each</strong> read worker, using the configured read options. It does
+not promise that an entire large dataset fits the RocksDB/OS cache.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--cache</span> <span class="pre">reopened</span></code> omits that prepass. The OS cache can still be warm
+from preparation or earlier processes. This is <strong>not a cold-cache mode</strong>.</p></li>
+<li><p>No global cache dropping, privileged operation or unrelated file deletion
+is performed. Unsupported <code class="docutils literal notranslate"><span class="pre">--cache</span> <span class="pre">cold</span></code> is rejected.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">--cpu</span></code> pins each read worker when supported. <code class="docutils literal notranslate"><span class="pre">--threads</span></code> sets Arrow CPU/IO
+and Polars thread controls before the worker runs. The report records effective
+counts/environment; RocksDB background defaults are not changed. Dataset
+preparation is not an affinity-controlled read measurement.</p>
+<p>The manifest records actual extension/module paths, Python/platform, CPU model
+and affinity, Arrow/Polars versions, read controls, scan limits and seed.
+Installed PyRex package metadata may not describe a source build selected by
+<code class="docutils literal notranslate"><span class="pre">PYTHONPATH</span></code>. Native compiler/flags and RocksDB archive provenance cannot be
+reliably inferred from that metadata: supply a descriptive <code class="docutils literal notranslate"><span class="pre">--build-label</span></code>
+and retain build logs/checksums. Comparisons across revisions must normalize
+those native dependencies independently.</p>
+</section>
+<section id="scale-execution-plan">
+<h2>Scale execution plan<a class="headerlink" href="#scale-execution-plan" title="Link to this heading"></a></h2>
+<p>Start with a smoke profile, then increase scales deliberately:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">benchmarks</span><span class="o">/</span><span class="n">bench_arrow_scan</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">isolated</span> \
+  <span class="o">--</span><span class="n">scales</span> <span class="mi">10000</span> <span class="mi">100000</span> <span class="mi">1000000</span> <span class="o">--</span><span class="n">value</span><span class="o">-</span><span class="n">shapes</span> <span class="n">fixed</span> <span class="n">variable</span> \
+  <span class="o">--</span><span class="n">workloads</span> <span class="n">full</span> <span class="n">prefix</span> <span class="nb">range</span> <span class="o">--</span><span class="n">include</span><span class="o">-</span><span class="n">polars</span> \
+  <span class="o">--</span><span class="n">repeat</span> <span class="mi">5</span> <span class="o">--</span><span class="n">batch</span><span class="o">-</span><span class="n">size</span> <span class="mi">4096</span> <span class="o">--</span><span class="n">value</span><span class="o">-</span><span class="n">size</span> <span class="mi">64</span> \
+  <span class="o">--</span><span class="n">cpu</span> <span class="mi">2</span> <span class="o">--</span><span class="n">threads</span> <span class="mi">1</span> <span class="o">--</span><span class="n">cache</span> <span class="n">warm</span> <span class="o">--</span><span class="n">timeout</span> <span class="mi">1800</span> \
+  <span class="o">--</span><span class="n">build</span><span class="o">-</span><span class="n">label</span> <span class="s2">"compiler/flags; RocksDB archive checksum; binding revision"</span> \
+  <span class="o">--</span><span class="n">work</span><span class="o">-</span><span class="nb">dir</span> <span class="o">/</span><span class="n">path</span><span class="o">/</span><span class="k">with</span><span class="o">/</span><span class="n">enough</span><span class="o">/</span><span class="n">disk</span> <span class="o">--</span><span class="n">output</span> <span class="n">results</span><span class="o">/</span><span class="n">scales</span><span class="o">.</span><span class="n">json</span>
+</pre></div>
+</div>
+<p>Ten million rows is explicitly opt-in, never part of default/CI smoke runs:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">benchmarks</span><span class="o">/</span><span class="n">bench_arrow_scan</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">isolated</span> \
+  <span class="o">--</span><span class="n">scales</span> <span class="mi">10000000</span> <span class="o">--</span><span class="n">value</span><span class="o">-</span><span class="n">shapes</span> <span class="n">fixed</span> <span class="n">variable</span> <span class="o">--</span><span class="n">repeat</span> <span class="mi">5</span> \
+  <span class="o">--</span><span class="n">workloads</span> <span class="n">full</span> <span class="n">prefix</span> <span class="nb">range</span> <span class="o">--</span><span class="n">include</span><span class="o">-</span><span class="n">polars</span> <span class="o">--</span><span class="n">timeout</span> <span class="mi">3600</span> \
+  <span class="o">--</span><span class="n">work</span><span class="o">-</span><span class="nb">dir</span> <span class="o">/</span><span class="n">large</span><span class="o">/</span><span class="n">scratch</span> <span class="o">--</span><span class="n">output</span> <span class="n">results</span><span class="o">/</span><span class="n">ten</span><span class="o">-</span><span class="n">million</span><span class="o">.</span><span class="n">json</span>
+</pre></div>
+</div>
+<p>Check disk space and memory first. Python record collection and full Arrow/
+Polars materialization intentionally scale with the full result; they can
+exhaust memory on oversized profiles. A single Arrow binary column also has
+int32 offset limits. Streaming is a different workload, not an excuse to
+silently drop a failed materialization mode or compare unmatched selections.</p>
+<p>Use the same command/build settings in alternating process/revision order
+when evaluating ABR-07 optimizations. Retain raw JSON alongside any summary;
+separate setup, extraction, validation, cleanup, native phase timings and
+memory conclusions. See <a class="reference internal" href="arrow_reads_roadmap.html"><span class="doc">Arrow Buffer Reads Roadmap</span></a> for the delivery dependencies.
+The repository’s <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_isolated_results.md</span></code> records an executed
+10K/100K matrix and a 1M fixed/full validation profile, with distribution and
+ownership examples. It is not a release regression gate or a 10M result.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="arrow_reads_roadmap.html" class="btn btn-neutral float-left" title="Arrow Buffer Reads Roadmap" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="column_families.html" class="btn btn-neutral float-right" title="Column Family Usage Example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Charilaos Mylonas.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

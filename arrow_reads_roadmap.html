@@ -22,7 +22,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Column Family Usage Example" href="column_families.html" />
+    <link rel="next" title="Isolated Arrow Benchmarks (ABR-02)" href="arrow_benchmarks.html" />
     <link rel="prev" title="Batched Arrow Scans" href="arrow_scans.html" /> 
 </head>
 
@@ -58,6 +58,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#scope-boundaries">Scope boundaries</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="arrow_benchmarks.html">Isolated Arrow Benchmarks (ABR-02)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="column_families.html">Column Family Usage Example</a></li>
 <li class="toctree-l1"><a class="reference internal" href="point_reads.html">Point reads: specialized and general paths</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
@@ -135,7 +136,7 @@ current feature-availability matrix. These follow-ups cover remaining work.</p>
 <td><p>Reproducible scale, memory and interoperability benchmarks</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Planned</p></td>
+<td><p>Implemented on stacked feature branch; review pending</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/40">ABR-03</a></p></td>
 <td><p>Cooperative in-flight cancellation and C Stream errors</p></td>
@@ -184,9 +185,9 @@ take, and what consumers retain. The highest-priority feature adds that
 observability without changing the default path’s timing collection or
 requiring PyArrow/Polars in core PyRex. See <a class="reference internal" href="arrow_scans.html"><span class="doc">Batched Arrow Scans</span></a> for its public
 <code class="docutils literal notranslate"><span class="pre">collect_metrics=True</span></code> / <code class="docutils literal notranslate"><span class="pre">ArrowScan.stats</span></code> contract.</p>
-<p>ABR-01 does not replace the existing benchmark or implement ABR-02’s
-large-scale, fresh-process memory experiments. Its integration simply makes
-native counters available to those future measurements. Likewise, existing
+<p>ABR-01 does not replace the existing benchmark. ABR-02 adds an isolated mode
+and uses ABR-01 counters for fresh-process resource experiments; see
+<a class="reference internal" href="arrow_benchmarks.html"><span class="doc">Isolated Arrow Benchmarks (ABR-02)</span></a>. Likewise, existing
 <code class="docutils literal notranslate"><span class="pre">close()</span></code> is not ABR-03’s in-gather cancellation request.</p>
 </section>
 <section id="scope-boundaries">
@@ -205,7 +206,7 @@ benefits. No batch-cap or buffer-counter result is a whole-process RSS bound.</p
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="arrow_scans.html" class="btn btn-neutral float-left" title="Batched Arrow Scans" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="column_families.html" class="btn btn-neutral float-right" title="Column Family Usage Example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="arrow_benchmarks.html" class="btn btn-neutral float-right" title="Isolated Arrow Benchmarks (ABR-02)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
