@@ -367,6 +367,11 @@ jobs:
           test -n "$(find upload_dist -name '*.whl' -print -quit)"
           ls -lh upload_dist/
 
+      - name: Validate wheel metadata
+        run: |
+          python -m pip install twine
+          python -m twine check --strict upload_dist/*.whl
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

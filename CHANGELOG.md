@@ -6,6 +6,12 @@ available via `git log`.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-31
+
+This release combines the point-read regression fix (#36 / #37) and all eight
+merged Arrow Buffer Reads follow-ups (ABR-01–ABR-08, #46–#53). Wheels bundle
+RocksDB 10.7.5. Arrow/Polars remain optional consumers, not core dependencies.
+
 ### Added
 
 - ABR-08 (#45): explicit `Transaction.scan_arrow()` / `scan_arrow_cf()` expose
@@ -71,10 +77,6 @@ available via `git log`.
   Arrow child releases update accounting even after stream/DB closure.
   Default scans do not allocate metrics state or collect phase timings.
 
-## [0.7.1] - 2026-10-29
-
-### Added
-
 - Lightweight optional-argument dispatch and specialized default-CF read path
   for #36, retaining the general options/snapshot/CF implementations and all
   existing Python call forms. Ordinary reads borrow immutable key/options
@@ -101,6 +103,20 @@ available via `git log`.
   unsafe operations, and that explicit `None` selects the general native
   read path. Full recovery is a measurement question, not a proven safety
   limit; historical PyPI-wheel versus local-build results did not isolate it.
+
+### Validation and performance scope
+
+- The combined pre-release implementation passed native API CI on CPython
+  3.9, 3.12 and 3.14. Local cumulative validation recorded 585 passed / 2 skipped;
+  extension-ASan validation recorded 573 passed / 14 skipped. Sanitizer scope
+  and skips are documented in `benchmarks/arrow_integration.md`.
+- The independent isolated Arrow benchmark validated ordered output in a
+  216-worker 10K/100K matrix and an 18-worker 1M profile. These results do not
+  certify cold-cache IO, zero-copy output, or constant process RSS.
+- Controlled ordinary-hit binding measurements for the regression fix were
+  approximately 30–31% faster than 0.7.0, with lifecycle safety retained.
+  They are not a new GestaltDB end-to-end benchmark; misses and general
+  options/CF paths do not universally recover the historical baseline.
 
 ## [0.7.0] - 2026-10-29
 

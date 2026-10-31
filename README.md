@@ -13,6 +13,21 @@ A python wrapper for the original (C++) version of RocksDB.
 
 Currently MacOS and Linux wheels are available.
 
+## 0.7.1 highlights
+
+- Restores ordinary warmed point-read hit latency after the 0.6/0.7 regression,
+  retaining shared lifecycle protection and GIL release. Controlled source
+  builds measured approximately 30–31% lower binding latency than 0.7.0;
+  this is not an end-to-end application or cold-cache performance guarantee.
+- Adds Arrow point lookup streams, range/prefix unions, cooperative
+  cancellation, opt-in metrics, capability/configuration introspection,
+  contiguous value buffers and explicit transaction-local Arrow scans.
+- Bundles RocksDB 10.7.5; PyArrow and Polars remain optional consumers.
+
+See [CHANGELOG.md](CHANGELOG.md), [point-read measurements](benchmarks/point_reads.md)
+and [Arrow integration validation](benchmarks/arrow_integration.md) for details
+and limitations.
+
 ## Installation
 
 For linux systems, wheels are provided and can be installed from pypi using:
