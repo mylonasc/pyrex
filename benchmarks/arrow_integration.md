@@ -3,7 +3,10 @@
 All indexed features were merged into `main` through PRs #46–#53 on
 2026-10-30, in dependency order and with commit ancestry preserved. ABR-02's
 independent benchmark branch is now included alongside the later source stack.
-No version bump or package publication was performed; features remain unreleased.
+No version bump or package publication was performed at that checkpoint.
+The combined features are included in the 2026-10-31 0.7.1 release; see
+`CHANGELOG.md` for the release scope. Measurements below remain the original
+pre-release validation, not a rerun against published wheels.
 
 ## Native validation
 
