@@ -6,6 +6,15 @@ available via `git log`.
 
 ## [Unreleased]
 
+### Release infrastructure
+
+- Migrate macOS wheel build/test runners from retiring macOS 14 to macOS 15,
+  retaining the macOS 14 deployment target. Add guarded recovery of completed
+  tag-push wheel artifacts: verify tag/source/workflow and all three builds,
+  rerun the complete wheel-test matrix, then Twine-check and publish without
+  moving an existing release tag. This unblocks 0.7.1 after GitHub's runner
+  brownout prevented its macOS test job from starting.
+
 ## [0.7.1] - 2026-10-31
 
 This release combines the point-read regression fix (#36 / #37) and all eight

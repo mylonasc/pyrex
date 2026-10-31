@@ -19,9 +19,63 @@ on:
       - 'docs/**'
       - 'LICENSE'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to build/test/publish (empty means current ref)"
+        type: string
+        default: ""
+      reuse_run_id:
+        description: "Optional tag-push run with three successful wheel builds to retest/publish"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  ROCKSDB_VERSION: "10.7.5"
+  PYREX_VERSION: "0.7.1"
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+      - name: Verify source and reusable artifacts
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          echo "sha=${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected an existing vX.Y.Z release tag" >&2
+            exit 1
+          fi
+          if [[ -n "$RELEASE_TAG" ]]; then
+            [[ "$RELEASE_TAG" == "v$PYREX_VERSION" ]]
+          fi
+          if [[ -n "$REUSE_RUN_ID" ]]; then
+            [[ -n "$RELEASE_TAG" && "$REUSE_RUN_ID" =~ ^[0-9]+$ ]]
+            RUN="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID")"
+            jq -e --arg sha "$SOURCE_SHA" --arg tag "$RELEASE_TAG" \
+              '.head_sha == $sha and .head_branch == $tag and .event == "push" and .path == ".github/workflows/build_wheels.yml" and .status == "completed"' <<< "$RUN"
+            JOBS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID/jobs?per_page=100")"
+            jq -e '[.jobs[] | select(.name | startswith("Build wheels ("))] | length == 3 and all(.[]; .conclusion == "success")' <<< "$JOBS"
+          fi
+
   build_wheels:
+    needs: prepare
+    if: ${{ inputs.reuse_run_id == '' }}
     name: Build wheels (${{ matrix.id }})
     runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 120
@@ -43,15 +97,12 @@ jobs:
             artifact_name: wheels-linux-aarch64
 
           - id: macos-arm64
-            runs_on: macos-14
+            runs_on: macos-15
             artifact: wheels-macos-arm64
             artifact_name: wheels-macos14-aarch64
 
 
     env:
-      ROCKSDB_VERSION: "10.7.5"
-      PYREX_VERSION: "0.7.1"
-
       # Your existing global cibuildwheel knobs
       CIBW_FORCE_INSTALL: "1"
       CIBW_DEBUG: "1"
@@ -84,6 +135,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       # FIX: do NOT force x64; let runner arch decide (works on ARM + x86)
       - name: Set up Python (host)
@@ -273,7 +325,8 @@ jobs:
 
   test_wheels:
     name: Test wheels (${{ matrix.id }}, py${{ matrix.python-version }})
-    needs: build_wheels
+    needs: [prepare, build_wheels]
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.build_wheels.result == 'success' || (needs.build_wheels.result == 'skipped' && inputs.reuse_run_id != '')) }}
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
@@ -289,12 +342,14 @@ jobs:
             artifact_name: wheels-linux-aarch64
           - id: macos-arm64
             python-version: "3.12"
-            runs_on: macos-14
+            runs_on: macos-15
             artifact_name: wheels-macos14-aarch64
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -306,6 +361,8 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: dist
+          run-id: ${{ inputs.reuse_run_id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Install dependencies
         run: |
@@ -347,11 +404,12 @@ jobs:
 
   publish_to_pypi:
     name: Publish wheels to PyPI
-    needs: test_wheels
+    needs: [prepare, test_wheels]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ always() && needs.prepare.result == 'success' && needs.test_wheels.result == 'success' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')) }}
     permissions:
       contents: read
+      actions: read
       id-token: write
 
     steps:
@@ -359,6 +417,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
+          run-id: ${{ inputs.reuse_run_id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Prepare wheels for publish
         run: |
