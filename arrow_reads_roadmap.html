@@ -97,15 +97,16 @@ are explicit delivery/validation gates and are also recorded with GitHub’s
 native blocked-by and sub-issue relationships.</p>
 <section id="delivered-baseline">
 <h2>Delivered baseline<a class="headerlink" href="#delivered-baseline" title="Link to this heading"></a></h2>
-<p>Through 0.7.1, native Arrow C Streams already support lazy bounded batches,
+<p>Before the ABR follow-ups, native Arrow C Streams supported lazy bounded batches,
 full/prefix/range scans, owned binary output, named column families, shared
 pinned snapshots and committed-state TransactionDB reads. Existing iterator
 APIs remain supported. <code class="docutils literal notranslate"><span class="pre">multi_get</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get_cf</span></code> return Python lists;
-they are <strong>not</strong> an Arrow point-materialization API. TransactionDB scans
-observe committed state, <strong>not</strong> transaction-local read-your-writes.</p>
+0.7.1 additionally provides <code class="docutils literal notranslate"><span class="pre">multi_get_arrow</span></code> / <code class="docutils literal notranslate"><span class="pre">multi_get_arrow_cf</span></code>
+for Arrow point materialization. DB-level TransactionDB scans observe committed
+state; explicit transaction-local scans added in 0.7.1 provide read-your-writes.</p>
 <p>The original design text and unchecked boxes in #31 are historical, not a
 current feature-availability matrix. All indexed follow-ups below are merged
-into <code class="docutils literal notranslate"><span class="pre">main</span></code> and remain unreleased; the 0.7.1 baseline above is unchanged.</p>
+into <code class="docutils literal notranslate"><span class="pre">main</span></code> and included in 0.7.1 alongside the ordinary point-read fix.</p>
 </section>
 <section id="feature-index">
 <h2>Feature index<a class="headerlink" href="#feature-index" title="Link to this heading"></a></h2>
@@ -131,49 +132,49 @@ into <code class="docutils literal notranslate"><span class="pre">main</span></c
 <td><p>Opt-in native metrics and Arrow buffer accounting</p></td>
 <td><p>P0</p></td>
 <td><p>None</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/39">ABR-02</a></p></td>
 <td><p>Reproducible scale, memory and interoperability benchmarks</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/40">ABR-03</a></p></td>
 <td><p>Cooperative in-flight cancellation and C Stream errors</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/41">ABR-04</a></p></td>
 <td><p>Snapshot-consistent Arrow batched point lookups</p></td>
 <td><p>P1</p></td>
 <td><p>ABR-01, ABR-03</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/42">ABR-05</a></p></td>
 <td><p>Multi-range/multi-prefix scans at one horizon</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01, ABR-03</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/43">ABR-06</a></p></td>
 <td><p>Validated scan controls and capability contract</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/44">ABR-07</a></p></td>
 <td><p>Measured native builder/buffer-copy optimization</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01, ABR-02</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference external" href="https://github.com/mylonasc/pyrex/issues/45">ABR-08</a></p></td>
 <td><p>Transaction-local Arrow scans with read-your-writes</p></td>
 <td><p>P2</p></td>
 <td><p>ABR-01, ABR-03</p></td>
-<td><p>Merged; unreleased</p></td>
+<td><p>Included in 0.7.1</p></td>
 </tr>
 </tbody>
 </table>
@@ -183,7 +184,8 @@ into <code class="docutils literal notranslate"><span class="pre">main</span></c
 <p>Merge checkpoint (2026-10-30): all indexed features are merged into <code class="docutils literal notranslate"><span class="pre">main</span></code>.
 PRs #46 (ABR-01), #47 (ABR-02), #48 (ABR-03), #49 (ABR-04), #50 (ABR-05),
 #51 (ABR-06), #52 (ABR-07) and #53 (ABR-08) were merged in dependency order,
-preserving commit ancestry. No feature release or version bump was published.
+preserving commit ancestry. That checkpoint preceded release preparation;
+the combined changes are included in the 2026-10-31 0.7.1 release.
 <code class="docutils literal notranslate"><span class="pre">benchmarks/arrow_integration.md</span></code> records cumulative native/sanitizer
 validation and the independent ABR-02 runner’s 216-worker matrix plus
 18-worker 1M profile against the final native implementation.</p>
